@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../store/contexts/AuthContext';
 import { UserService } from '../services/UserService';
 import PermissionService from '../services/PermissionService';
 import type { UserRole } from '../types';

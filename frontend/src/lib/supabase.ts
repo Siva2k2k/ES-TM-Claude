@@ -5,7 +5,8 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables. Please check your .env file.');
+  console.warn('⚠️  Supabase environment variables not configured. Using default values for development.');
+  console.warn('Please update your .env file with proper Supabase credentials for production.');
 }
 
 // Custom storage implementation to ensure persistence
@@ -38,9 +39,13 @@ const customStorage = {
   }
 };
 
+// Use fallback values for development if environment variables are not set
+const fallbackUrl = supabaseUrl || 'https://placeholder.supabase.co';
+const fallbackKey = supabaseAnonKey || 'placeholder-anon-key';
+
 // Check if we're in a test environment and use mock if available
 const testMock = (globalThis as unknown as { __mockSupabase?: unknown }).__mockSupabase as unknown as SupabaseClient | undefined;
-export const supabase: SupabaseClient = testMock ?? createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase: SupabaseClient = testMock ?? createClient(fallbackUrl, fallbackKey, {
   auth: {
     autoRefreshToken: true,
     persistSession: true,

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../store/contexts/AuthContext';
 import { TimesheetApprovalService, TimeEntryInput } from '../services/TimesheetApprovalService';
 import ProjectService from '../services/ProjectService';
 

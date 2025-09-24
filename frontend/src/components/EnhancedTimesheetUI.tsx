@@ -36,7 +36,7 @@ import {
   User as UserIcon,
   Bell
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../store/contexts/AuthContext';
 import { TimesheetApprovalService } from '../services/TimesheetApprovalService';
 import { TimesheetService } from '../services/TimesheetService';
 import { UserService } from '../services/UserService';

@@ -19,7 +19,7 @@ import {
   Download,
   Bell
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../store/contexts/AuthContext';
 import { TimesheetApprovalService } from '../services/TimesheetApprovalService';
 import { UserService } from '../services/UserService';
 import type { TimesheetStatus, TimesheetWithDetails, User } from '../types';

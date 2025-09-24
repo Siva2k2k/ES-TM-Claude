@@ -20,7 +20,7 @@ import {
   Shield,
   UserCheck
 } from 'lucide-react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../store/contexts/AuthContext';
 import { useRoleManager } from '../hooks/useRoleManager';
 import { TimesheetService } from '../services/TimesheetService';
 import { ProjectService } from '../services/ProjectService';

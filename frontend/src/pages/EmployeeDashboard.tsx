@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '../contexts/AuthContext';
+import { useAuth } from '../store/contexts/AuthContext';
 import { ProjectService } from '../services/ProjectService';
 import { TimesheetService } from '../services/TimesheetService';
 import { 

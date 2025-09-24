@@ -1,0 +1,136 @@
+import 'module-alias/register';
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import compression from 'compression';
+import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
+import passport from 'passport';
+import path from 'path';
+import dotenv from 'dotenv';
+
+import { connectDB } from './config/database';
+import { logger } from './config/logger';
+import { configurePassport } from './config/passport';
+import { errorHandler } from './middleware/errorHandler';
+import { checkMaintenanceMode } from './middleware/auth';
+import routes from './routes';
+
+dotenv.config();
+
+// Configure Passport
+configurePassport();
+
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Security middleware
+app.use(helmet());
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: {
+    error: 'Too many requests from this IP, please try again later.',
+  },
+});
+app.use('/api', limiter);
+
+// CORS configuration
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? process.env.FRONTEND_URL?.split(',') || []
+    : ['http://localhost:3000', 'http://localhost:5173','http://localhost:5000', 'http://localhost:8000'],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-csrf-token'],
+};
+app.use(cors(corsOptions));
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
+
+// Compression middleware
+app.use(compression());
+
+// Initialize Passport
+app.use(passport.initialize());
+
+// Maintenance mode check
+app.use(checkMaintenanceMode);
+
+// Logging middleware
+if (process.env.NODE_ENV !== 'test') {
+  app.use(morgan('combined', { stream: { write: message => logger.info(message.trim()) } }));
+}
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+  });
+});
+
+// API routes
+app.use('/api/v1', routes);
+
+// Serve static files from frontend build directory
+const frontendDistPath = path.join(__dirname, '../../frontend/dist');
+app.use(express.static(frontendDistPath));
+
+// Catch-all handler for React Router (SPA)
+app.get('*', (req, res) => {
+  // Skip API routes
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({
+      success: false,
+      message: 'API endpoint not found',
+      path: req.originalUrl,
+    });
+  }
+
+  // Serve the React app for all non-API routes
+  res.sendFile(path.join(frontendDistPath, 'index.html'));
+});
+
+// Global error handler
+app.use(errorHandler);
+
+// Database connection and server startup
+const startServer = async () => {
+  try {
+    await connectDB();
+    
+    app.listen(PORT, () => {
+      logger.info(`Server is running on port ${PORT}`);
+      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      logger.info(`Health check available at http://localhost:${PORT}/health`);
+    });
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
+};
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (err: Error) => {
+  logger.error('Unhandled Promise Rejection:', err);
+  process.exit(1);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err: Error) => {
+  logger.error('Uncaught Exception:', err);
+  process.exit(1);
+});
+
+startServer();
+
+export default app;

@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { useAuth } from './contexts/AuthContext';
-import LoginForm from './components/LoginForm';
-import { ManagementDashboard } from './components/NewManagementDashboard';
-import EmployeeDashboard from './components/EmployeeDashboard';
+import { useAuth } from './store/contexts/AuthContext';
+import LoginForm from './components/forms/LoginForm';
+import { ManagementDashboard } from './pages/NewManagementDashboard';
+import EmployeeDashboard from './pages/EmployeeDashboard';
 import TimesheetStatusView from './components/TimesheetStatusView';
 import TeamReview from './components/TeamReview';
 import { EmployeeTimesheet } from './components/EmployeeTimesheet';
