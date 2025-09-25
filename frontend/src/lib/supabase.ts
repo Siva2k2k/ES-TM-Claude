@@ -4,8 +4,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('⚠️  Supabase environment variables not configured for the development.');
+// Check if Supabase is configured
+const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl !== '' && supabaseAnonKey !== '');
+
+if (!isSupabaseConfigured) {
+  console.info('ℹ️ Supabase not configured - using backend authentication only');
 }
 
 // Custom storage implementation to ensure persistence
@@ -38,22 +41,27 @@ const customStorage = {
   }
 };
 
-// Use fallback values for development if environment variables are not set
-const fallbackUrl = supabaseUrl || 'https://placeholder.supabase.co';
-const fallbackKey = supabaseAnonKey || 'placeholder-anon-key';
+// Create Supabase client only if properly configured
+let supabaseClient: SupabaseClient | null = null;
+
+if (isSupabaseConfigured) {
+  supabaseClient = createClient(supabaseUrl!, supabaseAnonKey!, {
+    auth: {
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: true,
+      storage: customStorage,
+      storageKey: 'sb-auth-token',
+      flowType: 'pkce'
+    }
+  });
+}
 
 // Check if we're in a test environment and use mock if available
 const testMock = (globalThis as unknown as { __mockSupabase?: unknown }).__mockSupabase as unknown as SupabaseClient | undefined;
-export const supabase: SupabaseClient = testMock ?? createClient(fallbackUrl, fallbackKey, {
-  auth: {
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: true,
-    storage: customStorage,
-    storageKey: 'sb-auth-token', // Ensure this is consistent
-    flowType: 'pkce' // Use PKCE flow for better security and session handling
-  }
-});
+
+// Export supabase client (null if not configured)
+export const supabase: SupabaseClient | null = testMock ?? supabaseClient;
 
 // Database types (keep your existing types)
 export interface Database {

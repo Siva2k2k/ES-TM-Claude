@@ -5,7 +5,7 @@ import { Shield, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
 const LoginForm: React.FC = () => {
   const { signIn, isLoading } = useAuth();
   const [email, setEmail] = useState('admin@company.com');
-  const [password, setPassword] = useState('12345678');
+  const [password, setPassword] = useState('Admin123!');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -130,8 +130,10 @@ const LoginForm: React.FC = () => {
           <div className="mt-6 p-4 bg-gray-50 rounded-lg">
             <h3 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials</h3>
             <div className="text-xs text-gray-600 space-y-1">
-              <p><strong>Super Admin:</strong> admin@company.com / 12345678</p>
-              <p className="text-gray-500">Full system access and control</p>
+              <p><strong>Super Admin:</strong> admin@company.com / Admin123!</p>
+              <p><strong>Manager:</strong> manager@company.com / Manager123!</p>
+              <p><strong>Employee:</strong> test@company.com / Test123!</p>
+              <p className="text-gray-500 mt-2">Use any credentials above to test different roles</p>
             </div>
           </div>
         </div>

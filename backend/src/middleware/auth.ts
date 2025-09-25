@@ -1,14 +1,16 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
-
-// Simplified auth middleware for now
-type UserRole = 'employee' | 'lead' | 'manager' | 'management' | 'super_admin';
+import User, { UserRole } from '@/models/User';
+import { JWTUtils } from '@/utils/jwt';
+import { AuthenticationError } from '@/utils/errors';
 
 interface AuthUser {
   id: string;
   email: string;
   role: UserRole;
   full_name: string;
+  hourly_rate: number;
+  is_active: boolean;
+  is_approved_by_super_admin: boolean;
 }
 
 interface AuthRequest extends Request {
@@ -20,26 +22,59 @@ interface AuthRequest extends Request {
  */
 export const requireAuth = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    const authHeader = req.header('Authorization');
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
 
     if (!token) {
       res.status(401).json({ success: false, message: 'No token provided' });
       return;
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as any;
-    
-    // For now, create a mock user - we'll implement proper user lookup later
+    // Verify JWT token
+    let decoded;
+    try {
+      decoded = JWTUtils.verifyAccessToken(token);
+    } catch (error) {
+      res.status(401).json({ success: false, message: 'Invalid or expired token' });
+      return;
+    }
+
+    // Look up user in database to ensure they still exist and are active
+    const user = await (User.findOne as any)({
+      _id: decoded.id,
+      deleted_at: { $exists: false }
+    }).select('-password_hash');
+
+    if (!user) {
+      res.status(401).json({ success: false, message: 'User not found' });
+      return;
+    }
+
+    if (!user.is_active) {
+      res.status(401).json({ success: false, message: 'Account is deactivated' });
+      return;
+    }
+
+    if (!user.is_approved_by_super_admin) {
+      res.status(401).json({ success: false, message: 'Account is not approved' });
+      return;
+    }
+
+    // Attach user to request
     req.user = {
-      id: decoded.id || '1',
-      email: decoded.email || 'user@example.com',
-      role: decoded.role || 'employee',
-      full_name: decoded.name || 'Test User'
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      full_name: user.full_name,
+      hourly_rate: user.hourly_rate,
+      is_active: user.is_active,
+      is_approved_by_super_admin: user.is_approved_by_super_admin
     };
 
     next();
   } catch (error) {
-    res.status(401).json({ success: false, message: 'Invalid token' });
+    console.error('Auth middleware error:', error);
+    res.status(500).json({ success: false, message: 'Internal server error' });
     return;
   }
 };

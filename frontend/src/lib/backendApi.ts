@@ -2,10 +2,10 @@ import { supabase } from './supabase';
 
 /**
  * Backend API Client for Timesheet Service
- * Handles communication with the Node.js/MongoDB backend while maintaining Supabase for auth
+ * Handles communication with the Node.js/MongoDB backend with optional Supabase auth
  */
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000';
+const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/';
 
 export class BackendApiError extends Error {
   constructor(
@@ -29,11 +29,23 @@ export class BackendApiClient {
   }
 
   /**
-   * Get authorization token from Supabase
+   * Get authorization token from Supabase or local storage
    */
   private async getAuthToken(): Promise<string | null> {
-    const { data: { session } } = await supabase.auth.getSession();
-    return session?.access_token || null;
+    // Try to get token from Supabase first (if configured)
+    if (supabase) {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          return session.access_token;
+        }
+      } catch (error) {
+        console.warn('Supabase session error:', error);
+      }
+    }
+    
+    // Fallback to local storage for backend JWT token
+    return localStorage.getItem('accessToken');
   }
 
   /**
