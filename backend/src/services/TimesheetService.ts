@@ -862,6 +862,181 @@ export class TimesheetService {
     }
   }
 
+  /**
+   * Update timesheet entries (bulk replace)
+   */
+  static async updateTimesheetEntries(
+    timesheetId: string,
+    entries: TimeEntryForm[],
+    currentUser: AuthUser
+  ): Promise<{ updatedEntries?: ITimeEntry[]; error?: string }> {
+    try {
+      console.log('TimesheetService.updateTimesheetEntries called with:', { timesheetId, entryCount: entries.length });
+
+      // Get timesheet to validate permissions
+      const timesheet = await (Timesheet.findOne as any)({
+        _id: new mongoose.Types.ObjectId(timesheetId),
+        deleted_at: null
+      }).exec();
+
+      if (!timesheet) {
+        throw new NotFoundError('Timesheet not found');
+      }
+
+      // Validate access permissions
+      validateTimesheetAccess(currentUser, timesheet.user_id.toString(), 'edit');
+
+      // Validate timesheet status
+      if (!['draft', 'manager_rejected', 'management_rejected'].includes(timesheet.status)) {
+        throw new TimesheetError('Cannot update entries for timesheet in current status');
+      }
+
+      // Validate each time entry
+      for (const entryData of entries) {
+        const validation = await this.validateTimeEntry(timesheetId, entryData);
+        if (!validation.valid) {
+          throw new ValidationError(`Entry validation failed: ${validation.error}`);
+        }
+      }
+
+      // Delete all existing entries for this timesheet
+      await (TimeEntry.deleteMany as any)({
+        timesheet_id: new mongoose.Types.ObjectId(timesheetId)
+      });
+
+      // Create new entries
+      const entryInsertData = entries.map(entryData => ({
+        timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+        project_id: entryData.project_id ? new mongoose.Types.ObjectId(entryData.project_id) : undefined,
+        task_id: entryData.task_id ? new mongoose.Types.ObjectId(entryData.task_id) : undefined,
+        date: new Date(entryData.date),
+        hours: entryData.hours,
+        description: entryData.description,
+        is_billable: entryData.is_billable,
+        custom_task_description: entryData.custom_task_description,
+        entry_type: entryData.entry_type,
+        created_at: new Date(),
+        updated_at: new Date()
+      }));
+
+      const updatedEntries = await (TimeEntry.insertMany as any)(entryInsertData);
+
+      // Update timesheet total hours
+      await this.updateTimesheetTotalHours(timesheetId);
+
+      console.log('Timesheet entries updated successfully:', { count: updatedEntries.length });
+      return { updatedEntries };
+    } catch (error) {
+      console.error('Error in updateTimesheetEntries:', error);
+      return { error: error instanceof Error ? error.message : 'Failed to update timesheet entries' };
+    }
+  }
+
+  /**
+   * Get time entries for a timesheet
+   */
+  static async getTimeEntries(
+    timesheetId: string,
+    currentUser: AuthUser
+  ): Promise<{ entries?: ITimeEntry[]; error?: string }> {
+    try {
+      console.log('TimesheetService.getTimeEntries called with:', { timesheetId });
+
+      // Get timesheet to validate permissions
+      const timesheet = await (Timesheet.findOne as any)({
+        _id: new mongoose.Types.ObjectId(timesheetId),
+        deleted_at: null
+      }).exec();
+
+      if (!timesheet) {
+        throw new NotFoundError('Timesheet not found');
+      }
+
+      // Validate access permissions
+      validateTimesheetAccess(currentUser, timesheet.user_id.toString(), 'view');
+
+      // Get time entries for this timesheet
+      const entries = await (TimeEntry.find as any)({
+        timesheet_id: new mongoose.Types.ObjectId(timesheetId)
+      })
+        .populate('project_id', 'name')
+        .populate('task_id', 'name description')
+        .sort({ date: 1, created_at: 1 })
+        .exec();
+
+      console.log('Time entries retrieved successfully:', { count: entries.length });
+      return { entries };
+    } catch (error) {
+      console.error('Error in getTimeEntries:', error);
+      return { error: error instanceof Error ? error.message : 'Failed to get time entries' };
+    }
+  }
+
+  /**
+   * Add multiple time entries at once
+   */
+  static async addMultipleEntries(
+    timesheetId: string,
+    entries: TimeEntryForm[],
+    currentUser: AuthUser
+  ): Promise<{ updatedEntries?: ITimeEntry[]; error?: string }> {
+    try {
+      console.log('TimesheetService.addMultipleEntries called with:', { timesheetId, entryCount: entries.length });
+
+      // Get timesheet to validate permissions
+      const timesheet = await (Timesheet.findOne as any)({
+        _id: new mongoose.Types.ObjectId(timesheetId),
+        deleted_at: null
+      }).exec();
+
+      if (!timesheet) {
+        throw new NotFoundError('Timesheet not found');
+      }
+
+      // Validate access permissions
+      validateTimesheetAccess(currentUser, timesheet.user_id.toString(), 'edit');
+
+      // Validate timesheet status
+      if (!['draft', 'manager_rejected', 'management_rejected'].includes(timesheet.status)) {
+        throw new TimesheetError('Cannot add entries to timesheet in current status');
+      }
+
+      // Validate each time entry
+      for (const entryData of entries) {
+        const validation = await this.validateTimeEntry(timesheetId, entryData);
+        if (!validation.valid) {
+          throw new ValidationError(`Entry validation failed: ${validation.error}`);
+        }
+      }
+
+      // Create new entries (append to existing ones)
+      const entryInsertData = entries.map(entryData => ({
+        timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+        project_id: entryData.project_id ? new mongoose.Types.ObjectId(entryData.project_id) : undefined,
+        task_id: entryData.task_id ? new mongoose.Types.ObjectId(entryData.task_id) : undefined,
+        date: new Date(entryData.date),
+        hours: entryData.hours,
+        description: entryData.description,
+        is_billable: entryData.is_billable,
+        custom_task_description: entryData.custom_task_description,
+        entry_type: entryData.entry_type,
+        created_at: new Date(),
+        updated_at: new Date()
+      }));
+
+      const addedEntries = await (TimeEntry.insertMany as any)(entryInsertData);
+
+      // Update timesheet total hours
+      await this.updateTimesheetTotalHours(timesheetId);
+
+      console.log('Multiple entries added successfully:', { count: addedEntries.length });
+      return { updatedEntries: addedEntries };
+    } catch (error) {
+      console.error('Error in addMultipleEntries:', error);
+      return { error: error instanceof Error ? error.message : 'Failed to add multiple entries' };
+    }
+  }
+
 }
 
 export default TimesheetService;
