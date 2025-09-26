@@ -151,17 +151,92 @@ export class ProjectService {
    */
   static async getProjectsByStatus(status: ProjectStatus, currentUser: AuthUser): Promise<{ projects: ProjectWithDetails[]; error?: string }> {
     try {
-      requireManagerRole(currentUser);
+      let projects;
 
-      const projects = await (Project.find as any)({
-        status,
-        deleted_at: { $exists: false }
-      })
-        .populate('client_id', 'name contact_person')
-        .populate('primary_manager_id', 'full_name')
-        .sort({ created_at: -1 });
+      // Managers and above can see all projects by status
+      // Employees can see projects they are assigned to
+      if (currentUser.role === 'employee' || currentUser.role === 'lead') {
+        // For employees and leads, only show projects they are members of
+        projects = await (Project.find as any)({
+          status,
+          deleted_at: { $exists: false },
+          $or: [
+            { primary_manager_id: currentUser.id },
+            { members: currentUser.id }
+          ]
+        })
+          .populate('client_id', 'name contact_person')
+          .populate('primary_manager_id', 'full_name')
+          .populate('members', 'full_name email role')
+          .sort({ created_at: -1 });
+      } else {
+        // For managers and above, show all projects
+        requireManagerRole(currentUser);
+        
+        projects = await (Project.find as any)({
+          status,
+          deleted_at: { $exists: false }
+        })
+          .populate('client_id', 'name contact_person')
+          .populate('primary_manager_id', 'full_name')
+          .populate('members', 'full_name email role')
+          .sort({ created_at: -1 });
+      }
 
-      return { projects };
+      // Transform projects to include embedded tasks if needed
+      const projectsWithTasks = [];
+      for (const project of projects) {
+        const projectObj = project.toObject();
+        
+        // Fetch tasks for this project
+        const tasks = await (Task.find as any)({
+          project_id: projectObj._id,
+          deleted_at: { $exists: false }
+        })
+          .populate('assigned_to_user_id', 'full_name email')
+          .populate('created_by_user_id', 'full_name email')
+          .sort({ created_at: -1 });
+
+        // Transform tasks to have consistent ID format
+        const transformedTasks = tasks.map((task: any) => {
+          const taskObj = task.toObject();
+          
+          // Normalize assigned_to_user_id
+          let assignedToUserId = null;
+          if (taskObj.assigned_to_user_id) {
+            if (typeof taskObj.assigned_to_user_id === 'object' && taskObj.assigned_to_user_id._id) {
+              assignedToUserId = taskObj.assigned_to_user_id._id.toString();
+            } else if (typeof taskObj.assigned_to_user_id === 'string') {
+              assignedToUserId = taskObj.assigned_to_user_id;
+            }
+          }
+
+          // Normalize created_by_user_id
+          let createdByUserId = null;
+          if (taskObj.created_by_user_id) {
+            if (typeof taskObj.created_by_user_id === 'object' && taskObj.created_by_user_id._id) {
+              createdByUserId = taskObj.created_by_user_id._id.toString();
+            } else if (typeof taskObj.created_by_user_id === 'string') {
+              createdByUserId = taskObj.created_by_user_id;
+            }
+          }
+
+          return {
+            ...taskObj,
+            id: taskObj._id.toString(),
+            assigned_to_user_id: assignedToUserId,
+            created_by_user_id: createdByUserId
+          };
+        });
+
+        projectsWithTasks.push({
+          ...projectObj,
+          id: projectObj._id.toString(),
+          tasks: transformedTasks
+        });
+      }
+
+      return { projects: projectsWithTasks };
     } catch (error) {
       console.error('Error in getProjectsByStatus:', error);
       if (error instanceof AuthorizationError) {

@@ -365,7 +365,7 @@ export class BackendApiClient {
    * Get timesheet details by ID
    */
   async getTimesheetDetails(timesheetId: string): Promise<any> {
-    return this.get(`/api/v1/timesheets/details/${timesheetId}`);
+    return this.get(`/timesheets/details/${timesheetId}`);
   }
 
   /**

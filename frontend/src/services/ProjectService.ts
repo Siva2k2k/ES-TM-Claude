@@ -687,9 +687,23 @@ export class ProjectService {
       // Fall back to fetching per-project tasks only when tasks are not embedded.
       const allTasks: Task[] = [];
       const projects = projectsResult.projects as Project[];
+      
+      console.log(`🔍 getUserTasks: Processing ${projects.length} projects for user ${userId}`);
+      
       for (const project of projects) {
-        if (Array.isArray((project as unknown as { tasks?: unknown }).tasks) && (project as any).tasks?.length > 0) {
-          allTasks.push(...((project as unknown as { tasks?: Task[] }).tasks || []));
+        const projectWithTasks = project as unknown as { tasks?: Task[] };
+        if (Array.isArray(projectWithTasks.tasks) && projectWithTasks.tasks?.length > 0) {
+          const projectTasks = (project as unknown as { tasks?: Task[] }).tasks || [];
+          console.log(`🔍 Found ${projectTasks.length} embedded tasks in project ${project.name || project.id}`);
+          
+          // Filter tasks assigned to this user
+          const userTasks = projectTasks.filter(task => {
+            const isAssigned = task.assigned_to_user_id === userId;
+            console.log(`🔍 Task "${task.name}": assigned_to="${task.assigned_to_user_id}", userId="${userId}", matches=${isAssigned}`);
+            return isAssigned;
+          });
+          
+          allTasks.push(...userTasks);
           continue;
         }
 
@@ -706,14 +720,16 @@ export class ProjectService {
           );
 
           if (tasksResponse.success && Array.isArray(tasksResponse.tasks)) {
-            allTasks.push(...tasksResponse.tasks);
+            // Filter tasks assigned to this user
+            const userTasks = tasksResponse.tasks.filter(task => task.assigned_to_user_id === userId);
+            allTasks.push(...userTasks);
           }
         } catch (error) {
           console.warn(`Failed to fetch tasks for project ${projId}:`, error);
         }
       }
 
-      console.log('🔍 Extracted user tasks:', allTasks);
+      console.log(`🔍 Final filtered tasks for user ${userId}:`, allTasks);
       return { tasks: allTasks };
     } catch (error) {
       console.error('Error in getUserTasks:', error);

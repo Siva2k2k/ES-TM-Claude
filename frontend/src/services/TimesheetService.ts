@@ -96,7 +96,7 @@ export class TimesheetService {
    */
   static async escalateToManagement(timesheetId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.post(`/api/v1/timesheets/${timesheetId}/escalate`);
+      const response = await backendApi.post(`/timesheets/${timesheetId}/escalate`);
 
       return {
         success: response.success || false,
@@ -113,7 +113,7 @@ export class TimesheetService {
    */
   static async markTimesheetBilled(timesheetId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.post(`/api/v1/timesheets/${timesheetId}/mark-billed`);
+      const response = await backendApi.post(`/timesheets/${timesheetId}/mark-billed`);
 
       return {
         success: response.success || false,
@@ -191,7 +191,7 @@ export class TimesheetService {
    */
   static async getTimeEntries(timesheetId: string): Promise<{ entries: TimeEntry[]; error?: string }> {
     try {
-      const response = await backendApi.get(`/api/v1/timesheets/${timesheetId}/entries`);
+      const response = await backendApi.get(`/timesheets/${timesheetId}/entries`);
 
       if (response.success && response.data) {
         return { entries: response.data as TimeEntry[] };
@@ -240,7 +240,7 @@ export class TimesheetService {
    */
   static async deleteTimesheetEntries(timesheetId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.delete(`/api/v1/timesheets/${timesheetId}/entries`);
+      const response = await backendApi.delete(`/timesheets/${timesheetId}/entries`);
 
       return {
         success: response.success || false,
@@ -269,7 +269,7 @@ export class TimesheetService {
     }[]
   ): Promise<{ success: boolean; error?: string; updatedEntries?: TimeEntry[] }> {
     try {
-      const response = await backendApi.put(`/api/v1/timesheets/${timesheetId}/entries`, {
+      const response = await backendApi.put(`/timesheets/${timesheetId}/entries`, {
         entries
       });
 
@@ -297,7 +297,7 @@ export class TimesheetService {
     try {
       console.log('🔍 TimesheetService.getTimesheetById called with ID:', timesheetId);
 
-      const response = await backendApi.get(`/api/v1/timesheets/details/${timesheetId}`);
+      const response = await backendApi.get(`/timesheets/details/${timesheetId}`);
 
       if (response.success && response.data) {
         const timesheetData = response.data;
@@ -374,7 +374,7 @@ export class TimesheetService {
     try {
       console.log(`📅 Loading calendar data for user ${userId}, year ${year}, month ${month}`);
 
-      const response = await backendApi.get(`/api/v1/timesheets/calendar/${userId}/${year}/${month}`);
+      const response = await backendApi.get(`/timesheets/calendar/${userId}/${year}/${month}`);
 
       if (response.success && response.data) {
         console.log(`📅 Calendar data keys: ${Object.keys(response.data).length} days with data`);

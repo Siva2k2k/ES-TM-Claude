@@ -140,20 +140,30 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
   const loadProjectsAndTasks = useCallback(async () => {
     setLoadingProjects(true);
     try {
-      // Load active projects
-      const projectsResult = await ProjectService.getActiveProjects();
+      // Check if user is authenticated
+      if (!currentUser?.id) {
+        console.error('No current user found');
+        setProjects([]);
+        setTasks([]);
+        return;
+      }
+
+      // Load user's projects (this works for employees)
+      const projectsResult = await ProjectService.getUserProjects(currentUser.id);
 
       if (projectsResult.error) {
         console.error('Error loading projects:', projectsResult.error);
         setProjects([]);
       } else {
-        setProjects(projectsResult.projects);
+        // Filter for active projects only
+        const activeProjects = projectsResult.projects.filter(project => project.status === 'active');
+        setProjects(activeProjects);
 
-        // Load tasks for all projects
+        // Load tasks for all active projects
         const allTasks: Task[] = [];
-        console.log(`📋 Loading tasks for ${projectsResult.projects.length} projects`);
+        console.log(`📋 Loading tasks for ${activeProjects.length} active projects`);
 
-        for (const project of projectsResult.projects) {
+        for (const project of activeProjects) {
           console.log(`📋 Loading tasks for project: ${project.name} (${project.id})`);
           const tasksResult = await ProjectService.getProjectTasks(project.id);
           if (!tasksResult.error) {
@@ -175,7 +185,7 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
       setLoadingProjects(false);
       console.log('🏁 Finished loading projects and tasks');
     }
-  }, []);
+  }, [currentUser?.id]);
 
   // Validation helper - runs only during submission (not for drafts)
   const validateTimesheet = (entries: Array<{ project_id?: string; task_id?: string; date: string; hours: number }>): string[] => {
