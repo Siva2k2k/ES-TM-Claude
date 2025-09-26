@@ -142,7 +142,7 @@ export class BackendApiClient {
    * Get all timesheets (Super Admin and Management only)
    */
   async getAllTimesheets(): Promise<{ success: boolean; data: any[] }> {
-    return this.request('/api/v1/timesheets');
+    return this.request('/timesheets');
   }
 
   /**
@@ -166,7 +166,7 @@ export class BackendApiClient {
     if (params.offset) searchParams.append('offset', params.offset.toString());
 
     const queryString = searchParams.toString();
-    const endpoint = `/api/v1/timesheets/user${queryString ? '?' + queryString : ''}`;
+    const endpoint = `/timesheets/user${queryString ? '?' + queryString : ''}`;
 
     return this.request(endpoint);
   }
@@ -178,7 +178,7 @@ export class BackendApiClient {
     userId: string;
     weekStartDate: string;
   }): Promise<{ success: boolean; data: any }> {
-    return this.request('/api/v1/timesheets', {
+    return this.request('/timesheets', {
       method: 'POST',
       body: JSON.stringify(data)
     });
@@ -191,14 +191,14 @@ export class BackendApiClient {
     userId: string,
     weekStartDate: string
   ): Promise<{ success: boolean; data: any }> {
-    return this.request(`/api/v1/timesheets/${userId}/${weekStartDate}`);
+    return this.request(`/timesheets/${userId}/${weekStartDate}`);
   }
 
   /**
    * Submit timesheet for approval
    */
   async submitTimesheet(timesheetId: string): Promise<{ success: boolean; message?: string }> {
-    return this.request(`/api/v1/timesheets/${timesheetId}/submit`, {
+    return this.request(`/timesheets/${timesheetId}/submit`, {
       method: 'POST'
     });
   }
@@ -211,7 +211,7 @@ export class BackendApiClient {
     action: 'approve' | 'reject',
     reason?: string
   ): Promise<{ success: boolean; message?: string }> {
-    return this.request(`/api/v1/timesheets/${timesheetId}/manager-action`, {
+    return this.request(`/timesheets/${timesheetId}/manager-action`, {
       method: 'POST',
       body: JSON.stringify({ action, reason })
     });
@@ -225,7 +225,7 @@ export class BackendApiClient {
     action: 'approve' | 'reject',
     reason?: string
   ): Promise<{ success: boolean; message?: string }> {
-    return this.request(`/api/v1/timesheets/${timesheetId}/management-action`, {
+    return this.request(`/timesheets/${timesheetId}/management-action`, {
       method: 'POST',
       body: JSON.stringify({ action, reason })
     });
@@ -247,12 +247,151 @@ export class BackendApiClient {
       custom_task_description?: string;
     }
   ): Promise<{ success: boolean; data: any }> {
-    return this.request(`/api/v1/timesheets/${timesheetId}/entries`, {
+    return this.request(`/timesheets/${timesheetId}/entries`, {
       method: 'POST',
       body: JSON.stringify(entryData)
     });
+  }
+
+  /**
+   * Get timesheet dashboard statistics
+   */
+  async getTimesheetDashboard(): Promise<{
+    success: boolean;
+    data: {
+      totalTimesheets: number;
+      pendingApproval: number;
+      pendingManagement: number;
+      pendingBilling: number;
+      verified: number;
+      billed: number;
+      totalHours: number;
+      averageHoursPerWeek: number;
+      completionRate: number;
+    };
+  }> {
+    return this.request('/timesheets/dashboard');
+  }
+
+  // === BILLING SERVICE METHODS ===
+
+  /**
+   * Generate weekly billing snapshot
+   */
+  async generateWeeklyBillingSnapshot(weekStartDate: string): Promise<any> {
+    return this.post('/billing/snapshots/generate', { weekStartDate });
+  }
+
+  /**
+   * Get all billing snapshots
+   */
+  async getAllBillingSnapshots(): Promise<any> {
+    return this.get('/billing/snapshots');
+  }
+
+  /**
+   * Get billing dashboard
+   */
+  async getBillingDashboard(): Promise<any> {
+    return this.get('/billing/dashboard');
+  }
+
+  /**
+   * Approve monthly billing
+   */
+  async approveMonthlyBilling(year: number, month: number): Promise<any> {
+    return this.post('/billing/approve-monthly', { year, month });
+  }
+
+  /**
+   * Get revenue by project
+   */
+  async getRevenueByProject(): Promise<any> {
+    return this.get('/billing/revenue-by-project');
+  }
+
+  /**
+   * Export billing report
+   */
+  async exportBillingReport(startDate: string, endDate: string, format: string): Promise<any> {
+    return this.post('/billing/export', { startDate, endDate, format });
+  }
+
+  // === TIMESHEET SERVICE METHODS ===
+
+  /**
+   * Get timesheets by status
+   */
+  async getTimesheetsByStatus(status: string): Promise<any> {
+    return this.get(`/timesheets/status/${status}`);
+  }
+
+  /**
+   * Escalate timesheet to management
+   */
+  async escalateTimesheet(timesheetId: string): Promise<any> {
+    return this.post(`/timesheets/${timesheetId}/escalate`);
+  }
+
+  /**
+   * Mark timesheet as billed
+   */
+  async markTimesheetBilled(timesheetId: string): Promise<any> {
+    return this.post(`/timesheets/${timesheetId}/mark-billed`);
+  }
+
+  /**
+   * Get time entries for timesheet
+   */
+  async getTimesheetEntries(timesheetId: string): Promise<any> {
+    return this.get(`/timesheets/${timesheetId}/entries`);
+  }
+
+  /**
+   * Delete timesheet entries
+   */
+  async deleteTimesheetEntries(timesheetId: string): Promise<any> {
+    return this.delete(`/timesheets/${timesheetId}/entries`);
+  }
+
+  /**
+   * Update timesheet entries
+   */
+  async updateTimesheetEntries(timesheetId: string, entries: any[]): Promise<any> {
+    return this.put(`/timesheets/${timesheetId}/entries`, { entries });
+  }
+
+  /**
+   * Get timesheet details by ID
+   */
+  async getTimesheetDetails(timesheetId: string): Promise<any> {
+    return this.get(`/api/v1/timesheets/details/${timesheetId}`);
+  }
+
+  /**
+   * Get calendar data for user
+   */
+  async getCalendarData(userId: string, year: number, month: number): Promise<any> {
+    return this.get(`/timesheets/calendar/${userId}/${year}/${month}`);
+  }
+
+  /**
+   * Get timesheets for approval
+   */
+  async getTimesheetsForApproval(queryParams: string): Promise<any> {
+    return this.get(`/timesheets/for-approval?${queryParams}`);
+  }
+
+  /**
+   * Create weekly billing snapshot
+   */
+  async createWeeklyBillingSnapshot(weekStartDate: string): Promise<any> {
+    return this.post('/billing/snapshots/weekly', { weekStartDate });
   }
 }
 
 // Create singleton instance
 export const backendApi = new BackendApiClient();
+
+// Export error class for use in services
+// export { BackendApiError };

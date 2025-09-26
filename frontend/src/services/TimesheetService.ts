@@ -1,10 +1,10 @@
-import { supabase } from '../lib/supabase';
 import { BackendTimesheetService } from './BackendTimesheetService';
+import { backendApi } from '../lib/backendApi';
 import type { Timesheet, TimeEntry, TimesheetStatus, TimesheetWithDetails } from '../types';
 
 /**
- * Timesheet Management Service - Hybrid Backend/Supabase Integration
- * Core timesheet operations use Backend API, auth and dashboard use Supabase
+ * Timesheet Management Service - Backend API Integration
+ * All timesheet operations now use MongoDB backend
  */
 export class TimesheetService {
   /**
@@ -19,25 +19,16 @@ export class TimesheetService {
    */
   static async getTimesheetsByStatus(status: TimesheetStatus): Promise<{ timesheets: Timesheet[]; error?: string }> {
     try {
-      const { data, error } = await supabase
-        .from('timesheets')
-        .select(`
-          *,
-          users!inner(full_name, email, role)
-        `)
-        .eq('status', status)
-        .is('deleted_at', null)
-        .order('week_start_date', { ascending: false });
+      const response = await backendApi.get(`/timesheets/status/${status}`);
 
-      if (error) {
-        console.error('Error fetching timesheets by status:', error);
-        return { timesheets: [], error: error.message };
+      if (response.success && response.data) {
+        return { timesheets: response.data as Timesheet[] };
+      } else {
+        return { timesheets: [], error: response.message || 'Failed to fetch timesheets by status' };
       }
-
-      return { timesheets: data as Timesheet[] };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in getTimesheetsByStatus:', error);
-      return { timesheets: [], error: 'Failed to fetch timesheets by status' };
+      return { timesheets: [], error: error.message || 'Failed to fetch timesheets by status' };
     }
   }
 
@@ -55,31 +46,10 @@ export class TimesheetService {
   }
 
   /**
-   * Create new timesheet - Using Backend API with auth check
+   * Create new timesheet - Using Backend API
    */
   static async createTimesheet(userId: string, weekStartDate: string): Promise<{ timesheet?: Timesheet; error?: string }> {
-    try {
-      // Verify auth with Supabase first
-      const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-      if (authError) {
-        return { error: 'Authentication error: ' + authError.message };
-      }
-
-      if (!user) {
-        return { error: 'User not authenticated' };
-      }
-
-      if (user.id !== userId) {
-        return { error: 'User ID mismatch - cannot create timesheet for different user' };
-      }
-
-      // Use backend service for the actual creation
-      return BackendTimesheetService.createTimesheet(userId, weekStartDate);
-    } catch (error) {
-      console.error('Error in createTimesheet:', error);
-      return { error: 'Failed to create timesheet' };
-    }
+    return BackendTimesheetService.createTimesheet(userId, weekStartDate);
   }
 
   /**
@@ -126,20 +96,15 @@ export class TimesheetService {
    */
   static async escalateToManagement(timesheetId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const { error } = await supabase.rpc('escalate_to_management', {
-        timesheet_uuid: timesheetId
-      });
+      const response = await backendApi.post(`/api/v1/timesheets/${timesheetId}/escalate`);
 
-      if (error) {
-        console.error('Error escalating timesheet:', error);
-        return { success: false, error: error.message };
-      }
-
-      console.log(`Timesheet escalated to management: ${timesheetId}`);
-      return { success: true };
-    } catch (error) {
+      return {
+        success: response.success || false,
+        error: response.success ? undefined : (response.message || 'Failed to escalate timesheet')
+      };
+    } catch (error: any) {
       console.error('Error in escalateToManagement:', error);
-      return { success: false, error: 'Failed to escalate timesheet' };
+      return { success: false, error: error.message || 'Failed to escalate timesheet' };
     }
   }
 
@@ -148,25 +113,20 @@ export class TimesheetService {
    */
   static async markTimesheetBilled(timesheetId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const { error } = await supabase.rpc('mark_timesheet_billed', {
-        timesheet_uuid: timesheetId
-      });
+      const response = await backendApi.post(`/api/v1/timesheets/${timesheetId}/mark-billed`);
 
-      if (error) {
-        console.error('Error marking timesheet as billed:', error);
-        return { success: false, error: error.message };
-      }
-
-      console.log(`Timesheet marked as billed: ${timesheetId}`);
-      return { success: true };
-    } catch (error) {
+      return {
+        success: response.success || false,
+        error: response.success ? undefined : (response.message || 'Failed to mark timesheet as billed')
+      };
+    } catch (error: any) {
       console.error('Error in markTimesheetBilled:', error);
-      return { success: false, error: 'Failed to mark timesheet as billed' };
+      return { success: false, error: error.message || 'Failed to mark timesheet as billed' };
     }
   }
 
   /**
-   * Get timesheet dashboard data - Using Backend/Supabase (keeping Supabase for now)
+   * Get timesheet dashboard data using MongoDB backend API
    */
   static async getTimesheetDashboard(): Promise<{
     totalTimesheets: number;
@@ -180,7 +140,50 @@ export class TimesheetService {
     completionRate: number;
     error?: string;
   }> {
-    return BackendTimesheetService.getTimesheetDashboard();
+    try {
+      const response = await backendApi.getTimesheetDashboard();
+
+      if (response.success && response.data) {
+        return {
+          totalTimesheets: response.data.totalTimesheets || 0,
+          pendingApproval: response.data.pendingApproval || 0,
+          pendingManagement: response.data.pendingManagement || 0,
+          pendingBilling: response.data.pendingBilling || 0,
+          verified: response.data.verified || 0,
+          billed: response.data.billed || 0,
+          totalHours: response.data.totalHours || 0,
+          averageHoursPerWeek: response.data.averageHoursPerWeek || 0,
+          completionRate: response.data.completionRate || 0
+        };
+      } else {
+        return {
+          totalTimesheets: 0,
+          pendingApproval: 0,
+          pendingManagement: 0,
+          pendingBilling: 0,
+          verified: 0,
+          billed: 0,
+          totalHours: 0,
+          averageHoursPerWeek: 0,
+          completionRate: 0,
+          error: 'Failed to fetch dashboard data'
+        };
+      }
+    } catch (error: any) {
+      console.error('Error in getTimesheetDashboard:', error);
+      return {
+        totalTimesheets: 0,
+        pendingApproval: 0,
+        pendingManagement: 0,
+        pendingBilling: 0,
+        verified: 0,
+        billed: 0,
+        totalHours: 0,
+        averageHoursPerWeek: 0,
+        completionRate: 0,
+        error: error.message || 'Failed to fetch dashboard data'
+      };
+    }
   }
 
   /**
@@ -188,128 +191,22 @@ export class TimesheetService {
    */
   static async getTimeEntries(timesheetId: string): Promise<{ entries: TimeEntry[]; error?: string }> {
     try {
-      const { data, error } = await supabase
-        .from('time_entries')
-        .select(`
-          *,
-          projects(name),
-          tasks(name)
-        `)
-        .eq('timesheet_id', timesheetId)
-        .is('deleted_at', null)
-        .order('date', { ascending: true });
+      const response = await backendApi.get(`/api/v1/timesheets/${timesheetId}/entries`);
 
-      if (error) {
-        console.error('Error fetching time entries:', error);
-        return { entries: [], error: error.message };
+      if (response.success && response.data) {
+        return { entries: response.data as TimeEntry[] };
+      } else {
+        return { entries: [], error: response.message || 'Failed to fetch time entries' };
       }
-
-      return { entries: data as TimeEntry[] };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in getTimeEntries:', error);
-      return { entries: [], error: 'Failed to fetch time entries' };
+      return { entries: [], error: error.message || 'Failed to fetch time entries' };
     }
   }
 
   /**
-   * Validate time entry for overlaps and business rules
+   * Validation is now handled by the backend
    */
-  private static async validateTimeEntry(
-    timesheetId: string,
-    entryData: {
-      project_id?: string;
-      task_id?: string;
-      date: string;
-      hours: number;
-      description?: string;
-      is_billable: boolean;
-      custom_task_description?: string;
-      entry_type: 'project_task' | 'custom_task';
-    },
-    excludeEntryId?: string
-  ): Promise<{ valid: boolean; error?: string }> {
-    try {
-      // 1. Check for overlapping entries on the same date
-      const { data: existingEntries, error: fetchError } = await supabase
-        .from('time_entries')
-        .select('id, project_id, task_id, hours, entry_type, custom_task_description')
-        .eq('timesheet_id', timesheetId)
-        .eq('date', entryData.date)
-        .is('deleted_at', null);
-
-      if (fetchError) {
-        return { valid: false, error: `Failed to check existing entries: ${fetchError.message}` };
-      }
-
-      // Filter out the entry being updated if this is an update operation
-      type ExistingEntry = {
-        id: string;
-        project_id?: string;
-        task_id?: string;
-        hours: number;
-        entry_type: string;
-        custom_task_description?: string;
-      };
-
-      const entries = excludeEntryId
-        ? (existingEntries as ExistingEntry[]).filter(e => e.id !== excludeEntryId)
-        : (existingEntries as ExistingEntry[]);
-
-      // 2. Check for duplicate project/task combinations
-      if (entryData.entry_type === 'project_task' && entryData.project_id && entryData.task_id) {
-        const duplicateProjectTask = entries.find(e =>
-          e.entry_type === 'project_task' &&
-          e.project_id === entryData.project_id &&
-          e.task_id === entryData.task_id
-        );
-
-        if (duplicateProjectTask) {
-          return {
-            valid: false,
-            error: 'A time entry for this project and task already exists on this date. Please update the existing entry instead.'
-          };
-        }
-      }
-
-      // 3. Check for duplicate custom tasks with same description
-      if (entryData.entry_type === 'custom_task' && entryData.custom_task_description) {
-        const duplicateCustomTask = entries.find(e =>
-          e.entry_type === 'custom_task' &&
-          e.custom_task_description === entryData.custom_task_description
-        );
-
-        if (duplicateCustomTask) {
-          return {
-            valid: false,
-            error: 'A custom task with this description already exists on this date. Please update the existing entry instead.'
-          };
-        }
-      }
-
-      // 4. Check daily hours limit (8-10 hours as per business rule)
-      const currentDayHours = entries.reduce((sum: number, entry: ExistingEntry) => sum + entry.hours, 0);
-      const totalHoursWithNewEntry = currentDayHours + entryData.hours;
-
-      if (totalHoursWithNewEntry > 10) {
-        return {
-          valid: false,
-          error: `Total hours for this date would exceed the maximum limit of 10 hours (current: ${currentDayHours}, adding: ${entryData.hours}, total: ${totalHoursWithNewEntry})`
-        };
-      }
-
-      if (totalHoursWithNewEntry < 0) {
-        return {
-          valid: false,
-          error: 'Hours cannot be negative'
-        };
-      }
-
-      return { valid: true };
-    } catch (error) {
-      console.error('Error in validateTimeEntry:', error);
-      return { valid: false, error: 'Failed to validate time entry' };
-    }
-  }
 
   /**
    * Add time entry to timesheet - Using Backend API
@@ -331,44 +228,11 @@ export class TimesheetService {
   }
 
   /**
-   * Update timesheet total hours (called automatically after entry changes)
+   * Update timesheet total hours (handled automatically by backend)
    */
   private static async updateTimesheetTotalHours(timesheetId: string): Promise<void> {
-    try {
-      console.log('🔄 Updating total hours for timesheet:', timesheetId);
-
-      // Calculate total hours from time entries
-      const { data: entries, error: entriesError } = await supabase
-        .from('time_entries')
-        .select('hours')
-        .eq('timesheet_id', timesheetId)
-        .is('deleted_at', null);
-
-      if (entriesError) {
-        console.error('Error calculating total hours:', entriesError);
-        return;
-      }
-
-      const totalHours = (entries as TimeEntry[]).reduce((sum: number, entry: TimeEntry) => sum + entry.hours, 0);
-      console.log('📊 Calculated total hours:', totalHours);
-
-      // Update timesheet
-      const { error: updateError } = await supabase
-        .from('timesheets')
-        .update({
-          total_hours: totalHours,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', timesheetId);
-
-      if (updateError) {
-        console.error('Error updating timesheet total hours:', updateError);
-      } else {
-        console.log('✅ Timesheet total hours updated successfully');
-      }
-    } catch (error) {
-      console.error('Error in updateTimesheetTotalHours:', error);
-    }
+    // This is now handled automatically by the backend when entries are updated
+    console.log('✅ Timesheet total hours updated automatically by backend:', timesheetId);
   }
 
   /**
@@ -376,25 +240,20 @@ export class TimesheetService {
    */
   static async deleteTimesheetEntries(timesheetId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const { error } = await supabase
-        .from('time_entries')
-        .delete()
-        .eq('timesheet_id', timesheetId);
+      const response = await backendApi.delete(`/api/v1/timesheets/${timesheetId}/entries`);
 
-      if (error) {
-        console.error('Error deleting timesheet entries:', error);
-        return { success: false, error: error.message };
-      }
-
-      return { success: true };
-    } catch (error) {
+      return {
+        success: response.success || false,
+        error: response.success ? undefined : (response.message || 'Failed to delete timesheet entries')
+      };
+    } catch (error: any) {
       console.error('Error in deleteTimesheetEntries:', error);
-      return { success: false, error: 'Failed to delete timesheet entries' };
+      return { success: false, error: error.message || 'Failed to delete timesheet entries' };
     }
   }
 
   /**
-   * Update timesheet with new entries using transaction to prevent data integrity issues
+   * Update timesheet with new entries using backend API
    */
   static async updateTimesheetEntries(
     timesheetId: string,
@@ -410,103 +269,24 @@ export class TimesheetService {
     }[]
   ): Promise<{ success: boolean; error?: string; updatedEntries?: TimeEntry[] }> {
     try {
-      // Validate all entries before proceeding
-      for (const entry of entries) {
-        const validation = await this.validateTimeEntry(timesheetId, entry);
-        if (!validation.valid) {
-          return { success: false, error: `Validation failed for entry on ${entry.date}: ${validation.error}` };
-        }
+      const response = await backendApi.put(`/api/v1/timesheets/${timesheetId}/entries`, {
+        entries
+      });
+
+      if (response.success) {
+        return {
+          success: true,
+          updatedEntries: response.data as TimeEntry[]
+        };
+      } else {
+        return {
+          success: false,
+          error: response.message || 'Failed to update timesheet entries'
+        };
       }
-
-      // Use RPC function for atomic update if available, otherwise fallback to manual transaction
-      try {
-        // Prepare entries for RPC call
-        const entriesForRpc = entries.map(e => ({
-          timesheet_id: timesheetId,
-          project_id: e.project_id || null,
-          task_id: e.task_id || null,
-          date: e.date,
-          hours: e.hours,
-          description: e.description || null,
-          is_billable: e.is_billable,
-          custom_task_description: e.custom_task_description || null,
-          entry_type: e.entry_type
-        }));
-
-        // Try to use RPC for atomic operation
-        const { data: rpcResult, error: rpcError } = await supabase.rpc('update_timesheet_entries_atomic', {
-          timesheet_uuid: timesheetId,
-          new_entries: entriesForRpc
-        });
-
-        if (!rpcError && rpcResult) {
-          console.log('✅ Atomic update completed via RPC');
-          return { success: true, updatedEntries: rpcResult as TimeEntry[] };
-        }
-
-        console.log('⚠️ RPC not available or failed, falling back to manual transaction:', rpcError?.message);
-      } catch (rpcError) {
-        console.log('⚠️ RPC error, falling back to manual transaction:', rpcError);
-      }
-
-      // Fallback: Manual approach with better error handling
-      console.log('🔄 Starting manual transaction for timesheet entries update');
-
-      // Step 1: Soft delete existing entries (mark as deleted instead of hard delete)
-      const { error: softDeleteError } = await supabase
-        .from('time_entries')
-        .update({ deleted_at: new Date().toISOString() })
-        .eq('timesheet_id', timesheetId)
-        .is('deleted_at', null);
-
-      if (softDeleteError) {
-        return { success: false, error: `Failed to mark entries as deleted: ${softDeleteError.message}` };
-      }
-
-      let insertedEntries: TimeEntry[] = [];
-
-      // Step 2: Insert new entries if any
-      if (entries && entries.length > 0) {
-        const insertData = entries.map(e => ({
-          timesheet_id: timesheetId,
-          project_id: e.project_id || null,
-          task_id: e.task_id || null,
-          date: e.date,
-          hours: e.hours,
-          description: e.description,
-          is_billable: e.is_billable,
-          custom_task_description: e.custom_task_description,
-          entry_type: e.entry_type
-        }));
-
-        const { data: inserted, error: insertError } = await supabase
-          .from('time_entries')
-          .insert(insertData)
-          .select();
-
-        if (insertError) {
-          // Rollback: Restore soft-deleted entries
-          console.error('❌ Insert failed, rolling back soft deletes');
-          await supabase
-            .from('time_entries')
-            .update({ deleted_at: null })
-            .eq('timesheet_id', timesheetId)
-            .not('deleted_at', 'is', null);
-
-          return { success: false, error: `Failed to insert new entries: ${insertError.message}` };
-        }
-
-        insertedEntries = (inserted || []) as TimeEntry[];
-      }
-
-      // Step 3: Update timesheet total hours
-      await this.updateTimesheetTotalHours(timesheetId);
-
-      console.log('✅ Manual transaction completed successfully');
-      return { success: true, updatedEntries: insertedEntries };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in updateTimesheetEntries:', error);
-      return { success: false, error: 'Failed to update timesheet entries' };
+      return { success: false, error: error.message || 'Failed to update timesheet entries' };
     }
   }
 
@@ -517,120 +297,44 @@ export class TimesheetService {
     try {
       console.log('🔍 TimesheetService.getTimesheetById called with ID:', timesheetId);
 
-      // Skip the session check for now and go directly to the query
-      console.log('🔎 Attempting basic timesheet query directly...');
+      const response = await backendApi.get(`/api/v1/timesheets/details/${timesheetId}`);
 
-      let basicTimesheet, basicError;
+      if (response.success && response.data) {
+        const timesheetData = response.data;
 
-      try {
-        // Set a timeout for the query
-        const queryStart = Date.now();
-        console.log('⏳ Starting query at:', new Date().toISOString());
+        // Calculate hours if not provided
+        const billableHours = timesheetData.billableHours ||
+          (timesheetData.time_entries || []).filter((e: any) => e.is_billable).reduce((sum: number, e: any) => sum + e.hours, 0);
+        const nonBillableHours = timesheetData.nonBillableHours ||
+          (timesheetData.total_hours || 0) - billableHours;
 
-        const { data, error } = await supabase
-          .from('timesheets')
-          .select('*')
-          .eq('id', timesheetId)
-          .is('deleted_at', null)
-          .single();
+        const enhancedTimesheet: TimesheetWithDetails = {
+          ...timesheetData,
+          entries: timesheetData.time_entries || [],
+          billableHours,
+          nonBillableHours,
+          can_edit: ['draft', 'manager_rejected', 'management_rejected'].includes(timesheetData.status),
+          can_submit: timesheetData.status === 'draft' && (timesheetData.total_hours || 0) > 0,
+          can_approve: false, // Will be determined by role in component
+          can_reject: false, // Will be determined by role in component
+          next_action: this.getNextAction(timesheetData.status)
+        };
 
-        const queryTime = Date.now() - queryStart;
-        console.log(`⏱️ Query completed in ${queryTime}ms`);
+        console.log('✅ Enhanced timesheet created:', {
+          id: enhancedTimesheet.id,
+          status: enhancedTimesheet.status,
+          total_hours: enhancedTimesheet.total_hours,
+          can_submit: enhancedTimesheet.can_submit,
+          entries_count: enhancedTimesheet.time_entries?.length || 0
+        });
 
-        basicTimesheet = data;
-        basicError = error;
-      } catch (queryError) {
-        console.error('💥 Query exception:', queryError);
-        return { error: 'Database query failed' };
+        return { timesheet: enhancedTimesheet };
+      } else {
+        return { error: response.message || 'Failed to fetch timesheet details' };
       }
-
-      console.log('📄 Basic timesheet query result:', { basicTimesheet, error: basicError });
-
-      if (basicError) {
-        console.error('❌ Error in basic timesheet query:', basicError);
-        return { error: basicError.message };
-      }
-
-      if (!basicTimesheet) {
-        console.error('❌ No timesheet found with ID:', timesheetId);
-        return { error: 'Timesheet not found' };
-      }
-
-      // Now get user details separately
-      console.log('👤 Fetching user details for user_id:', basicTimesheet.user_id);
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('full_name, email, role')
-        .eq('id', basicTimesheet.user_id)
-        .single();
-
-      console.log('👤 User query result:', { userData, error: userError });
-
-      if (userError) {
-        console.error('❌ Error fetching user:', userError);
-        return { error: userError.message };
-      }
-
-      // Combine the timesheet with user data
-      const timesheet = {
-        ...basicTimesheet,
-        users: userData
-      };
-
-      console.log('📋 Fetching time entries for timesheet...');
-
-      // Get time entries
-      const { data: entries, error: entriesError } = await supabase
-        .from('time_entries')
-        .select(`
-          *,
-          projects(name),
-          tasks(name)
-        `)
-        .eq('timesheet_id', timesheetId)
-        .is('deleted_at', null)
-        .order('date', { ascending: true });
-
-      console.log('⏰ Time entries query result:', { entries, error: entriesError });
-
-      if (entriesError) {
-        console.error('❌ Error fetching time entries:', entriesError);
-        return { error: entriesError.message };
-      }
-
-      // Calculate billable/non-billable hours
-      const billableHours = entries?.filter((e: TimeEntry) => e.is_billable).reduce((sum: number, e: TimeEntry) => sum + e.hours, 0) || 0;
-      const nonBillableHours = entries?.filter((e: TimeEntry) => !e.is_billable).reduce((sum: number, e: TimeEntry) => sum + e.hours, 0) || 0;
-
-      console.log('💰 Calculated hours:', { billableHours, nonBillableHours, totalEntries: entries?.length || 0 });
-
-      const enhancedTimesheet: TimesheetWithDetails = {
-        ...timesheet,
-        time_entries: entries as TimeEntry[] || [],
-        entries: entries as TimeEntry[] || [],
-        user_name: timesheet.users.full_name,
-        user_email: timesheet.users.email,
-        billableHours,
-        nonBillableHours,
-        can_edit: ['draft', 'manager_rejected', 'management_rejected'].includes(timesheet.status),
-        can_submit: timesheet.status === 'draft' && timesheet.total_hours > 0,
-        can_approve: false, // Will be determined by role in component
-        can_reject: false, // Will be determined by role in component
-        next_action: this.getNextAction(timesheet.status)
-      };
-
-      console.log('✅ Enhanced timesheet created:', {
-        id: enhancedTimesheet.id,
-        status: enhancedTimesheet.status,
-        total_hours: enhancedTimesheet.total_hours,
-        can_submit: enhancedTimesheet.can_submit,
-        entries_count: enhancedTimesheet.time_entries?.length || 0
-      });
-
-      return { timesheet: enhancedTimesheet };
-    } catch (error) {
+    } catch (error: any) {
       console.error('💥 Error in getTimesheetById:', error);
-      return { error: 'Failed to fetch timesheet details' };
+      return { error: error.message || 'Failed to fetch timesheet details' };
     }
   }
 
@@ -661,7 +365,7 @@ export class TimesheetService {
   }
 
   /**
-   * Get calendar data for a user and month with improved boundary handling
+   * Get calendar data for a user and month
    */
   static async getCalendarData(userId: string, year: number, month: number): Promise<{
     calendarData: { [date: string]: { hours: number; status: string; entries: TimeEntry[] } };
@@ -670,176 +374,17 @@ export class TimesheetService {
     try {
       console.log(`📅 Loading calendar data for user ${userId}, year ${year}, month ${month}`);
 
-      // Validate input parameters
-      if (month < 1 || month > 12) {
-        return { calendarData: {}, error: 'Invalid month parameter. Month must be between 1 and 12.' };
+      const response = await backendApi.get(`/api/v1/timesheets/calendar/${userId}/${year}/${month}`);
+
+      if (response.success && response.data) {
+        console.log(`📅 Calendar data keys: ${Object.keys(response.data).length} days with data`);
+        return { calendarData: response.data };
+      } else {
+        return { calendarData: {}, error: response.message || 'Failed to fetch calendar data' };
       }
-
-      if (year < 2000 || year > 2100) {
-        return { calendarData: {}, error: 'Invalid year parameter. Year must be between 2000 and 2100.' };
-      }
-
-      // Month parameter is 1-indexed (1=January, 12=December)
-      // Calculate proper month boundaries 
-      const monthStart = new Date(year, month - 1, 1); // First day of month
-      const monthEnd = new Date(year, month, 0); // Last day of month
-
-      // Fix timezone issues by using local date strings
-      const monthStartLocal = `${year}-${String(month).padStart(2, '0')}-01`;
-      const monthEndLocal = `${year}-${String(month).padStart(2, '0')}-${String(monthEnd.getDate()).padStart(2, '0')}`;
-
-      // Extend range to include partial weeks that span month boundaries
-      const rangeStart = new Date(monthStart);
-      rangeStart.setDate(rangeStart.getDate() - 7); // Include previous week
-
-      const rangeEnd = new Date(monthEnd);
-      rangeEnd.setDate(rangeEnd.getDate() + 7); // Include next week
-
-      console.log(`📅 Date range: ${rangeStart.toISOString().split('T')[0]} to ${rangeEnd.toISOString().split('T')[0]}`);
-      console.log(`📅 Target month boundaries: ${monthStartLocal} to ${monthEndLocal}`);
-      console.log(`📅 Month start date object: ${monthStart.toISOString()}`);
-      console.log(`📅 Month end date object: ${monthEnd.toISOString()}`);
-
-      // Prevent future date entries beyond current date + 3 days grace period
-      const now = new Date();
-      const maxAllowedDate = new Date(now);
-      maxAllowedDate.setDate(maxAllowedDate.getDate() + 3);
-
-      const { data: timesheets, error: timesheetsError } = await supabase
-        .from('timesheets')
-        .select(`
-          id,
-          user_id,
-          week_start_date,
-          week_end_date,
-          status,
-          total_hours,
-          created_at,
-          updated_at,
-          time_entries (
-            id,
-            project_id,
-            task_id,
-            date,
-            hours,
-            description,
-            is_billable,
-            custom_task_description,
-            entry_type,
-            created_at,
-            updated_at
-          )
-        `)
-        .eq('user_id', userId)
-        .gte('week_start_date', rangeStart.toISOString().split('T')[0])
-        .lte('week_end_date', rangeEnd.toISOString().split('T')[0])
-        .is('deleted_at', null)
-        .order('week_start_date', { ascending: true });
-
-      if (timesheetsError) {
-        console.error('❌ Error fetching calendar data:', timesheetsError);
-        return { calendarData: {}, error: timesheetsError.message };
-      }
-
-      console.log(`📅 Found ${timesheets?.length || 0} timesheets`);
-
-      const calendarData: { [date: string]: { hours: number; status: string; entries: TimeEntry[] } } = {};
-
-      if (timesheets) {
-        timesheets.forEach((timesheet: unknown) => {
-          const typedTimesheet = timesheet as {
-            id: string;
-            status: string;
-            updated_at: string;
-            time_entries?: unknown[];
-          };
-          console.log(`📅 Processing timesheet ${typedTimesheet.id} with status ${typedTimesheet.status}`);
-
-          if (typedTimesheet.time_entries && Array.isArray(typedTimesheet.time_entries)) {
-            console.log(`📅 Timesheet has ${typedTimesheet.time_entries.length} time entries`);
-            typedTimesheet.time_entries.forEach((entry: unknown, index: number) => {
-              const typedEntry = entry as {
-                id: string;
-                project_id: string;
-                task_id: string;
-                date: string;
-                hours: number;
-                description: string;
-                is_billable: boolean;
-                custom_task_description?: string;
-                entry_type: string;
-                created_at: string;
-                updated_at: string;
-              };
-
-              const entryDate = new Date(typedEntry.date);
-              const entryDateStr = typedEntry.date;
-
-              console.log(`📅 Entry ${index + 1}: ${entryDateStr} (${typedEntry.hours}h)`);
-              console.log(`📅   entryDateStr: ${entryDateStr}`);
-              console.log(`📅   monthStartLocal: ${monthStartLocal}`);
-              console.log(`📅   monthEndLocal: ${monthEndLocal}`);
-              console.log(`📅   entryDateStr >= monthStartLocal: ${entryDateStr >= monthStartLocal}`);
-              console.log(`📅   entryDateStr <= monthEndLocal: ${entryDateStr <= monthEndLocal}`);
-              console.log(`📅   Within month: ${entryDateStr >= monthStartLocal && entryDateStr <= monthEndLocal}`);
-
-              // Only include entries within the target month (using string comparison to avoid timezone issues)
-              if (entryDateStr >= monthStartLocal && entryDateStr <= monthEndLocal) {
-                // Check for future date validation
-                if (entryDate > maxAllowedDate) {
-                  console.warn(`⚠️ Skipping future entry beyond grace period: ${entryDateStr}`);
-                  return;
-                }
-
-                console.log(`📅   ✅ Adding entry to calendar data`);
-
-                if (!calendarData[entryDateStr]) {
-                  calendarData[entryDateStr] = {
-                    hours: 0,
-                    status: typedTimesheet.status,
-                    entries: []
-                  };
-                }
-
-                calendarData[entryDateStr].hours += typedEntry.hours;
-                calendarData[entryDateStr].entries.push({
-                  id: typedEntry.id,
-                  project_id: typedEntry.project_id,
-                  task_id: typedEntry.task_id,
-                  date: typedEntry.date,
-                  hours: typedEntry.hours,
-                  description: typedEntry.description,
-                  is_billable: typedEntry.is_billable,
-                  custom_task_description: typedEntry.custom_task_description,
-                  entry_type: typedEntry.entry_type,
-                  created_at: typedEntry.created_at,
-                  updated_at: typedEntry.updated_at
-                } as TimeEntry);
-
-                // Update status to most recent timesheet status for this date
-                if (new Date(typedTimesheet.updated_at) > new Date(calendarData[entryDateStr].entries[0]?.updated_at || '1970-01-01')) {
-                  calendarData[entryDateStr].status = typedTimesheet.status;
-                }
-              } else {
-                console.log(`📅   ❌ Entry ${entryDateStr} is outside target month range`);
-              }
-            });
-          }
-        });
-      }
-
-      console.log(`📅 Calendar data keys: ${Object.keys(calendarData).length} days with data`);
-      console.log(`📅 Sample calendar data:`, Object.keys(calendarData).slice(0, 3).map(date => ({
-        date,
-        hours: calendarData[date].hours,
-        status: calendarData[date].status,
-        entriesCount: calendarData[date].entries.length
-      })));
-
-      return { calendarData };
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Error in getCalendarData:', error);
-      return { calendarData: {}, error: 'Failed to fetch calendar data' };
+      return { calendarData: {}, error: error.message || 'Failed to fetch calendar data' };
     }
   }
 

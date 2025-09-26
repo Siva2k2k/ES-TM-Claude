@@ -88,24 +88,28 @@ export const ManagementDashboard: React.FC = () => {
       // Load project data
       if (canManageProjects()) {
         const projectResult = await ProjectService.getAllProjects();
-        if (!projectResult.error) {
+        if (!projectResult.error && projectResult.projects) {
           setStats(prev => ({
             ...prev,
-            activeProjects: projectResult.projects.filter(p => p.status === 'active').length
+            activeProjects: (projectResult.projects || []).filter(p => p.status === 'active').length
           }));
         }
       }
 
       // Load billing data
       if (canAccessBilling()) {
-        const billingResult = await BillingService.getBillingDashboard();
-        if (!billingResult.error) {
-          setBillingData(billingResult);
-          setStats(prev => ({
-            ...prev,
-            totalRevenue: billingResult.totalRevenue,
-            weeklyHours: billingResult.totalBillableHours
-          }));
+        try {
+          const billingResult = await BillingService.getBillingDashboard();
+          if (!billingResult.error) {
+            setBillingData(billingResult);
+            setStats(prev => ({
+              ...prev,
+              totalRevenue: billingResult.totalRevenue,
+              weeklyHours: billingResult.totalBillableHours
+            }));
+          }
+        } catch {
+          console.warn('BillingService not yet migrated to MongoDB, skipping billing dashboard data');
         }
       }
 
@@ -128,12 +132,16 @@ export const ManagementDashboard: React.FC = () => {
       }
 
       // Load timesheet data
-      const timesheetResult = await TimesheetService.getTimesheetDashboard();
-      if (!timesheetResult.error) {
-        setStats(prev => ({
-          ...prev,
-          weeklyHours: timesheetResult.totalHours
-        }));
+      try {
+        const timesheetResult = await TimesheetService.getTimesheetDashboard();
+        if (!timesheetResult.error) {
+          setStats(prev => ({
+            ...prev,
+            weeklyHours: timesheetResult.totalHours
+          }));
+        }
+      } catch {
+        console.warn('TimesheetService not yet fully migrated to MongoDB, skipping timesheet dashboard data');
       }
 
     } catch (error) {

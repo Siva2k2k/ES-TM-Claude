@@ -492,8 +492,10 @@ export const ProjectManagement: React.FC = () => {
     return matchesSearch && matchesStatus;
   });
 
-  // Get managers for project assignment
-  const managers = users.filter(user => user.role === 'manager' && user.is_active);
+  // Get managers for project assignment (manager, management, super_admin)
+  const managers = users.filter(user =>
+    ['manager', 'management', 'super_admin'].includes(user.role) && user.is_active
+  );
   const projectMembers = users.filter(user => 
     ['manager', 'lead', 'employee'].includes(user.role) && user.is_active
   );

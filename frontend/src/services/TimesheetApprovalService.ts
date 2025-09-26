@@ -1,6 +1,6 @@
 import type { Timesheet, TimeEntry, TimesheetStatus, UserRole, TimesheetWithDetails, User } from '../types';
 import { TimesheetService } from './TimesheetService';
-import { supabase } from '../lib/supabase';
+import { backendApi } from '../lib/backendApi';
 
 
 export interface TimeEntryInput {
@@ -124,14 +124,15 @@ export class TimesheetApprovalService {
       }
 
       // Get current user to determine their role for permission logic
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', userId)
-        .single();
-
-      if (userError) {
-        console.error('Error fetching user role:', userError);
+      try {
+        const userResponse = await backendApi.get(`/users/${userId}`);
+        if (!userResponse.success) {
+          console.error('Error fetching user role:', userResponse.message);
+          return [];
+        }
+        var userData = userResponse.data;
+      } catch (error) {
+        console.error('Error fetching user role:', error);
         return [];
       }
 
@@ -219,92 +220,51 @@ export class TimesheetApprovalService {
     }
   ): Promise<TimesheetWithDetails[]> {
     try {
-      let query = supabase
-        .from('timesheets')
-        .select(`
-          *,
-          users!inner(id, full_name, email, role, hourly_rate),
-          time_entries (
-            id,
-            project_id,
-            task_id,
-            date,
-            hours,
-            description,
-            is_billable,
-            custom_task_description,
-            entry_type,
-            hourly_rate
-          )
-        `)
-        .is('deleted_at', null);
+      const queryParams = new URLSearchParams();
+      queryParams.append('approverRole', approverRole);
 
-      // Apply role-based filtering
-      if (approverRole === 'lead') {
-        // Lead can only view employee timesheets (no approval authority)
-        query = query
-          .eq('users.role', 'employee')
-          .in('status', ['draft', 'submitted', 'manager_approved', 'manager_rejected', 'frozen']);
-      } else if (approverRole === 'manager') {
-        // Manager can approve employee and lead timesheets
-        query = query
-          .in('users.role', ['employee', 'lead'])
-          .in('status', ['submitted', 'manager_rejected', 'management_rejected']);
-      } else if (approverRole === 'management') {
-        // Management can approve manager-approved timesheets
-        query = query.in('status', ['management_pending', 'manager_approved']);
-      }
-
-      // Apply additional filters
       if (filters?.status && filters.status.length > 0) {
-        query = query.in('status', filters.status);
+        filters.status.forEach(s => queryParams.append('status', s));
       }
-
       if (filters?.userId) {
-        query = query.eq('user_id', filters.userId);
+        queryParams.append('userId', filters.userId);
       }
-
       if (filters?.dateRange) {
-        query = query
-          .gte('week_start_date', filters.dateRange.start)
-          .lte('week_end_date', filters.dateRange.end);
+        queryParams.append('startDate', filters.dateRange.start);
+        queryParams.append('endDate', filters.dateRange.end);
       }
 
-      const { data, error } = await query.order('submitted_at', { ascending: true });
-      
-      if (error) {
-        console.error('Error fetching timesheets for approval:', error);
+      const response = await backendApi.get(`/timesheets/for-approval?${queryParams.toString()}`);
+
+      if (response.success && response.data) {
+        // Enhance timesheets with calculated fields and permissions
+        const enhancedTimesheets: TimesheetWithDetails[] = response.data.map((timesheet: any) => {
+          const billableHours = timesheet.billableHours || 0;
+          const nonBillableHours = timesheet.nonBillableHours || ((timesheet.total_hours || 0) - billableHours);
+
+          const canApproveForManager = approverRole === 'manager' && timesheet.status === 'submitted';
+          const canApproveForManagement = approverRole === 'management' && (timesheet.status === 'management_pending' || timesheet.status === 'manager_approved');
+          const canReject = (approverRole === 'manager' && timesheet.status === 'submitted') || (approverRole === 'management' && (timesheet.status === 'management_pending' || timesheet.status === 'manager_approved'));
+
+          return {
+            ...timesheet,
+            entries: timesheet.time_entries || [],
+            billableHours,
+            nonBillableHours,
+            can_edit: false,
+            can_submit: false,
+            can_approve: canApproveForManager || canApproveForManagement,
+            can_reject: canReject,
+            can_verify: approverRole === 'management' && timesheet.status === 'management_pending',
+            next_action: this.getNextActionForRole(timesheet.status, approverRole)
+          };
+        });
+
+        return enhancedTimesheets;
+      } else {
+        console.error('Error fetching timesheets for approval:', response.message);
         return [];
       }
-      
-      // Enhance timesheets with calculated fields and permissions
-      const enhancedTimesheets: TimesheetWithDetails[] = (data || []).map((timesheet: Timesheet & { users: User; time_entries?: TimeEntry[] }) => {
-        const billableHours = timesheet.time_entries?.filter((e: TimeEntry) => e.is_billable).reduce((sum: number, e: TimeEntry) => sum + e.hours, 0) || 0;
-        const nonBillableHours = (timesheet.total_hours || 0) - billableHours;
-        
-        const canApproveForManager = approverRole === 'manager' && timesheet.status === 'submitted';
-        const canApproveForManagement = approverRole === 'management' && (timesheet.status === 'management_pending' || timesheet.status === 'manager_approved');
-        const canReject = (approverRole === 'manager' && timesheet.status === 'submitted') || (approverRole === 'management' && (timesheet.status === 'management_pending' || timesheet.status === 'manager_approved'));
-
-        return {
-          ...timesheet,
-          user_name: timesheet.users.full_name,
-          user_email: timesheet.users.email,
-          user: timesheet.users,
-          entries: timesheet.time_entries || [],
-          time_entries: timesheet.time_entries || [],
-          billableHours,
-          nonBillableHours,
-          can_edit: false,
-          can_submit: false,
-          can_approve: canApproveForManager || canApproveForManagement,
-          can_reject: canReject,
-          can_verify: approverRole === 'management' && timesheet.status === 'management_pending',
-          next_action: this.getNextActionForRole(timesheet.status, approverRole)
-        };
-      });
-
-      return enhancedTimesheets;
     } catch (error) {
       console.error('Error in TimesheetApprovalService.getTimesheetsForApproval:', error);
       return [];
@@ -348,20 +308,23 @@ export class TimesheetApprovalService {
   static async enhanceTimesheet(timesheet: Timesheet): Promise<TimesheetWithDetails> {
     try {
       // Get user details from database
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('full_name, email, role')
-        .eq('id', timesheet.user_id)
-        .single();
-
-      if (userError) {
+      let user = { full_name: 'Unknown User', email: '', role: 'employee' };
+      try {
+        const userResponse = await backendApi.get(`/users/${timesheet.user_id}`);
+        if (userResponse.success && userResponse.data) {
+          user = {
+            full_name: userResponse.data.full_name || 'Unknown User',
+            email: userResponse.data.email || '',
+            role: userResponse.data.role || 'employee'
+          };
+        }
+      } catch (userError) {
         console.error('Error fetching user for timesheet:', userError);
       }
 
       // Get time entries for this timesheet
       const { entries } = await TimesheetService.getTimeEntries(timesheet.id);
-      
-      const user = userData || { full_name: 'Unknown User', email: '', role: 'employee' };
+
       const permissions = this.getStatusFlow(timesheet.status, user.role as UserRole);
 
       return {
@@ -380,7 +343,7 @@ export class TimesheetApprovalService {
     } catch (error) {
       console.error('Error enhancing timesheet:', error);
       const permissions = this.getStatusFlow(timesheet.status, 'employee');
-      
+
       return {
         ...timesheet,
         user_name: 'Unknown User',
@@ -674,42 +637,11 @@ export class TimesheetApprovalService {
   // Weekly billing snapshot (Management only)
   static async createWeeklyBillingSnapshot(_managementId: string, weekStartDate: string): Promise<boolean> {
     try {
-      // Get all frozen timesheets for the specified week
-      const { timesheets, error } = await TimesheetService.getTimesheetsByStatus('frozen');
-      
-      if (error) {
-        console.error('Error fetching frozen timesheets:', error);
-        return false;
-      }
-      
-      // Filter by week and not yet billed
-      const weekTimesheets = timesheets.filter(ts => 
-        ts.week_start_date === weekStartDate &&
-        !ts.billing_snapshot_id // Not yet included in a billing snapshot
-      );
+      const response = await backendApi.post(`/api/v1/billing/snapshots/weekly`, {
+        weekStartDate
+      });
 
-      if (weekTimesheets.length === 0) {
-        return false; // No timesheets to snapshot
-      }
-
-      // Create billing snapshot for all frozen timesheets for this week
-      // Note: This would typically involve creating a billing snapshot record
-      // and updating the timesheets with the snapshot ID
-      const snapshotId = `snapshot-${weekStartDate}-${Date.now()}`;
-      
-      // Update each timesheet with the billing snapshot ID
-      for (const timesheet of weekTimesheets) {
-        await supabase
-          .from('timesheets')
-          .update({ 
-            billing_snapshot_id: snapshotId,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', timesheet.id);
-      }
-
-      console.log(`Created billing snapshot ${snapshotId} for ${weekTimesheets.length} timesheets`);
-      return true;
+      return response.success || false;
     } catch (error) {
       console.error('Error in createWeeklyBillingSnapshot:', error);
       return false;
