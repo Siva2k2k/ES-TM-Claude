@@ -145,7 +145,7 @@ export class BillingService {
         );
       }
 
-      return { snapshots };
+      return { snapshots: snapshots as IBillingSnapshot[] };
     } catch (error: any) {
       console.error('Error generating weekly snapshot:', error);
       if (error instanceof AuthorizationError || error instanceof ValidationError) {

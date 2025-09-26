@@ -195,4 +195,7 @@ TimesheetSchema.set('toJSON', {
   }
 });
 
-export default mongoose.models.Timesheet || mongoose.model<ITimesheet>('Timesheet', TimesheetSchema);
+const Timesheet = mongoose.models.Timesheet || mongoose.model<ITimesheet>('Timesheet', TimesheetSchema);
+
+export { Timesheet };
+export default Timesheet;

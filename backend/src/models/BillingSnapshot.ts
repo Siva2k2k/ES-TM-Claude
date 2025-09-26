@@ -88,7 +88,7 @@ BillingSnapshotSchema.index({ week_start_date: 1, week_end_date: 1 });
 BillingSnapshotSchema.index({ deleted_at: 1 }, { sparse: true });
 
 // Soft delete query helpers
-BillingSnapshotSchema.pre(/^find/, function() {
+BillingSnapshotSchema.pre(/^find/, function(this: any) {
   this.where({ deleted_at: null });
 });
 

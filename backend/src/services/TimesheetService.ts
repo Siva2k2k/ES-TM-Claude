@@ -19,6 +19,14 @@ import {
   AuthorizationError
 } from '@/utils/errors';
 import {
+  PermissionValidator,
+  requireSuperAdminOrManagement,
+  requireManagerOrAbove,
+  requireTimesheetOwnershipOrManager,
+  canManageRoleHierarchy,
+  canTransitionTimesheetStatus
+} from '@/utils/authorization';
+import {
   AuthUser,
   validateTimesheetAccess,
   requireManagerRole,
@@ -774,6 +782,410 @@ export class TimesheetService {
    */
   static isTimesheetBilled(timesheet: ITimesheet): boolean {
     return timesheet.status === 'billed';
+  }
+
+  /**
+   * Get timesheet dashboard statistics
+   */
+  static async getTimesheetDashboard(currentUser: AuthUser): Promise<{
+    totalTimesheets: number;
+    pendingApproval: number;
+    pendingManagement: number;
+    pendingBilling: number;
+    verified: number;
+    billed: number;
+    totalHours: number;
+    averageHoursPerWeek: number;
+    completionRate: number;
+    error?: string;
+  }> {
+    try {
+      // Get timesheets based on user access level
+      let filter: any = { deleted_at: null };
+
+      // Non-management users can only see their own stats
+      if (!['super_admin', 'management'].includes(currentUser.role)) {
+        filter.user_id = new mongoose.Types.ObjectId(currentUser.id);
+      }
+
+      const timesheets = await (Timesheet.find as any)(filter)
+        .select('status total_hours is_frozen')
+        .lean()
+        .exec();
+
+      if (!timesheets) {
+        return {
+          totalTimesheets: 0,
+          pendingApproval: 0,
+          pendingManagement: 0,
+          pendingBilling: 0,
+          verified: 0,
+          billed: 0,
+          totalHours: 0,
+          averageHoursPerWeek: 0,
+          completionRate: 0
+        };
+      }
+
+      const totalTimesheets = timesheets.length;
+      const pendingApproval = timesheets.filter((ts: any) => ts.status === 'submitted').length;
+      const pendingManagement = timesheets.filter((ts: any) => ts.status === 'management_pending').length;
+      const pendingBilling = timesheets.filter((ts: any) => ts.status === 'frozen').length;
+      const verified = timesheets.filter((ts: any) => ts.status === 'frozen').length;
+      const billed = timesheets.filter((ts: any) => ts.status === 'billed').length;
+      const totalHours = timesheets.reduce((sum: number, ts: any) => sum + (ts.total_hours || 0), 0);
+
+      return {
+        totalTimesheets,
+        pendingApproval,
+        pendingManagement,
+        pendingBilling,
+        verified,
+        billed,
+        totalHours,
+        averageHoursPerWeek: totalHours / Math.max(totalTimesheets, 1),
+        completionRate: (verified / Math.max(totalTimesheets, 1)) * 100
+      };
+    } catch (error) {
+      console.error('Error in getTimesheetDashboard:', error);
+      return {
+        totalTimesheets: 0,
+        pendingApproval: 0,
+        pendingManagement: 0,
+        pendingBilling: 0,
+        verified: 0,
+        billed: 0,
+        totalHours: 0,
+        averageHoursPerWeek: 0,
+        completionRate: 0,
+        error: error instanceof Error ? error.message : 'Failed to fetch dashboard data'
+      };
+    }
+  }
+
+  // Additional methods needed for the new API endpoints
+  static async getTimesheetsByStatus(
+    currentUser: AuthUser,
+    status: TimesheetStatus
+  ): Promise<{ timesheets?: ITimesheet[]; error?: string }> {
+    try {
+      requireSuperAdminOrManagement(currentUser);
+
+      const timesheets = await Timesheet.find({ status }).populate('user_id', 'full_name email role').exec();
+      return { timesheets };
+    } catch (error: any) {
+      console.error('Error getting timesheets by status:', error);
+      if (error instanceof AuthorizationError || error instanceof ValidationError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to get timesheets by status' };
+    }
+  }
+
+  static async escalateToManagement(
+    currentUser: AuthUser,
+    timesheetId: string
+  ): Promise<{ success?: boolean; error?: string }> {
+    try {
+      // Check permissions - managers or management can escalate
+      if (!['manager', 'management', 'super_admin'].includes(currentUser.role)) {
+        return { error: 'Access denied: Insufficient permissions to escalate timesheet' };
+      }
+
+      const timesheet = await Timesheet.findById(timesheetId);
+      if (!timesheet) {
+        return { error: 'Timesheet not found' };
+      }
+
+      // Check status - can only escalate manager_approved timesheets
+      if (timesheet.status !== 'manager_approved') {
+        return { error: `Timesheet cannot be escalated from current status: ${timesheet.status}` };
+      }
+
+      // Update timesheet status
+      timesheet.status = 'management_pending';
+      timesheet.updated_at = new Date();
+      await timesheet.save();
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error escalating timesheet:', error);
+      if (error instanceof AuthorizationError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to escalate timesheet' };
+    }
+  }
+
+  static async markTimesheetBilled(
+    currentUser: AuthUser,
+    timesheetId: string
+  ): Promise<{ success?: boolean; error?: string }> {
+    try {
+      requireSuperAdminOrManagement(currentUser);
+
+      const timesheet = await Timesheet.findById(timesheetId);
+      if (!timesheet) {
+        return { error: 'Timesheet not found' };
+      }
+
+      timesheet.status = 'billed';
+      timesheet.updated_at = new Date();
+      await timesheet.save();
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error marking timesheet as billed:', error);
+      if (error instanceof AuthorizationError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to mark timesheet as billed' };
+    }
+  }
+
+  static async getTimeEntries(
+    currentUser: AuthUser,
+    timesheetId: string
+  ): Promise<{ entries?: ITimeEntry[]; error?: string }> {
+    try {
+      const timesheet = await Timesheet.findById(timesheetId);
+      if (!timesheet) {
+        return { error: 'Timesheet not found' };
+      }
+
+      // Check permissions - can view own timesheet or have management authority
+      if (!PermissionValidator.canViewTimesheet(currentUser, timesheet.user_id?.toString() || '')) {
+        return { error: 'Access denied: Cannot view this timesheet entries' };
+      }
+
+      const entries = await TimeEntry.find({ timesheet_id: timesheetId }).exec();
+      return { entries };
+    } catch (error: any) {
+      console.error('Error getting time entries:', error);
+      if (error instanceof AuthorizationError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to get time entries' };
+    }
+  }
+
+  static async deleteTimesheetEntries(
+    currentUser: AuthUser,
+    timesheetId: string
+  ): Promise<{ success?: boolean; error?: string }> {
+    try {
+      const timesheet = await Timesheet.findById(timesheetId);
+      if (!timesheet) {
+        return { error: 'Timesheet not found' };
+      }
+
+      // Check permissions - cannot delete if frozen/billed, management/lead cannot delete
+      if (!PermissionValidator.canEditTimesheet(
+        currentUser,
+        timesheet.user_id?.toString() || '',
+        timesheet.status,
+        timesheet.is_frozen || false
+      )) {
+        return { error: 'Access denied: Cannot delete entries from this timesheet' };
+      }
+
+      await TimeEntry.deleteMany({ timesheet_id: timesheetId });
+
+      // Recalculate timesheet totals
+      timesheet.total_hours = 0;
+      timesheet.updated_at = new Date();
+      await timesheet.save();
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error deleting timesheet entries:', error);
+      if (error instanceof AuthorizationError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to delete timesheet entries' };
+    }
+  }
+
+  static async updateTimesheetEntries(
+    currentUser: AuthUser,
+    timesheetId: string,
+    entries: any[]
+  ): Promise<{ updatedEntries?: ITimeEntry[]; error?: string }> {
+    try {
+      const timesheet = await Timesheet.findById(timesheetId);
+      if (!timesheet) {
+        return { error: 'Timesheet not found' };
+      }
+
+      // Check permissions - cannot edit if frozen/billed, management/lead cannot edit
+      if (!PermissionValidator.canEditTimesheet(
+        currentUser,
+        timesheet.user_id?.toString() || '',
+        timesheet.status,
+        timesheet.is_frozen || false
+      )) {
+        return { error: 'Access denied: Cannot update entries in this timesheet' };
+      }
+
+      // Validate entries can be created for this timesheet
+      for (const entry of entries) {
+        if (!PermissionValidator.canCreateTimeEntry(
+          currentUser,
+          timesheet.user_id?.toString() || '',
+          timesheet.status
+        )) {
+          return { error: `Access denied: Cannot create time entries for timesheet in ${timesheet.status} status` };
+        }
+      }
+
+      // Delete existing entries
+      await TimeEntry.deleteMany({ timesheet_id: timesheetId });
+
+      // Create new entries
+      const newEntries = entries.map(entry => ({
+        ...entry,
+        timesheet_id: timesheetId,
+        created_at: new Date(),
+        updated_at: new Date()
+      }));
+
+      const updatedEntries = await TimeEntry.insertMany(newEntries);
+
+      // Recalculate timesheet totals
+      const totalHours = updatedEntries.reduce((sum, entry) => sum + (entry.hours || 0), 0);
+      timesheet.total_hours = totalHours;
+      timesheet.updated_at = new Date();
+      await timesheet.save();
+
+      return { updatedEntries };
+    } catch (error: any) {
+      console.error('Error updating timesheet entries:', error);
+      if (error instanceof AuthorizationError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to update timesheet entries' };
+    }
+  }
+
+  static async getTimesheetById(
+    currentUser: AuthUser,
+    timesheetId: string
+  ): Promise<{ timesheet?: any; error?: string }> {
+    try {
+      const timesheet = await Timesheet.findById(timesheetId)
+        .populate('user_id', 'full_name email role')
+        .exec();
+
+      if (!timesheet) {
+        return { error: 'Timesheet not found' };
+      }
+
+      // Check permissions - can view own timesheet or have management authority
+      if (!PermissionValidator.canViewTimesheet(currentUser, timesheet.user_id?.toString() || '')) {
+        return { error: 'Access denied: Cannot view this timesheet' };
+      }
+
+      const entries = await TimeEntry.find({ timesheet_id: timesheetId }).exec();
+
+      // Calculate permissions for this user and timesheet
+      const canEdit = PermissionValidator.canEditTimesheet(
+        currentUser,
+        timesheet.user_id?.toString() || '',
+        timesheet.status,
+        timesheet.is_frozen || false
+      );
+
+      const canSubmit = PermissionValidator.canSubmitTimesheet(
+        currentUser,
+        timesheet.user_id?.toString() || ''
+      ) && timesheet.status === 'draft' && timesheet.total_hours > 0;
+
+      const canApprove = PermissionValidator.canApproveTimesheet(
+        currentUser.role,
+        timesheet.status
+      );
+
+      return {
+        timesheet: {
+          ...timesheet.toObject(),
+          time_entries: entries,
+          user_name: (timesheet.user_id as any).full_name,
+          user_email: (timesheet.user_id as any).email,
+          permissions: {
+            can_edit: canEdit,
+            can_submit: canSubmit,
+            can_approve: canApprove,
+            can_reject: canApprove // Same as approve for rejection
+          }
+        }
+      };
+    } catch (error: any) {
+      console.error('Error getting timesheet by ID:', error);
+      if (error instanceof AuthorizationError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to get timesheet details' };
+    }
+  }
+
+  static async getCalendarData(
+    currentUser: AuthUser,
+    userId: string,
+    year: number,
+    month: number
+  ): Promise<{ calendarData?: any; error?: string }> {
+    try {
+      // Basic implementation - you can enhance this based on your needs
+      const startDate = new Date(year, month - 1, 1);
+      const endDate = new Date(year, month, 0);
+
+      const timesheets = await Timesheet.find({
+        user_id: userId,
+        week_start_date: { $gte: startDate, $lte: endDate }
+      }).exec();
+
+      const calendarData: any = {};
+      // Process timesheets to create calendar data structure
+      // This is a simplified version - you can enhance it
+
+      return { calendarData };
+    } catch (error: any) {
+      console.error('Error getting calendar data:', error);
+      return { error: 'Failed to get calendar data' };
+    }
+  }
+
+  static async getTimesheetsForApproval(
+    currentUser: AuthUser,
+    approverRole: string,
+    filters?: any
+  ): Promise<{ timesheets?: any[]; error?: string }> {
+    try {
+      let query: any = {};
+
+      if (approverRole === 'manager') {
+        query.status = { $in: ['submitted', 'manager_rejected'] };
+      } else if (approverRole === 'management') {
+        query.status = { $in: ['management_pending', 'manager_approved'] };
+      }
+
+      if (filters?.status) {
+        query.status = { $in: filters.status };
+      }
+
+      if (filters?.userId) {
+        query.user_id = filters.userId;
+      }
+
+      const timesheets = await Timesheet.find(query)
+        .populate('user_id', 'full_name email role')
+        .exec();
+
+      return { timesheets };
+    } catch (error: any) {
+      console.error('Error getting timesheets for approval:', error);
+      return { error: 'Failed to get timesheets for approval' };
+    }
   }
 }
 

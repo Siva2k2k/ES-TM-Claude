@@ -232,6 +232,239 @@ export class TimesheetController {
       data: result.entry
     });
   });
+
+  /**
+   * Get timesheet dashboard statistics
+   */
+  static getTimesheetDashboard = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.getTimesheetDashboard(currentUser);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result
+    });
+  });
+
+  /**
+   * Get timesheets by status
+   */
+  static getTimesheetsByStatus = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const currentUser = req.user!;
+    const { status } = req.params;
+
+    const result = await TimesheetService.getTimesheetsByStatus(currentUser, status as any);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.timesheets
+    });
+  });
+
+  /**
+   * Escalate timesheet to management
+   */
+  static escalateTimesheet = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { timesheetId } = req.params;
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.escalateToManagement(currentUser, timesheetId);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Timesheet escalated successfully'
+    });
+  });
+
+  /**
+   * Mark timesheet as billed
+   */
+  static markTimesheetBilled = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { timesheetId } = req.params;
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.markTimesheetBilled(currentUser, timesheetId);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Timesheet marked as billed'
+    });
+  });
+
+  /**
+   * Get time entries for timesheet
+   */
+  static getTimeEntries = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { timesheetId } = req.params;
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.getTimeEntries(currentUser, timesheetId);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.entries
+    });
+  });
+
+  /**
+   * Delete timesheet entries
+   */
+  static deleteTimesheetEntries = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { timesheetId } = req.params;
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.deleteTimesheetEntries(currentUser, timesheetId);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Entries deleted successfully'
+    });
+  });
+
+  /**
+   * Update timesheet entries
+   */
+  static updateTimesheetEntries = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { timesheetId } = req.params;
+    const { entries } = req.body;
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.updateTimesheetEntries(currentUser, timesheetId, entries);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.updatedEntries
+    });
+  });
+
+  /**
+   * Get timesheet by ID with details
+   */
+  static getTimesheetById = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { timesheetId } = req.params;
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.getTimesheetById(currentUser, timesheetId);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.timesheet
+    });
+  });
+
+  /**
+   * Get calendar data for user
+   */
+  static getCalendarData = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { userId, year, month } = req.params;
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.getCalendarData(
+      currentUser,
+      userId,
+      parseInt(year),
+      parseInt(month)
+    );
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.calendarData
+    });
+  });
+
+  /**
+   * Get timesheets for approval
+   */
+  static getTimesheetsForApproval = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { approverRole, status, userId, startDate, endDate } = req.query;
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.getTimesheetsForApproval(
+      currentUser,
+      approverRole as string,
+      {
+        status: status ? (Array.isArray(status) ? status : [status]) as string[] : undefined,
+        userId: userId as string,
+        dateRange: startDate && endDate ? { start: startDate as string, end: endDate as string } : undefined
+      }
+    );
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.timesheets
+    });
+  });
 }
 
 export default TimesheetController;

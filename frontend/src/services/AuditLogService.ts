@@ -272,7 +272,7 @@ export class AuditLogService {
   }): Promise<{ logs: ActivityAuditLog[]; error?: string }> {
     try {
       const params = new URLSearchParams();
-      params.append('query', query);
+      params.append('q', query);
       
       if (options?.limit) {
         params.append('limit', options.limit.toString());

@@ -348,6 +348,20 @@ export class ProjectService {
   }
 
   /**
+   * Get clients (alias for getAllClients for controller compatibility)
+   */
+  static async getClients(currentUser: AuthUser): Promise<{ clients: IClient[]; error?: string }> {
+    return this.getAllClients(currentUser);
+  }
+
+  /**
+   * Get projects (alias for getAllProjects for controller compatibility)
+   */
+  static async getProjects(currentUser: AuthUser): Promise<{ projects: ProjectWithDetails[]; error?: string }> {
+    return this.getAllProjects(currentUser);
+  }
+
+  /**
    * Create a new client
    */
   static async createClient(clientData: Partial<IClient>, currentUser: AuthUser): Promise<{ client?: IClient; error?: string }> {
@@ -760,6 +774,145 @@ export class ProjectService {
       isValid: errors.length === 0,
       errors
     };
+  }
+
+  /**
+   * Delete task (alias for soft delete)
+   */
+  static async deleteTask(taskId: string, currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Check if task exists and user has access
+      const task = await (Task.findOne as any)({
+        _id: taskId,
+        deleted_at: { $exists: false }
+      });
+
+      if (!task) {
+        throw new NotFoundError('Task not found');
+      }
+
+      const hasAccess = await this.checkProjectAccess(task.project_id, currentUser);
+      if (!hasAccess) {
+        throw new AuthorizationError('You do not have access to this project');
+      }
+
+      const result = await (Task.updateOne as any)({
+        _id: taskId,
+        deleted_at: { $exists: false }
+      }, {
+        deleted_at: new Date(),
+        updated_at: new Date()
+      });
+
+      if (result.matchedCount === 0) {
+        throw new NotFoundError('Task not found');
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error in deleteTask:', error);
+      if (error instanceof AuthorizationError || error instanceof NotFoundError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to delete task' };
+    }
+  }
+
+  /**
+   * Add project member (alias for addUserToProject with simpler interface)
+   */
+  static async addProjectMember(projectId: string, userId: string, projectRole: string, currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
+    return this.addUserToProject(projectId, userId, projectRole, false, false, currentUser);
+  }
+
+  /**
+   * Remove project member (alias for removeUserFromProject)
+   */
+  static async removeProjectMember(projectId: string, userId: string, currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
+    return this.removeUserFromProject(projectId, userId, currentUser);
+  }
+
+  /**
+   * Update client
+   */
+  static async updateClient(clientId: string, updates: Partial<IClient>, currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
+    try {
+      requireManagerRole(currentUser);
+
+      const result = await (Client.updateOne as any)({
+        _id: clientId,
+        deleted_at: { $exists: false }
+      }, {
+        ...updates,
+        updated_at: new Date()
+      });
+
+      if (result.matchedCount === 0) {
+        throw new NotFoundError('Client not found');
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error in updateClient:', error);
+      if (error instanceof AuthorizationError || error instanceof NotFoundError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to update client' };
+    }
+  }
+
+  /**
+   * Delete client (soft delete)
+   */
+  static async deleteClient(clientId: string, currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
+    try {
+      requireManagerRole(currentUser);
+
+      const result = await (Client.updateOne as any)({
+        _id: clientId
+      }, {
+        deleted_at: new Date(),
+        updated_at: new Date()
+      });
+
+      if (result.matchedCount === 0) {
+        throw new NotFoundError('Client not found');
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error in deleteClient:', error);
+      if (error instanceof AuthorizationError || error instanceof NotFoundError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to delete client' };
+    }
+  }
+
+  /**
+   * Get client by ID
+   */
+  static async getClientById(clientId: string, currentUser: AuthUser): Promise<{ client?: IClient; error?: string }> {
+    try {
+      requireManagerRole(currentUser);
+
+      const client = await (Client.findOne as any)({
+        _id: clientId,
+        deleted_at: { $exists: false }
+      });
+
+      if (!client) {
+        throw new NotFoundError('Client not found');
+      }
+
+      return { client };
+    } catch (error) {
+      console.error('Error in getClientById:', error);
+      if (error instanceof AuthorizationError || error instanceof NotFoundError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to fetch client' };
+    }
   }
 
   /**

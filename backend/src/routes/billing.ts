@@ -17,11 +17,18 @@ router.use(requireAuth);
 router.use(requireManagement);
 
 /**
- * @route POST /api/v1/billing/snapshots
+ * @route POST /api/v1/billing/snapshots/generate
  * @desc Generate weekly billing snapshots
  * @access Private (Management+)
  */
-router.post('/snapshots', generateWeeklySnapshotValidation, BillingController.generateWeeklySnapshot);
+router.post('/snapshots/generate', generateWeeklySnapshotValidation, BillingController.generateWeeklySnapshot);
+
+/**
+ * @route POST /api/v1/billing/snapshots/weekly
+ * @desc Create weekly billing snapshot
+ * @access Private (Management+)
+ */
+router.post('/snapshots/weekly', generateWeeklySnapshotValidation, BillingController.generateWeeklySnapshot);
 
 /**
  * @route GET /api/v1/billing/snapshots
@@ -52,15 +59,29 @@ router.get('/dashboard', BillingController.getBillingDashboard);
 router.post('/approve-monthly', approveMonthlyBillingValidation, BillingController.approveMonthlyBilling);
 
 /**
- * @route GET /api/v1/billing/revenue/projects
+ * @route GET /api/v1/billing/revenue-by-project
  * @desc Get revenue by project
+ * @access Private (Management+)
+ */
+router.get('/revenue-by-project', BillingController.getRevenueByProject);
+
+/**
+ * @route GET /api/v1/billing/revenue/projects
+ * @desc Get revenue by project (alternative endpoint)
  * @access Private (Management+)
  */
 router.get('/revenue/projects', BillingController.getRevenueByProject);
 
 /**
- * @route GET /api/v1/billing/export
+ * @route POST /api/v1/billing/export
  * @desc Export billing report
+ * @access Private (Management+)
+ */
+router.post('/export', exportBillingReportValidation, BillingController.exportBillingReport);
+
+/**
+ * @route GET /api/v1/billing/export
+ * @desc Export billing report (GET method)
  * @access Private (Management+)
  */
 router.get('/export', exportBillingReportValidation, BillingController.exportBillingReport);

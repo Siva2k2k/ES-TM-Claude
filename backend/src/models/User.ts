@@ -90,4 +90,7 @@ UserSchema.set('toJSON', {
   }
 });
 
-export default mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
+const User = mongoose.models.User || mongoose.model<IUser>('User', UserSchema);
+
+export { User };
+export default User;

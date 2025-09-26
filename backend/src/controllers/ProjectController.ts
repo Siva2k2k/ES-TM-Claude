@@ -71,8 +71,7 @@ export class ProjectController {
 
     res.json({
       success: true,
-      message: 'Project updated successfully',
-      project: result.project
+      message: 'Project updated successfully'
     });
   });
 
@@ -185,7 +184,7 @@ export class ProjectController {
     }
 
     const { status } = req.query;
-    const result = await ProjectService.getProjectsByStatus(status as string, req.user);
+    const result = await ProjectService.getProjectsByStatus(status as any, req.user);
 
     if (result.error) {
       return res.status(403).json({
@@ -211,8 +210,8 @@ export class ProjectController {
     }
 
     const { projectId } = req.params;
-    const { userId } = req.body;
-    const result = await ProjectService.addProjectMember(projectId, userId, req.user);
+    const { userId, projectRole } = req.body;
+    const result = await ProjectService.addProjectMember(projectId, userId, projectRole || 'member', req.user);
 
     if (!result.success) {
       return res.status(400).json({
@@ -290,7 +289,8 @@ export class ProjectController {
     }
 
     const { projectId } = req.params;
-    const result = await ProjectService.createTask(projectId, req.body, req.user);
+    const taskData = { ...req.body, project_id: projectId };
+    const result = await ProjectService.createTask(taskData, req.user);
 
     if (result.error) {
       return res.status(400).json({
@@ -328,8 +328,7 @@ export class ProjectController {
 
     res.json({
       success: true,
-      message: 'Task updated successfully',
-      task: result.task
+      message: 'Task updated successfully'
     });
   });
 
@@ -433,8 +432,7 @@ export class ProjectController {
 
     res.json({
       success: true,
-      message: 'Client updated successfully',
-      client: result.client
+      message: 'Client updated successfully'
     });
   });
 
@@ -480,7 +478,7 @@ export class ProjectController {
 
     res.json({
       success: true,
-      clients: result.clients
+      data: result.clients
     });
   });
 
@@ -524,24 +522,42 @@ export const createProjectValidation = [
     .withMessage('Description must be less than 1000 characters'),
   body('client_id')
     .optional()
-    .isMongoId()
+    .custom((value) => {
+      // Skip validation for empty/null/undefined values
+      if (value === null || value === undefined || value === '') {
+        return true;
+      }
+      // Only validate if value exists and is not empty
+      return /^[0-9a-fA-F]{24}$/.test(value);
+    })
     .withMessage('Invalid client ID format'),
-  body('budget')
+  body('primary_manager_id')
     .optional()
+    .custom((value) => {
+      // Skip validation for empty/null/undefined values
+      if (value === null || value === undefined || value === '') {
+        return true;
+      }
+      // Only validate if value exists and is not empty
+      return /^[0-9a-fA-F]{24}$/.test(value);
+    })
+    .withMessage('Invalid primary manager ID format'),
+  body('budget')
+    .optional({ nullable: true, checkFalsy: true })
     .isNumeric()
     .custom(value => value >= 0)
     .withMessage('Budget must be a non-negative number'),
   body('hourly_rate')
-    .optional()
+    .optional({ nullable: true, checkFalsy: true })
     .isNumeric()
     .custom(value => value > 0)
     .withMessage('Hourly rate must be a positive number'),
   body('start_date')
-    .optional()
+    .optional({ nullable: true, checkFalsy: true })
     .isISO8601()
     .withMessage('Start date must be a valid date'),
   body('end_date')
-    .optional()
+    .optional({ nullable: true, checkFalsy: true })
     .isISO8601()
     .withMessage('End date must be a valid date'),
   body('status')
@@ -551,26 +567,48 @@ export const createProjectValidation = [
   body('priority')
     .optional()
     .isIn(['low', 'medium', 'high', 'urgent'])
-    .withMessage('Invalid project priority')
+    .withMessage('Invalid project priority'),
+  body('is_billable')
+    .optional()
+    .isBoolean()
+    .withMessage('is_billable must be a boolean')
 ];
 
 export const projectIdValidation = [
   param('projectId')
-    .isMongoId()
-    .withMessage('Invalid project ID format')
+    .custom((value) => {
+      if (!value) return false; // Project ID is required
+      // Accept both MongoDB ObjectId (24 char hex) and UUID formats
+      const mongoIdPattern = /^[0-9a-fA-F]{24}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return mongoIdPattern.test(value) || uuidPattern.test(value);
+    })
+    .withMessage('Invalid project ID format (must be ObjectId or UUID)')
 ];
 
 export const userIdValidation = [
   param('userId')
-    .isMongoId()
-    .withMessage('Invalid user ID format')
+    .custom((value) => {
+      if (!value) return false; // User ID is required
+      // Accept both MongoDB ObjectId (24 char hex) and UUID formats
+      const mongoIdPattern = /^[0-9a-fA-F]{24}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return mongoIdPattern.test(value) || uuidPattern.test(value);
+    })
+    .withMessage('Invalid user ID format (must be ObjectId or UUID)')
 ];
 
 export const addProjectMemberValidation = [
   ...projectIdValidation,
   body('userId')
-    .isMongoId()
-    .withMessage('Invalid user ID format')
+    .custom((value) => {
+      if (!value) return false; // User ID is required
+      // Accept both MongoDB ObjectId (24 char hex) and UUID formats
+      const mongoIdPattern = /^[0-9a-fA-F]{24}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return mongoIdPattern.test(value) || uuidPattern.test(value);
+    })
+    .withMessage('Invalid user ID format (must be ObjectId or UUID)')
 ];
 
 export const projectStatusValidation = [
@@ -579,21 +617,29 @@ export const projectStatusValidation = [
     .withMessage('Invalid project status')
 ];
 
+// Updated validation for task creation 
+// Also fixed project validation for empty strings
 export const createTaskValidation = [
   ...projectIdValidation,
-  body('title')
+  body('name')
     .trim()
     .isLength({ min: 2, max: 200 })
-    .withMessage('Task title must be between 2 and 200 characters'),
+    .withMessage('Task name must be between 2 and 200 characters'),
   body('description')
     .optional()
     .trim()
     .isLength({ max: 1000 })
     .withMessage('Description must be less than 1000 characters'),
-  body('assigned_to')
+  body('assigned_to_user_id')
     .optional()
-    .isMongoId()
-    .withMessage('Invalid user ID format'),
+    .custom((value) => {
+      if (!value) return true; // Allow empty/null values
+      // Accept both MongoDB ObjectId (24 char hex) and UUID formats
+      const mongoIdPattern = /^[0-9a-fA-F]{24}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return mongoIdPattern.test(value) || uuidPattern.test(value);
+    })
+    .withMessage('Invalid assigned user ID format (must be ObjectId or UUID)'),
   body('due_date')
     .optional()
     .isISO8601()
@@ -604,7 +650,7 @@ export const createTaskValidation = [
     .withMessage('Invalid task priority'),
   body('status')
     .optional()
-    .isIn(['todo', 'in_progress', 'review', 'completed'])
+    .isIn(['open', 'todo', 'in_progress', 'review', 'completed'])
     .withMessage('Invalid task status'),
   body('estimated_hours')
     .optional()
@@ -615,8 +661,14 @@ export const createTaskValidation = [
 
 export const taskIdValidation = [
   param('taskId')
-    .isMongoId()
-    .withMessage('Invalid task ID format')
+    .custom((value) => {
+      if (!value) return false; // Task ID is required
+      // Accept both MongoDB ObjectId (24 char hex) and UUID formats
+      const mongoIdPattern = /^[0-9a-fA-F]{24}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return mongoIdPattern.test(value) || uuidPattern.test(value);
+    })
+    .withMessage('Invalid task ID format (must be ObjectId or UUID)')
 ];
 
 export const createClientValidation = [
@@ -648,6 +700,12 @@ export const createClientValidation = [
 
 export const clientIdValidation = [
   param('clientId')
-    .isMongoId()
-    .withMessage('Invalid client ID format')
+    .custom((value) => {
+      if (!value) return false; // Client ID is required
+      // Accept both MongoDB ObjectId (24 char hex) and UUID formats
+      const mongoIdPattern = /^[0-9a-fA-F]{24}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return mongoIdPattern.test(value) || uuidPattern.test(value);
+    })
+    .withMessage('Invalid client ID format (must be ObjectId or UUID)')
 ];

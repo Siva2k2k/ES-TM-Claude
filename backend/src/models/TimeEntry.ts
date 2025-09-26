@@ -118,4 +118,7 @@ TimeEntrySchema.set('toJSON', {
   }
 });
 
-export default mongoose.models.TimeEntry || mongoose.model<ITimeEntry>('TimeEntry', TimeEntrySchema);
+const TimeEntry = mongoose.models.TimeEntry || mongoose.model<ITimeEntry>('TimeEntry', TimeEntrySchema);
+
+export { TimeEntry };
+export default TimeEntry;

@@ -124,7 +124,7 @@ AuditLogSchema.index({ action: 1, timestamp: -1 });
 AuditLogSchema.index({ timestamp: -1, deleted_at: 1 });
 
 // Soft delete query helpers
-AuditLogSchema.pre(/^find/, function() {
+AuditLogSchema.pre(/^find/, function(this: any) {
   this.where({ deleted_at: null });
 });
 
