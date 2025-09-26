@@ -233,11 +233,11 @@ export class UserService {
   }
 
   /**
-   * Get all users (Super Admin and Management)
+   * Get all users (Manager and above)
    */
   static async getAllUsers(currentUser: AuthUser): Promise<{ users: IUser[]; error?: string }> {
     try {
-      requireManagementRole(currentUser);
+      requireManagerRole(currentUser);
 
       const users = await (User.find as any)({
         deleted_at: { $exists: false }
@@ -292,12 +292,14 @@ export class UserService {
   }
 
   /**
-   * Get pending approvals (Super Admin and Management)
+   * Get pending approvals (Super Admin, Management, and Manager)
    */
   static async getPendingApprovals(currentUser: AuthUser): Promise<{ users: IUser[]; error?: string }> {
     try {
-      // Both super_admin and management can view pending approvals
-      requireManagementRole(currentUser);
+      // Manager, management, and super_admin can view pending approvals
+      if (!['manager', 'management', 'super_admin'].includes(currentUser.role)) {
+        throw new AuthorizationError('Access denied. Required roles: manager, management, super_admin');
+      }
 
       const users = await (User.find as any)({
         is_approved_by_super_admin: false,
@@ -417,8 +419,9 @@ export class UserService {
   static async getTeamMembers(managerId: string, currentUser: AuthUser): Promise<{ users: IUser[]; error?: string }> {
     try {
       // Only the manager themselves or higher roles can view team members
-      if (currentUser.id !== managerId && !canManageRoleHierarchy(currentUser.role, 'manager')) {
-        throw new AuthorizationError('You can only view your own team members');
+      // Updated to include manager, management, super_admin access
+      if (currentUser.id !== managerId && !['manager', 'management', 'super_admin'].includes(currentUser.role)) {
+        throw new AuthorizationError('Access denied. Required roles: manager, management, super_admin');
       }
 
       const users = await (User.find as any)({

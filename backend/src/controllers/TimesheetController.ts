@@ -394,7 +394,24 @@ export class TimesheetController {
     const { timesheetId } = req.params;
     const currentUser = req.user!;
 
-    const result = { error: "Method not implemented yet" };
+    // Get the timesheet to find its owner
+    const timesheet = await (require('@/models').Timesheet.findById)(timesheetId).populate('user_id', 'id').exec();
+    if (!timesheet) {
+      return res.status(404).json({
+        success: false,
+        error: 'Timesheet not found'
+      });
+    }
+
+    // Use the existing getUserTimesheets method with specific timesheet filter
+    const result = await TimesheetService.getUserTimesheets(
+      currentUser,
+      timesheet.user_id._id?.toString() || timesheet.user_id.toString(),
+      undefined, // no status filter
+      undefined, // no date filter
+      1, // limit to 1
+      0 // no offset
+    );
 
     if (result.error) {
       return res.status(400).json({
@@ -403,9 +420,17 @@ export class TimesheetController {
       });
     }
 
+    const targetTimesheet = result.timesheets.find(t => t.id === timesheetId);
+    if (!targetTimesheet) {
+      return res.status(404).json({
+        success: false,
+        error: 'Timesheet not found or access denied'
+      });
+    }
+
     res.json({
       success: true,
-      data: result.timesheet
+      data: targetTimesheet
     });
   });
 
@@ -417,10 +442,10 @@ export class TimesheetController {
     const currentUser = req.user!;
 
     const result = await TimesheetService.getCalendarData(
-      currentUser,
       userId,
       parseInt(year),
-      parseInt(month)
+      parseInt(month),
+      currentUser
     );
 
     if (result.error) {

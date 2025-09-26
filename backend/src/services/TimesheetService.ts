@@ -235,7 +235,7 @@ export class TimesheetService {
           can_submit: ts.status === 'draft' && ts.total_hours > 0,
           can_approve: false, // Determined by role in component
           can_reject: false, // Determined by role in component
-          next_action: this.getNextAction(ts.status)
+          next_action: this.getNextAction(ts.status, currentUser, ts.user_id.toString())
         };
       });
 
@@ -385,7 +385,7 @@ export class TimesheetService {
         can_submit: timesheet.status === 'draft' && timesheet.total_hours > 0,
         can_approve: false,
         can_reject: false,
-        next_action: this.getNextAction(timesheet.status)
+        next_action: this.getNextAction(timesheet.status, currentUser, timesheet.user_id.toString())
       };
 
       return { timesheet: enhancedTimesheet };
@@ -568,31 +568,7 @@ export class TimesheetService {
     }
   }
 
-  /**
-   * Get next action description for timesheet status
-   */
-  private static getNextAction(status: TimesheetStatus): string {
-    switch (status) {
-      case 'draft':
-        return 'Ready to submit';
-      case 'submitted':
-        return 'Awaiting manager approval';
-      case 'manager_approved':
-        return 'Automatically forwarded to management';
-      case 'management_pending':
-        return 'Awaiting management approval';
-      case 'manager_rejected':
-        return 'Needs revision after manager rejection';
-      case 'management_rejected':
-        return 'Needs revision after management rejection';
-      case 'frozen':
-        return 'Approved & frozen - ready for billing';
-      case 'billed':
-        return 'Complete - timesheet has been billed';
-      default:
-        return 'Unknown status';
-    }
-  }
+
 
   /**
    * Add time entry to timesheet
@@ -1034,6 +1010,342 @@ export class TimesheetService {
     } catch (error) {
       console.error('Error in addMultipleEntries:', error);
       return { error: error instanceof Error ? error.message : 'Failed to add multiple entries' };
+    }
+  }
+
+  /**
+   * Get calendar data for a specific user and month
+   */
+  static async getCalendarData(
+    userId: string,
+    year: number,
+    month: number,
+    currentUser: AuthUser
+  ): Promise<{ calendarData?: CalendarData; error?: string }> {
+    try {
+      console.log(`getCalendarData called for user ${userId}, year ${year}, month ${month}`);
+
+      // Validate access permissions
+      validateTimesheetAccess(currentUser, userId, 'view');
+
+      // Calculate date range for the month
+      const startDate = new Date(year, month - 1, 1); // month is 0-indexed in Date constructor
+      const endDate = new Date(year, month, 0); // Last day of the month
+
+      console.log(`Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+      // Aggregation pipeline to get time entries grouped by date
+      const pipeline = [
+        {
+          $match: {
+            user_id: new mongoose.Types.ObjectId(userId),
+            week_start_date: { $gte: startDate, $lte: endDate },
+            deleted_at: null
+          }
+        },
+        {
+          $lookup: {
+            from: 'timeentries',
+            localField: '_id',
+            foreignField: 'timesheet_id',
+            as: 'time_entries',
+            pipeline: [
+              {
+                $match: {
+                  deleted_at: null,
+                  date: { $gte: startDate, $lte: endDate }
+                }
+              },
+              {
+                $lookup: {
+                  from: 'projects',
+                  localField: 'project_id',
+                  foreignField: '_id',
+                  as: 'project',
+                  pipeline: [{ $project: { name: 1 } }]
+                }
+              },
+              {
+                $lookup: {
+                  from: 'tasks',
+                  localField: 'task_id',
+                  foreignField: '_id',
+                  as: 'task',
+                  pipeline: [{ $project: { name: 1 } }]
+                }
+              }
+            ]
+          }
+        }
+      ];
+
+      const timesheets = await (Timesheet.aggregate as any)(pipeline).exec();
+
+      // Build calendar data structure
+      const calendarData: CalendarData = {};
+
+      timesheets.forEach((timesheet: any) => {
+        const entries = timesheet.time_entries || [];
+
+        entries.forEach((entry: any) => {
+          const dateKey = entry.date.toISOString().split('T')[0]; // YYYY-MM-DD format
+
+          if (!calendarData[dateKey]) {
+            calendarData[dateKey] = {
+              hours: 0,
+              status: timesheet.status || 'draft',
+              entries: []
+            };
+          }
+
+          calendarData[dateKey].hours += entry.hours;
+          calendarData[dateKey].entries.push({
+            id: entry._id.toString(),
+            timesheet_id: entry.timesheet_id.toString(),
+            project_id: entry.project_id?.toString(),
+            task_id: entry.task_id?.toString(),
+            date: entry.date,
+            hours: entry.hours,
+            description: entry.description,
+            is_billable: entry.is_billable,
+            custom_task_description: entry.custom_task_description,
+            entry_type: entry.entry_type,
+            created_at: entry.created_at,
+            updated_at: entry.updated_at,
+            // Additional populated fields (not part of ITimeEntry interface)
+            project: entry.project?.[0],
+            task: entry.task?.[0]
+          } as any);
+        });
+      });
+
+      console.log(`Calendar data processed: ${Object.keys(calendarData).length} days with data`);
+      return { calendarData };
+    } catch (error) {
+      console.error('Error in getCalendarData:', error);
+      return { error: error instanceof Error ? error.message : 'Failed to fetch calendar data' };
+    }
+  }
+
+  /**
+   * Get timesheets for approval (Manager/Management view)
+   */
+  static async getTimesheetsForApproval(
+    currentUser: AuthUser,
+    approverRole: string,
+    filters?: {
+      status?: string[];
+      userId?: string;
+      dateRange?: { start: string; end: string };
+    }
+  ): Promise<{ timesheets: TimesheetWithDetails[]; error?: string }> {
+    try {
+      // Check permissions
+      if (!['manager', 'management', 'super_admin', 'lead'].includes(currentUser.role)) {
+        throw new AuthorizationError('Access denied: Insufficient permissions to view timesheets for approval');
+      }
+
+      // Build query based on approver role
+      let query: any = { deleted_at: null };
+
+      // Status filters based on approver role
+      if (approverRole === 'manager' || approverRole === 'lead') {
+        query.status = { $in: ['submitted'] }; // Managers see submitted timesheets
+      } else if (approverRole === 'management') {
+        query.status = { $in: ['manager_approved', 'management_pending'] }; // Management sees manager-approved timesheets
+      } else {
+        // Default: show timesheets that need approval
+        query.status = { $in: ['submitted', 'manager_approved', 'management_pending'] };
+      }
+
+      // Apply additional filters if provided
+      if (filters?.status && filters.status.length > 0) {
+        query.status = { $in: filters.status };
+      }
+
+      if (filters?.userId) {
+        query.user_id = new mongoose.Types.ObjectId(filters.userId);
+      }
+
+      if (filters?.dateRange) {
+        query.week_start_date = {
+          $gte: new Date(filters.dateRange.start),
+          $lte: new Date(filters.dateRange.end)
+        };
+      }
+
+      // Execute aggregation to get timesheets with time entries and user details
+      const pipeline = [
+        { $match: query },
+        {
+          $lookup: {
+            from: 'timeentries',
+            localField: '_id',
+            foreignField: 'timesheet_id',
+            as: 'time_entries',
+            pipeline: [
+              { $match: { deleted_at: null } }
+            ]
+          }
+        },
+        {
+          $lookup: {
+            from: 'users',
+            localField: 'user_id',
+            foreignField: '_id',
+            as: 'user',
+            pipeline: [{ $project: { full_name: 1, email: 1, role: 1 } }]
+          }
+        },
+        { $sort: { week_start_date: -1, created_at: -1 } } as any
+      ];
+
+      const timesheets = await (Timesheet.aggregate as any)(pipeline).exec();
+
+      // Enhance timesheets with calculated fields
+      const enhancedTimesheets: TimesheetWithDetails[] = timesheets.map(ts => {
+        const entries = ts.time_entries || [];
+        const billableHours = entries
+          .filter((e: ITimeEntry) => e.is_billable)
+          .reduce((sum: number, e: ITimeEntry) => sum + e.hours, 0);
+        const nonBillableHours = entries
+          .filter((e: ITimeEntry) => !e.is_billable)
+          .reduce((sum: number, e: ITimeEntry) => sum + e.hours, 0);
+
+        const user = ts.user[0];
+
+        return {
+          ...ts,
+          id: ts._id.toString(),
+          user_id: ts.user_id.toString(),
+          user_name: user?.full_name || 'Unknown User',
+          user_email: user?.email,
+          time_entries: entries,
+          user: user,
+          billableHours,
+          nonBillableHours,
+          can_edit: false, // Approvers typically cannot edit
+          can_submit: false,
+          can_approve: ['manager', 'management', 'super_admin'].includes(currentUser.role),
+          can_reject: ['manager', 'management', 'super_admin'].includes(currentUser.role),
+          next_action: this.getNextAction(ts.status, currentUser, ts.user_id.toString())
+        };
+      });
+
+      return { timesheets: enhancedTimesheets };
+    } catch (error) {
+      console.error('Error in getTimesheetsForApproval:', error);
+      return {
+        timesheets: [],
+        error: error instanceof Error ? error.message : 'Failed to fetch timesheets for approval'
+      };
+    }
+  }
+
+  /**
+   * Get timesheet by ID with details
+   */
+  static async getTimesheetById(
+    timesheetId: string,
+    currentUser: AuthUser
+  ): Promise<{ timesheet?: TimesheetWithDetails; error?: string }> {
+    try {
+      console.log('TimesheetService.getTimesheetById called with:', { timesheetId });
+
+      const timesheet = await (Timesheet.findOne as any)({
+        _id: new mongoose.Types.ObjectId(timesheetId),
+        deleted_at: null
+      })
+        .populate('user_id', 'full_name email')
+        .populate('approved_by_manager_id', 'full_name email')
+        .populate('approved_by_management_id', 'full_name email')
+        .exec();
+
+      if (!timesheet) {
+        throw new NotFoundError('Timesheet not found');
+      }
+
+      // Validate access permissions
+      validateTimesheetAccess(currentUser, timesheet.user_id._id.toString(), 'view');
+
+      // Get time entries for this timesheet
+      const timeEntries = await (TimeEntry.find as any)({
+        timesheet_id: new mongoose.Types.ObjectId(timesheetId)
+      })
+        .populate('project_id', 'name')
+        .populate('task_id', 'name description')
+        .sort({ date: 1, created_at: 1 })
+        .exec();
+
+      // Build detailed timesheet object
+      const timesheetObj = timesheet.toObject();
+      const detailedTimesheet: TimesheetWithDetails = {
+        ...timesheetObj,
+        user_name: timesheet.user_id.full_name,
+        user_email: timesheet.user_id.email,
+        time_entries: timeEntries,
+        can_edit: this.canEditTimesheet(timesheet.status, currentUser, timesheet.user_id._id.toString()),
+        can_submit: this.canSubmitTimesheet(timesheet.status, currentUser, timesheet.user_id._id.toString()),
+        can_approve: this.canApproveTimesheet(timesheet.status, currentUser),
+        can_reject: this.canRejectTimesheet(timesheet.status, currentUser),
+        next_action: this.getNextAction(timesheet.status, currentUser, timesheet.user_id._id.toString())
+      };
+
+      console.log('Timesheet retrieved successfully:', timesheetId);
+      return { timesheet: detailedTimesheet };
+    } catch (error) {
+      console.error('Error in getTimesheetById:', error);
+      return { error: error instanceof Error ? error.message : 'Failed to get timesheet' };
+    }
+  }
+
+  // Helper methods for permission checking
+  private static canEditTimesheet(status: TimesheetStatus, currentUser: AuthUser, timesheetUserId: string): boolean {
+    // Own timesheet in draft or rejected status
+    if (currentUser.id === timesheetUserId) {
+      return ['draft', 'manager_rejected', 'management_rejected'].includes(status);
+    }
+    // Managers can edit team member timesheets in certain statuses
+    if (['manager', 'management', 'super_admin'].includes(currentUser.role)) {
+      return ['draft', 'manager_rejected'].includes(status);
+    }
+    return false;
+  }
+
+  private static canSubmitTimesheet(status: TimesheetStatus, currentUser: AuthUser, timesheetUserId: string): boolean {
+    return currentUser.id === timesheetUserId && status === 'draft';
+  }
+
+  private static canApproveTimesheet(status: TimesheetStatus, currentUser: AuthUser): boolean {
+    if (currentUser.role === 'manager' && status === 'submitted') return true;
+    if (['management', 'super_admin'].includes(currentUser.role) && status === 'manager_approved') return true;
+    return false;
+  }
+
+  private static canRejectTimesheet(status: TimesheetStatus, currentUser: AuthUser): boolean {
+    if (currentUser.role === 'manager' && status === 'submitted') return true;
+    if (['management', 'super_admin'].includes(currentUser.role) && ['submitted', 'manager_approved'].includes(status)) return true;
+    return false;
+  }
+
+  private static getNextAction(status: TimesheetStatus, currentUser: AuthUser, timesheetUserId: string): string {
+    switch (status) {
+      case 'draft':
+        return currentUser.id === timesheetUserId ? 'Submit for approval' : 'Waiting for employee to submit';
+      case 'submitted':
+        return currentUser.role === 'manager' ? 'Manager approval required' : 'Waiting for manager approval';
+      case 'manager_approved':
+        return ['management', 'super_admin'].includes(currentUser.role) ? 'Management approval required' : 'Waiting for management approval';
+      case 'manager_rejected':
+        return currentUser.id === timesheetUserId ? 'Address feedback and resubmit' : 'Waiting for employee to resubmit';
+      case 'management_rejected':
+        return currentUser.id === timesheetUserId ? 'Address feedback and resubmit' : 'Waiting for employee to resubmit';
+      case 'frozen':
+        return 'Ready for billing';
+      case 'billed':
+        return 'Completed';
+      default:
+        return 'Unknown status';
     }
   }
 

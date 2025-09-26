@@ -19,10 +19,10 @@ router.use(requireAuth);
 
 /**
  * @route GET /api/v1/users
- * @desc Get all users (Management and Super Admin only)
- * @access Private (Management+)
+ * @desc Get all users (Manager+ for team management)
+ * @access Private (Manager+)
  */
-router.get('/', requireManagement, UserController.getAllUsers);
+router.get('/', requireManager, UserController.getAllUsers);
 
 /**
  * @route POST /api/v1/users
@@ -40,10 +40,10 @@ router.post('/for-approval', requireManagement, createUserValidation, UserContro
 
 /**
  * @route GET /api/v1/users/pending-approvals
- * @desc Get pending user approvals (Management and Super Admin)
- * @access Private (Management+)
+ * @desc Get pending user approvals (Manager+ for team management)
+ * @access Private (Manager+)
  */
-router.get('/pending-approvals', requireManagement, UserController.getPendingApprovals);
+router.get('/pending-approvals', requireManager, UserController.getPendingApprovals);
 
 /**
  * @route GET /api/v1/users/by-role

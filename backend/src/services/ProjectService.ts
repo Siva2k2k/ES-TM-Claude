@@ -127,7 +127,8 @@ export class ProjectService {
    */
   static async getAllProjects(currentUser: AuthUser): Promise<{ projects: ProjectWithDetails[]; error?: string }> {
     try {
-      requireManagementRole(currentUser);
+      // Manager, Management, and Super Admin can see all projects
+      requireManagerRole(currentUser);
 
       const projects = await (Project.find as any)({
         deleted_at: { $exists: false }
