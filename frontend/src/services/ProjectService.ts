@@ -438,7 +438,7 @@ export class ProjectService {
         return { projects: [] };
       }
 
-      const response = await backendApi.get<{ success: boolean; data: Project[]; message?: string }>(
+      const response = await backendApi.get<{ success: boolean; projects: Project[]; message?: string }>(
         `/projects/user/${targetUserId}`
       );
 
@@ -446,8 +446,8 @@ export class ProjectService {
         return { projects: [], error: response.message || 'Failed to fetch user projects' };
       }
 
-      console.log('🔍 ProjectService final projects:', response.data);
-      return { projects: response.data };
+      console.log('🔍 ProjectService final projects:', response.projects);
+      return { projects: response.projects };
     } catch (error) {
       console.error('Error in getUserProjects:', error);
       const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch user projects';
@@ -622,24 +622,31 @@ export class ProjectService {
    */
   static async getUserTasks(userId: string): Promise<{ tasks: Task[]; error?: string }> {
     try {
-      // Note: This endpoint may need to be implemented in the backend or adjusted based on available endpoints
-      // For now using a general projects/user endpoint and filtering client-side
-      const response = await backendApi.get<{ success: boolean; data: any[]; message?: string }>(
-        `/projects/user/${userId}`
-      );
-
-      if (!response.success) {
-        return { tasks: [], error: response.message || 'Failed to fetch user tasks' };
+      // Get user's projects first
+      const projectsResult = await this.getUserProjects(userId);
+      if (projectsResult.error) {
+        return { tasks: [], error: projectsResult.error };
       }
 
-      // Extract tasks from user projects - this may need adjustment based on actual backend response structure
+      // Get tasks for each project the user has access to
       const allTasks: Task[] = [];
-      for (const project of response.data) {
-        if (project.tasks) {
-          allTasks.push(...project.tasks.filter((task: Task) => task.assigned_to_user_id === userId));
+      for (const project of projectsResult.projects) {
+        try {
+          const tasksResponse = await backendApi.get<{ success: boolean; tasks: Task[]; message?: string }>(
+            `/projects/${project.id}/tasks`
+          );
+          
+          if (tasksResponse.success && tasksResponse.tasks) {
+            // Add all tasks from user's accessible projects
+            allTasks.push(...tasksResponse.tasks);
+          }
+        } catch (error) {
+          console.warn(`Failed to fetch tasks for project ${project.id}:`, error);
+          // Continue with other projects even if one fails
         }
       }
 
+      console.log('🔍 Extracted user tasks:', allTasks);
       return { tasks: allTasks };
     } catch (error) {
       console.error('Error in getUserTasks:', error);
