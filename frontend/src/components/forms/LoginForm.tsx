@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../store/contexts/AuthContext';
 import { Shield, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
+import { ForgotPasswordModal } from '../ForgotPasswordModal';
 
 const LoginForm: React.FC = () => {
   const { signIn, isLoading } = useAuth();
@@ -8,6 +9,7 @@ const LoginForm: React.FC = () => {
   const [password, setPassword] = useState('Admin123!');
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -126,6 +128,17 @@ const LoginForm: React.FC = () => {
             </button>
           </form>
 
+          {/* Forgot Password Link */}
+          <div className="mt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setShowForgotPassword(true)}
+              className="text-sm text-blue-600 hover:text-blue-800 hover:underline transition-colors"
+            >
+              Forgot your password?
+            </button>
+          </div>
+
           {/* Demo Credentials */}
           <div className="mt-6 p-4 bg-gray-50 rounded-lg">
             <h3 className="text-sm font-medium text-gray-700 mb-2">Demo Credentials</h3>
@@ -138,6 +151,12 @@ const LoginForm: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      <ForgotPasswordModal
+        isOpen={showForgotPassword}
+        onClose={() => setShowForgotPassword(false)}
+      />
     </div>
   );
 };

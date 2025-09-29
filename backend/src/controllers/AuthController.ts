@@ -10,6 +10,9 @@ import {
   NotFoundError,
   handleAsyncError
 } from '@/utils/errors';
+import { PasswordSecurity } from '@/utils/passwordSecurity';
+import { UserService } from '@/services/UserService';
+import { logger } from '@/config/logger';
 
 interface AuthResponse {
   success: boolean;
@@ -92,7 +95,7 @@ export class AuthController {
   });
 
   /**
-   * User login
+   * User login with enhanced security
    */
   static login = handleAsyncError(async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -102,21 +105,41 @@ export class AuthController {
 
     const { email, password } = req.body;
 
-    // Find user by email
+    // Find user by email with security fields
     const user = await (User.findOne as any)({
       email: email.toLowerCase(),
       deleted_at: { $exists: false }
-    });
+    }).select('+password_hash +temporary_password +is_temporary_password +failed_login_attempts +account_locked_until +password_expires_at +force_password_change');
 
-    if (!user || !user.password_hash) {
+    if (!user) {
       throw new AuthenticationError('Invalid email or password');
     }
 
-    // Verify password
-    const isPasswordValid = await PasswordUtils.verifyPassword(password, user.password_hash);
+    // Check if account is locked
+    if (user.account_locked_until && user.account_locked_until > new Date()) {
+      const cooldownTime = PasswordSecurity.getCooldownTime(
+        user.failed_login_attempts,
+        user.last_failed_login || new Date()
+      );
+      throw new AuthenticationError(`Account is locked. Try again in ${Math.ceil(cooldownTime / 1000)} seconds`);
+    }
+
+    // Verify password (check both regular and temporary passwords)
+    const passwordToCheck = user.is_temporary_password ? user.temporary_password : user.password_hash;
+
+    if (!passwordToCheck) {
+      throw new AuthenticationError('No password set for this account. Please contact administrator.');
+    }
+
+    const isPasswordValid = await PasswordSecurity.verifyPassword(password, passwordToCheck);
     if (!isPasswordValid) {
+      // Record failed login attempt
+      await UserService.recordFailedLogin(user._id);
       throw new AuthenticationError('Invalid email or password');
     }
+
+    // Clear failed login attempts on successful verification
+    await UserService.clearFailedLogins(user._id);
 
     // Check if user is active
     if (!user.is_active) {
@@ -128,6 +151,9 @@ export class AuthController {
       throw new AuthenticationError('Account is pending approval. Please contact administrator.');
     }
 
+    // Check password expiry
+    const passwordStatus = await UserService.checkPasswordExpiry(user._id);
+
     // Generate tokens
     const tokenPayload = {
       id: user.id,
@@ -138,9 +164,14 @@ export class AuthController {
 
     const tokens = JWTUtils.generateTokenPair(tokenPayload);
 
+    let message = 'Login successful';
+    if (passwordStatus.expired || passwordStatus.forceChange) {
+      message = 'Login successful. You must change your password before continuing.';
+    }
+
     const response: AuthResponse = {
       success: true,
-      message: 'Login successful',
+      message,
       user: {
         id: user.id,
         email: user.email,
@@ -152,6 +183,13 @@ export class AuthController {
       tokens
     };
 
+    // Add password change requirement to response
+    if (passwordStatus.expired || passwordStatus.forceChange) {
+      (response as any).requirePasswordChange = true;
+      (response as any).passwordExpired = passwordStatus.expired;
+    }
+
+    logger.info(`Successful login for user: ${user.email}`);
     res.json(response);
   });
 
@@ -256,7 +294,7 @@ export class AuthController {
   });
 
   /**
-   * Change password
+   * Change password with enhanced security
    */
   static changePassword = handleAsyncError(async (req: Request, res: Response) => {
     const errors = validationResult(req);
@@ -265,43 +303,108 @@ export class AuthController {
     }
 
     const userId = (req as any).user?.id;
+    const currentUser = (req as any).user;
     const { currentPassword, newPassword } = req.body;
 
-    if (!userId) {
+    if (!userId || !currentUser) {
       throw new AuthenticationError('User not authenticated');
     }
 
-    // Find user
-    const user = await (User.findOne as any)({
-      _id: userId,
-      deleted_at: { $exists: false }
-    });
+    // Use UserService for secure password change
+    const result = await UserService.changePassword(
+      userId,
+      currentPassword,
+      newPassword,
+      currentUser
+    );
 
-    if (!user || !user.password_hash) {
-      throw new NotFoundError('User not found');
+    if (!result.success) {
+      throw new ValidationError(result.error || 'Failed to change password');
     }
-
-    // Verify current password
-    const isCurrentPasswordValid = await PasswordUtils.verifyPassword(currentPassword, user.password_hash);
-    if (!isCurrentPasswordValid) {
-      throw new AuthenticationError('Current password is incorrect');
-    }
-
-    // Validate new password strength
-    const passwordValidation = PasswordUtils.validatePasswordStrength(newPassword);
-    if (!passwordValidation.isValid) {
-      throw new ValidationError(passwordValidation.errors.join(', '));
-    }
-
-    // Hash new password and update
-    const newPasswordHash = await PasswordUtils.hashPassword(newPassword);
-    user.password_hash = newPasswordHash;
-    user.updated_at = new Date();
-    await user.save();
 
     res.json({
       success: true,
       message: 'Password changed successfully'
+    });
+  });
+
+  /**
+   * Initiate password reset
+   */
+  static initiatePasswordReset = handleAsyncError(async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    const { email } = req.body;
+
+    const result = await UserService.initiatePasswordReset(email);
+
+    if (!result.success) {
+      throw new ValidationError(result.error || 'Failed to initiate password reset');
+    }
+
+    res.json({
+      success: true,
+      message: 'If an account with that email exists, a password reset link has been sent.'
+    });
+  });
+
+  /**
+   * Complete password reset
+   */
+  static completePasswordReset = handleAsyncError(async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    const { token, newPassword } = req.body;
+
+    const result = await UserService.completePasswordReset(token, newPassword);
+
+    if (!result.success) {
+      throw new ValidationError(result.error || 'Failed to reset password');
+    }
+
+    res.json({
+      success: true,
+      message: 'Password reset successfully. You can now log in with your new password.'
+    });
+  });
+
+  /**
+   * Update user profile
+   */
+  static updateProfile = handleAsyncError(async (req: Request, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    const userId = (req as any).user?.id;
+    const currentUser = (req as any).user;
+    const { full_name, hourly_rate } = req.body;
+
+    if (!userId || !currentUser) {
+      throw new AuthenticationError('User not authenticated');
+    }
+
+    const profileData: any = {};
+    if (full_name !== undefined) profileData.full_name = full_name;
+    if (hourly_rate !== undefined) profileData.hourly_rate = hourly_rate;
+
+    const result = await UserService.updateProfile(userId, profileData, currentUser);
+
+    if (result.error) {
+      throw new ValidationError(result.error);
+    }
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: result.user
     });
   });
 }
@@ -340,6 +443,39 @@ export const changePasswordValidation = [
     .notEmpty()
     .withMessage('Current password is required'),
   body('newPassword')
-    .isLength({ min: 8, max: 100 })
-    .withMessage('New password must be between 8 and 100 characters')
+    .isLength({ min: 12, max: 128 })
+    .withMessage('New password must be between 12 and 128 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{}|;:,.<>?])/)
+    .withMessage('New password must contain at least one uppercase letter, one lowercase letter, one number, and one special character')
+];
+
+export const passwordResetValidation = [
+  body('email')
+    .isEmail()
+    .normalizeEmail()
+    .withMessage('Valid email is required')
+];
+
+export const completePasswordResetValidation = [
+  body('token')
+    .notEmpty()
+    .isLength({ min: 64, max: 64 })
+    .withMessage('Valid reset token is required'),
+  body('newPassword')
+    .isLength({ min: 12, max: 128 })
+    .withMessage('New password must be between 12 and 128 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{}|;:,.<>?])/)
+    .withMessage('New password must contain at least one uppercase letter, one lowercase letter, one number, and one special character')
+];
+
+export const updateProfileValidation = [
+  body('full_name')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 100 })
+    .withMessage('Full name must be between 2 and 100 characters'),
+  body('hourly_rate')
+    .optional()
+    .isFloat({ min: 0.01, max: 10000 })
+    .withMessage('Hourly rate must be between 0.01 and 10000')
 ];

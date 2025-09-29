@@ -12,6 +12,19 @@ export interface IUser extends Document {
   is_approved_by_super_admin: boolean;
   manager_id?: mongoose.Types.ObjectId;
   password_hash?: string;
+
+  // Secure credential management fields
+  temporary_password?: string;
+  password_expires_at?: Date;
+  is_temporary_password: boolean;
+  password_reset_token?: string;
+  password_reset_expires?: Date;
+  failed_login_attempts: number;
+  last_failed_login?: Date;
+  account_locked_until?: Date;
+  last_password_change?: Date;
+  force_password_change: boolean;
+
   created_at: Date;
   updated_at: Date;
   deleted_at?: Date;
@@ -57,6 +70,51 @@ const UserSchema: Schema = new Schema({
     type: String,
     required: false
   },
+
+  // Secure credential management fields
+  temporary_password: {
+    type: String,
+    required: false,
+    select: false // Never include in regular queries for security
+  },
+  password_expires_at: {
+    type: Date,
+    required: false
+  },
+  is_temporary_password: {
+    type: Boolean,
+    default: false
+  },
+  password_reset_token: {
+    type: String,
+    required: false,
+    select: false // Never include in regular queries for security
+  },
+  password_reset_expires: {
+    type: Date,
+    required: false
+  },
+  failed_login_attempts: {
+    type: Number,
+    default: 0
+  },
+  last_failed_login: {
+    type: Date,
+    required: false
+  },
+  account_locked_until: {
+    type: Date,
+    required: false
+  },
+  last_password_change: {
+    type: Date,
+    required: false
+  },
+  force_password_change: {
+    type: Boolean,
+    default: false
+  },
+
   deleted_at: {
     type: Date,
     required: false
@@ -74,6 +132,9 @@ UserSchema.index({ role: 1 });
 UserSchema.index({ is_active: 1 });
 UserSchema.index({ manager_id: 1 });
 UserSchema.index({ deleted_at: 1 });
+UserSchema.index({ password_reset_token: 1 });
+UserSchema.index({ password_expires_at: 1 });
+UserSchema.index({ account_locked_until: 1 });
 
 // Virtual for ID as string
 UserSchema.virtual('id').get(function() {
@@ -85,7 +146,10 @@ UserSchema.set('toJSON', {
   transform: function(_doc: any, ret: any) {
     delete ret._id;
     delete ret.__v;
-    if (ret.password_hash) delete ret.password_hash; // Never expose password hash
+    // Never expose sensitive security fields
+    if (ret.password_hash) delete ret.password_hash;
+    if (ret.temporary_password) delete ret.temporary_password;
+    if (ret.password_reset_token) delete ret.password_reset_token;
     return ret;
   }
 });

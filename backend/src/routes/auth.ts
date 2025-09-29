@@ -3,7 +3,10 @@ import {
   AuthController,
   registerValidation,
   loginValidation,
-  changePasswordValidation
+  changePasswordValidation,
+  passwordResetValidation,
+  completePasswordResetValidation,
+  updateProfileValidation
 } from '@/controllers/AuthController';
 import { requireAuth } from '@/middleware/auth';
 
@@ -50,5 +53,26 @@ router.get('/profile', requireAuth, AuthController.getProfile);
  * @access Private
  */
 router.post('/change-password', requireAuth, changePasswordValidation, AuthController.changePassword);
+
+/**
+ * @route POST /api/v1/auth/forgot-password
+ * @desc Initiate password reset
+ * @access Public
+ */
+router.post('/forgot-password', passwordResetValidation, AuthController.initiatePasswordReset);
+
+/**
+ * @route POST /api/v1/auth/reset-password
+ * @desc Complete password reset with token
+ * @access Public
+ */
+router.post('/reset-password', completePasswordResetValidation, AuthController.completePasswordReset);
+
+/**
+ * @route PUT /api/v1/auth/profile
+ * @desc Update user profile
+ * @access Private
+ */
+router.put('/profile', requireAuth, updateProfileValidation, AuthController.updateProfile);
 
 export default router;

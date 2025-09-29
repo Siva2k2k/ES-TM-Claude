@@ -12,6 +12,9 @@ import {
   requireManagerRole,
   canManageRoleHierarchy
 } from '@/utils/auth';
+import { PasswordSecurity } from '@/utils/passwordSecurity';
+import { EmailService } from '@/services/EmailService';
+import { logger } from '@/config/logger';
 
 export interface UserWithProjectRoles extends IUser {
   userProjectRoles?: Map<string, string[]>;
@@ -24,7 +27,7 @@ export interface UserWithProjectRoles extends IUser {
  */
 export class UserService {
   /**
-   * Create a new user (Super Admin only) - Direct creation with immediate activation
+   * Create a new user (Super Admin only) - Direct creation with secure credentials and email
    */
   static async createUser(userData: Partial<IUser>, currentUser: AuthUser): Promise<{ user?: IUser; error?: string }> {
     try {
@@ -49,6 +52,11 @@ export class UserService {
         throw new ValidationError(validation.errors.join(', '));
       }
 
+      // Generate secure temporary password
+      const temporaryPassword = PasswordSecurity.generateTemporaryPassword(16);
+      const passwordExpiry = PasswordSecurity.generatePasswordExpiry(48); // 48 hours to change password
+      const hashedTempPassword = await PasswordSecurity.hashPassword(temporaryPassword);
+
       const userDoc: any = {
         email: userData.email!.toLowerCase(),
         full_name: userData.full_name!,
@@ -56,6 +64,14 @@ export class UserService {
         hourly_rate: userData.hourly_rate || 50,
         is_active: true,
         is_approved_by_super_admin: true, // Super Admin creates directly
+
+        // Secure credential fields
+        password_hash: hashedTempPassword,
+        temporary_password: hashedTempPassword,
+        password_expires_at: passwordExpiry,
+        is_temporary_password: true,
+        force_password_change: true,
+        failed_login_attempts: 0
       };
 
       // Only set manager_id if it's provided
@@ -64,13 +80,39 @@ export class UserService {
       }
 
       const user = new User(userDoc);
-
       await user.save();
 
-      console.log('Super Admin created user directly:', user.id);
-      return { user };
+      // Send welcome email with credentials
+      try {
+        const loginUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+        const emailSent = await EmailService.sendWelcomeEmail({
+          fullName: user.full_name,
+          email: user.email,
+          temporaryPassword: temporaryPassword,
+          loginUrl: `${loginUrl}/login`,
+          expirationTime: passwordExpiry.toLocaleString()
+        });
+
+        if (emailSent) {
+          logger.info(`Welcome email sent successfully to ${user.email}`);
+        } else {
+          logger.warn(`Failed to send welcome email to ${user.email}, but user was created`);
+        }
+      } catch (emailError) {
+        logger.error('Error sending welcome email:', emailError);
+        // Don't fail user creation if email fails
+      }
+
+      logger.info(`Super Admin created user with secure credentials: ${user.id}`);
+
+      // Return user without sensitive fields
+      const userResponse = user.toJSON();
+      delete userResponse.password_hash;
+      delete userResponse.temporary_password;
+
+      return { user: userResponse as IUser };
     } catch (error) {
-      console.error('Error in createUser:', error);
+      logger.error('Error in createUser:', error);
       if (error instanceof ValidationError || error instanceof ConflictError || error instanceof AuthorizationError) {
         return { error: error.message };
       }
@@ -529,6 +571,338 @@ export class UserService {
         return { success: false, error: error.message };
       }
       return { success: false, error: 'Failed to set user credentials' };
+    }
+  }
+
+  /**
+   * Change user password with secure validation
+   */
+  static async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+    currentUser: AuthUser
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Users can only change their own password, unless it's an admin
+      if (currentUser.id !== userId && currentUser.role !== 'super_admin') {
+        throw new AuthorizationError('You can only change your own password');
+      }
+
+      // Get user with password fields
+      const user = await (User.findOne as any)({
+        _id: userId,
+        deleted_at: { $exists: false }
+      }).select('+password_hash +temporary_password +is_temporary_password +account_locked_until');
+
+      if (!user) {
+        throw new NotFoundError('User not found');
+      }
+
+      // Check if account is locked
+      if (user.account_locked_until && user.account_locked_until > new Date()) {
+        const cooldownTime = PasswordSecurity.getCooldownTime(
+          user.failed_login_attempts,
+          user.last_failed_login || new Date()
+        );
+        throw new AuthorizationError(`Account is locked. Try again in ${Math.ceil(cooldownTime / 1000)} seconds`);
+      }
+
+      // Verify current password (skip for admin forced changes)
+      if (currentUser.role !== 'super_admin') {
+        const passwordToCheck = user.is_temporary_password ? user.temporary_password : user.password_hash;
+        if (!passwordToCheck || !(await PasswordSecurity.verifyPassword(currentPassword, passwordToCheck))) {
+          // Record failed attempt
+          await this.recordFailedLogin(userId);
+          throw new AuthorizationError('Current password is incorrect');
+        }
+      }
+
+      // Validate new password strength
+      const passwordValidation = PasswordSecurity.validatePassword(newPassword, {
+        email: user.email,
+        fullName: user.full_name
+      });
+
+      if (!passwordValidation.isValid) {
+        throw new ValidationError(`Password validation failed: ${passwordValidation.errors.join(', ')}`);
+      }
+
+      // Hash new password
+      const newPasswordHash = await PasswordSecurity.hashPassword(newPassword);
+
+      // Update user with new password
+      await (User.updateOne as any)(
+        { _id: userId },
+        {
+          password_hash: newPasswordHash,
+          is_temporary_password: false,
+          force_password_change: false,
+          password_expires_at: null,
+          temporary_password: null,
+          failed_login_attempts: 0,
+          last_failed_login: null,
+          account_locked_until: null,
+          last_password_change: new Date(),
+          updated_at: new Date()
+        }
+      );
+
+      logger.info(`Password changed successfully for user: ${userId}`);
+      return { success: true };
+    } catch (error) {
+      logger.error('Error in changePassword:', error);
+      if (error instanceof AuthorizationError || error instanceof NotFoundError || error instanceof ValidationError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to change password' };
+    }
+  }
+
+  /**
+   * Initiate password reset process
+   */
+  static async initiatePasswordReset(email: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const user = await (User.findOne as any)({
+        email: email.toLowerCase(),
+        deleted_at: { $exists: false },
+        is_active: true
+      });
+
+      if (!user) {
+        // Don't reveal if user exists or not for security
+        return { success: true };
+      }
+
+      // Generate secure reset token
+      const resetToken = PasswordSecurity.generateResetToken();
+      const resetExpiry = PasswordSecurity.generatePasswordExpiry(1); // 1 hour to reset
+
+      // Save reset token
+      await (User.updateOne as any)(
+        { _id: user._id },
+        {
+          password_reset_token: resetToken,
+          password_reset_expires: resetExpiry,
+          updated_at: new Date()
+        }
+      );
+
+      // Send password reset email
+      try {
+        const resetUrl = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password?token=${resetToken}`;
+        const emailSent = await EmailService.sendPasswordResetEmail({
+          fullName: user.full_name,
+          email: user.email,
+          resetUrl,
+          expirationTime: resetExpiry.toLocaleString()
+        });
+
+        if (emailSent) {
+          logger.info(`Password reset email sent to ${user.email}`);
+        } else {
+          logger.warn(`Failed to send password reset email to ${user.email}`);
+        }
+      } catch (emailError) {
+        logger.error('Error sending password reset email:', emailError);
+      }
+
+      return { success: true };
+    } catch (error) {
+      logger.error('Error in initiatePasswordReset:', error);
+      return { success: false, error: 'Failed to initiate password reset' };
+    }
+  }
+
+  /**
+   * Complete password reset with token
+   */
+  static async completePasswordReset(
+    token: string,
+    newPassword: string
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Find user with valid reset token
+      const user = await (User.findOne as any)({
+        password_reset_token: token,
+        password_reset_expires: { $gt: new Date() },
+        deleted_at: { $exists: false },
+        is_active: true
+      }).select('+password_reset_token');
+
+      if (!user) {
+        throw new AuthorizationError('Invalid or expired reset token');
+      }
+
+      // Validate new password
+      const passwordValidation = PasswordSecurity.validatePassword(newPassword, {
+        email: user.email,
+        fullName: user.full_name
+      });
+
+      if (!passwordValidation.isValid) {
+        throw new ValidationError(`Password validation failed: ${passwordValidation.errors.join(', ')}`);
+      }
+
+      // Hash new password
+      const newPasswordHash = await PasswordSecurity.hashPassword(newPassword);
+
+      // Update user with new password and clear reset token
+      await (User.updateOne as any)(
+        { _id: user._id },
+        {
+          password_hash: newPasswordHash,
+          is_temporary_password: false,
+          force_password_change: false,
+          password_expires_at: null,
+          temporary_password: null,
+          password_reset_token: null,
+          password_reset_expires: null,
+          failed_login_attempts: 0,
+          last_failed_login: null,
+          account_locked_until: null,
+          last_password_change: new Date(),
+          updated_at: new Date()
+        }
+      );
+
+      logger.info(`Password reset completed for user: ${user.email}`);
+      return { success: true };
+    } catch (error) {
+      logger.error('Error in completePasswordReset:', error);
+      if (error instanceof AuthorizationError || error instanceof ValidationError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to reset password' };
+    }
+  }
+
+  /**
+   * Update user profile information
+   */
+  static async updateProfile(
+    userId: string,
+    profileData: { full_name?: string; hourly_rate?: number },
+    currentUser: AuthUser
+  ): Promise<{ user?: IUser; error?: string }> {
+    try {
+      // Users can update their own profile, or admins can update any profile
+      if (currentUser.id !== userId && !['management', 'super_admin'].includes(currentUser.role)) {
+        throw new AuthorizationError('You can only update your own profile');
+      }
+
+      // Validate profile data
+      const updates: any = {};
+
+      if (profileData.full_name !== undefined) {
+        if (!profileData.full_name || profileData.full_name.trim().length < 2) {
+          throw new ValidationError('Full name must be at least 2 characters');
+        }
+        updates.full_name = profileData.full_name.trim();
+      }
+
+      if (profileData.hourly_rate !== undefined) {
+        if (profileData.hourly_rate <= 0) {
+          throw new ValidationError('Hourly rate must be greater than 0');
+        }
+        updates.hourly_rate = profileData.hourly_rate;
+      }
+
+      if (Object.keys(updates).length === 0) {
+        throw new ValidationError('No valid fields to update');
+      }
+
+      updates.updated_at = new Date();
+
+      // Update user
+      const result = await (User.findOneAndUpdate as any)(
+        { _id: userId, deleted_at: { $exists: false } },
+        updates,
+        { new: true, runValidators: true }
+      ).select('-password_hash -temporary_password -password_reset_token');
+
+      if (!result) {
+        throw new NotFoundError('User not found');
+      }
+
+      logger.info(`Profile updated for user: ${userId}`);
+      return { user: result };
+    } catch (error) {
+      logger.error('Error in updateProfile:', error);
+      if (error instanceof AuthorizationError || error instanceof NotFoundError || error instanceof ValidationError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to update profile' };
+    }
+  }
+
+  /**
+   * Record failed login attempt
+   */
+  static async recordFailedLogin(userId: string): Promise<void> {
+    try {
+      const user = await (User.findById as any)(userId);
+      if (!user) return;
+
+      const failedAttempts = (user.failed_login_attempts || 0) + 1;
+      const now = new Date();
+
+      const updates: any = {
+        failed_login_attempts: failedAttempts,
+        last_failed_login: now,
+        updated_at: now
+      };
+
+      // Lock account after 5 failed attempts with exponential backoff
+      if (failedAttempts >= 5) {
+        const lockDuration = Math.pow(2, Math.min(failedAttempts - 4, 10)) * 60 * 1000; // Max 17 hours
+        updates.account_locked_until = new Date(now.getTime() + lockDuration);
+      }
+
+      await (User.updateOne as any)({ _id: userId }, updates);
+      logger.warn(`Failed login attempt #${failedAttempts} for user: ${userId}`);
+    } catch (error) {
+      logger.error('Error recording failed login:', error);
+    }
+  }
+
+  /**
+   * Clear failed login attempts (on successful login)
+   */
+  static async clearFailedLogins(userId: string): Promise<void> {
+    try {
+      await (User.updateOne as any)(
+        { _id: userId },
+        {
+          failed_login_attempts: 0,
+          last_failed_login: null,
+          account_locked_until: null,
+          updated_at: new Date()
+        }
+      );
+    } catch (error) {
+      logger.error('Error clearing failed logins:', error);
+    }
+  }
+
+  /**
+   * Check if user password is expired
+   */
+  static async checkPasswordExpiry(userId: string): Promise<{ expired: boolean; forceChange: boolean }> {
+    try {
+      const user = await (User.findById as any)(userId).select('password_expires_at force_password_change is_temporary_password');
+      if (!user) {
+        return { expired: false, forceChange: false };
+      }
+
+      const expired = user.password_expires_at ? PasswordSecurity.isPasswordExpired(user.password_expires_at) : false;
+      const forceChange = user.force_password_change || user.is_temporary_password || false;
+
+      return { expired, forceChange };
+    } catch (error) {
+      logger.error('Error checking password expiry:', error);
+      return { expired: false, forceChange: false };
     }
   }
 
