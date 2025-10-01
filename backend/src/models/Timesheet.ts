@@ -42,9 +42,16 @@ export interface ITimesheet extends Document {
   // Submission tracking
   submitted_at?: Date;
 
+  // Delete tracking fields
+  deleted_at?: Date;
+  deleted_by?: mongoose.Types.ObjectId;
+  deleted_reason?: string;
+  is_hard_deleted: boolean;
+  hard_deleted_at?: Date;
+  hard_deleted_by?: mongoose.Types.ObjectId;
+
   created_at: Date;
   updated_at: Date;
-  deleted_at?: Date;
 }
 
 const TimesheetSchema: Schema = new Schema({
@@ -152,8 +159,31 @@ const TimesheetSchema: Schema = new Schema({
     required: false
   },
 
+  // Delete tracking fields
   deleted_at: {
     type: Date,
+    required: false
+  },
+  deleted_by: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    required: false
+  },
+  deleted_reason: {
+    type: String,
+    required: false
+  },
+  is_hard_deleted: {
+    type: Boolean,
+    default: false
+  },
+  hard_deleted_at: {
+    type: Date,
+    required: false
+  },
+  hard_deleted_by: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
     required: false
   }
 }, {

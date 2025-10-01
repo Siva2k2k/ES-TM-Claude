@@ -7,6 +7,7 @@ import {
   addProjectMemberValidation,
   projectStatusValidation,
   createTaskValidation,
+  updateTaskValidation,
   taskIdValidation,
   createClientValidation,
   clientIdValidation,
@@ -47,7 +48,7 @@ router.get('/status', projectStatusValidation, ProjectController.getProjectsBySt
  * @desc Get all clients
  * @access Private (Manager+)
  */
-router.get('/clients', requireManager, ProjectController.getClients);
+router.get('/clients',requireAuth, ProjectController.getClients);
 
 /**
  * @route POST /api/v1/projects/clients
@@ -147,7 +148,7 @@ router.post('/:projectId/tasks', requireManager, createTaskValidation, ProjectCo
  * @desc Update task
  * @access Private
  */
-router.put('/tasks/:taskId', taskIdValidation, createTaskValidation, ProjectController.updateTask);
+router.put('/tasks/:taskId', taskIdValidation, updateTaskValidation, ProjectController.updateTask);
 
 /**
  * @route DELETE /api/v1/projects/tasks/:taskId

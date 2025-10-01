@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useRoleManager } from '../hooks/useRoleManager';
 import { AuditLogService } from '../services/AuditLogService';
 import { Shield, Activity, Download, Search, Calendar, AlertTriangle, CheckCircle } from 'lucide-react';
+import { showSuccess, showError, showWarning, showInfo } from '../utils/toast';
 
 export const AuditLogs: React.FC = () => {
   const { canAccessAuditLogs, currentRole } = useRoleManager();
@@ -93,12 +94,12 @@ export const AuditLogs: React.FC = () => {
       
       const result = await AuditLogService.exportAuditLogs(startDate, endDate, 'csv');
       if (result.success) {
-        alert('Audit logs exported successfully');
+        showSuccess('Audit logs exported successfully');
       } else {
-        alert(`Error exporting logs: ${result.error}`);
+        showError(`Error exporting logs: ${result.error}`);
       }
     } catch (err) {
-      alert('Error exporting audit logs');
+      showError('Error exporting audit logs');
       console.error('Error exporting logs:', err);
     }
   };
@@ -108,13 +109,13 @@ export const AuditLogs: React.FC = () => {
       try {
         const result = await AuditLogService.searchAuditLogs(searchQuery);
         if (result.error) {
-          alert(`Search error: ${result.error}`);
+          showError(`Search error: ${result.error}`);
         } else {
           console.log('Search results:', result.logs);
-          alert(`Found ${result.logs.length} matching log entries`);
+          showInfo(`Found ${result.logs.length} matching log entries`);
         }
       } catch (err) {
-        alert('Error searching audit logs');
+        showError('Error searching audit logs');
         console.error('Error searching logs:', err);
       }
     }

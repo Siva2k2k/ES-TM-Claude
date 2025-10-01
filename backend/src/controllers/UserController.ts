@@ -287,8 +287,153 @@ export class UserController {
   });
 
   /**
-   * Delete user (soft delete)
+   * Soft delete user (recoverable)
+   * POST /api/v1/users/:userId/soft-delete
+   */
+  static softDeleteUser = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const { userId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || !reason.trim()) {
+      throw new ValidationError('Reason for deletion is required');
+    }
+
+    const result = await UserService.softDeleteUser(userId, reason, req.user);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'User deleted successfully (can be restored)'
+    });
+  });
+
+  /**
+   * Hard delete user (permanent)
+   * POST /api/v1/users/:userId/hard-delete
+   */
+  static hardDeleteUser = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const { userId } = req.params;
+    const result = await UserService.hardDeleteUser(userId, req.user);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'User permanently deleted'
+    });
+  });
+
+  /**
+   * Restore soft deleted user
+   * POST /api/v1/users/:userId/restore
+   */
+  static restoreUser = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const { userId } = req.params;
+    const result = await UserService.restoreUser(userId, req.user);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'User restored successfully'
+    });
+  });
+
+  /**
+   * Get all deleted users
+   * GET /api/v1/users/deleted
+   */
+  static getDeletedUsers = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const result = await UserService.getDeletedUsers(req.user);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      users: result.users
+    });
+  });
+
+  /**
+   * Check user dependencies (can it be deleted?)
+   * GET /api/v1/users/:userId/dependencies
+   */
+  static checkUserDependencies = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const { userId } = req.params;
+    const dependencies = await UserService.canDeleteUser(userId);
+
+    res.json({
+      success: true,
+      canDelete: dependencies.length === 0,
+      dependencies
+    });
+  });
+
+  /**
+   * Delete user (soft delete) - Legacy endpoint
    * DELETE /api/v1/users/:userId
+   * @deprecated Use POST /api/v1/users/:userId/soft-delete instead
    */
   static deleteUser = handleAsyncError(async (req: AuthRequest, res: Response) => {
     const errors = validationResult(req);

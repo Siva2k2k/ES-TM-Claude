@@ -734,27 +734,31 @@ export const createProjectValidation = [
     .isLength({ max: 1000 })
     .withMessage('Description must be less than 1000 characters'),
   body('client_id')
-    .optional()
+    .optional({ nullable: true, checkFalsy: true })
     .custom((value) => {
       // Skip validation for empty/null/undefined values
       if (value === null || value === undefined || value === '') {
         return true;
       }
-      // Only validate if value exists and is not empty
-      return /^[0-9a-fA-F]{24}$/.test(value);
+      // Accept both MongoDB ObjectId (24 char hex) and UUID formats
+      const mongoIdPattern = /^[0-9a-fA-F]{24}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return mongoIdPattern.test(value) || uuidPattern.test(value);
     })
-    .withMessage('Invalid client ID format'),
+    .withMessage('Invalid client ID format (must be ObjectId or UUID)'),
   body('primary_manager_id')
-    .optional()
+    .optional({ nullable: true, checkFalsy: true })
     .custom((value) => {
       // Skip validation for empty/null/undefined values
       if (value === null || value === undefined || value === '') {
         return true;
       }
-      // Only validate if value exists and is not empty
-      return /^[0-9a-fA-F]{24}$/.test(value);
+      // Accept both MongoDB ObjectId (24 char hex) and UUID formats
+      const mongoIdPattern = /^[0-9a-fA-F]{24}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return mongoIdPattern.test(value) || uuidPattern.test(value);
     })
-    .withMessage('Invalid primary manager ID format'),
+    .withMessage('Invalid primary manager ID format (must be ObjectId or UUID)'),
   body('budget')
     .optional({ nullable: true, checkFalsy: true })
     .isNumeric()
@@ -870,6 +874,50 @@ export const createTaskValidation = [
     .isNumeric()
     .custom(value => value > 0)
     .withMessage('Estimated hours must be a positive number')
+];
+
+export const updateTaskValidation = [
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 200 })
+    .withMessage('Task name must be between 2 and 200 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 1000 })
+    .withMessage('Description must be less than 1000 characters'),
+  body('assigned_to_user_id')
+    .optional()
+    .custom((value) => {
+      if (!value) return true; // Allow empty/null values
+      // Accept both MongoDB ObjectId (24 char hex) and UUID formats
+      const mongoIdPattern = /^[0-9a-fA-F]{24}$/;
+      const uuidPattern = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+      return mongoIdPattern.test(value) || uuidPattern.test(value);
+    })
+    .withMessage('Invalid assigned user ID format (must be ObjectId or UUID)'),
+  body('due_date')
+    .optional()
+    .isISO8601()
+    .withMessage('Due date must be a valid date'),
+  body('priority')
+    .optional()
+    .isIn(['low', 'medium', 'high', 'urgent'])
+    .withMessage('Invalid task priority'),
+  body('status')
+    .optional()
+    .isIn(['open', 'todo', 'in_progress', 'review', 'completed'])
+    .withMessage('Invalid task status'),
+  body('estimated_hours')
+    .optional()
+    .isNumeric()
+    .custom(value => value > 0)
+    .withMessage('Estimated hours must be a positive number'),
+  body('is_billable')
+    .optional()
+    .isBoolean()
+    .withMessage('is_billable must be a boolean')
 ];
 
 export const taskIdValidation = [

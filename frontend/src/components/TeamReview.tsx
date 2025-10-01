@@ -22,6 +22,7 @@ import {
 import { useAuth } from '../store/contexts/AuthContext';
 import { TimesheetApprovalService } from '../services/TimesheetApprovalService';
 import { UserService } from '../services/UserService';
+import { showSuccess, showError, showWarning } from '../utils/toast';
 import type { TimesheetStatus, TimesheetWithDetails, User } from '../types';
 
 interface TeamReviewProps {
@@ -363,14 +364,14 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
     // Find the timesheet to check user-specific permissions
     const timesheet = timesheets.find(ts => ts.id === timesheetId);
     if (!timesheet) {
-      alert('Timesheet not found');
+      showError('Timesheet not found');
       return;
     }
 
     // Check if user can manage this specific timesheet owner
     const canManageThisUser = canManageUser(timesheet.user_id);
     if (!canManageThisUser) {
-      alert('You do not have permission to approve this timesheet');
+      showError('You do not have permission to approve this timesheet');
       return;
     }
 
@@ -396,7 +397,7 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
           isLeadRole ? 'Approved by lead (project manager)' : 'Approved by manager'
         );
       } else {
-        alert(`Cannot approve timesheet with status: ${timesheet.status}`);
+        showWarning(`Cannot approve timesheet with status: ${timesheet.status}`);
         setLoading(false);
         return;
       }
@@ -404,13 +405,13 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
       if (success) {
         await loadTeamTimesheets();
         setSelectedTimesheet(null);
-        alert('Timesheet approved successfully');
+        showSuccess('Timesheet approved successfully');
       } else {
-        alert('Error approving timesheet');
+        showError('Error approving timesheet');
       }
     } catch (error) {
       console.error('Error in handleApproveTimesheet:', error);
-      alert('Error approving timesheet');
+      showError('Error approving timesheet');
     } finally {
       setLoading(false);
     }
@@ -421,19 +422,19 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
     // Find the timesheet to check user-specific permissions
     const timesheet = timesheets.find(ts => ts.id === timesheetId);
     if (!timesheet) {
-      alert('Timesheet not found');
+      showError('Timesheet not found');
       return;
     }
 
     // Check if user can manage this specific timesheet owner
     const canManageThisUser = canManageUser(timesheet.user_id);
     if (!canManageThisUser) {
-      alert('You do not have permission to reject this timesheet');
+      showError('You do not have permission to reject this timesheet');
       return;
     }
 
     if (!reason.trim()) {
-      alert('Rejection reason is required');
+      showError('Rejection reason is required');
       return;
     }
 
@@ -459,7 +460,7 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
           reason
         );
       } else {
-        alert(`Cannot reject timesheet with status: ${timesheet.status}`);
+        showWarning(`Cannot reject timesheet with status: ${timesheet.status}`);
         setLoading(false);
         return;
       }
@@ -467,13 +468,13 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
       if (success) {
         await loadTeamTimesheets();
         setSelectedTimesheet(null);
-        alert('Timesheet rejected successfully');
+        showSuccess('Timesheet rejected successfully');
       } else {
-        alert('Error rejecting timesheet');
+        showError('Error rejecting timesheet');
       }
     } catch (error) {
       console.error('Error in handleRejectTimesheet:', error);
-      alert('Error rejecting timesheet');
+      showError('Error rejecting timesheet');
     } finally {
       setLoading(false);
     }
@@ -1096,7 +1097,7 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
                   <button
                     onClick={() => {
                       // Export functionality placeholder
-                      alert('Export functionality would generate a detailed report of this timesheet');
+                      showError('Export functionality would generate a detailed report of this timesheet');
                     }}
                     className="flex items-center px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
                   >

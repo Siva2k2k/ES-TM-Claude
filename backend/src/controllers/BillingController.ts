@@ -152,7 +152,8 @@ export class BillingController {
       throw new AuthorizationError('User not authenticated');
     }
 
-    const { startDate, endDate, format } = req.query;
+    // Support both query params (GET) and body params (POST)
+    const { startDate, endDate, format } = req.method === 'GET' ? req.query : req.body;
     const result = await BillingService.exportBillingReport(
       startDate as string,
       endDate as string,
@@ -218,21 +219,56 @@ export const approveMonthlyBillingValidation = [
 ];
 
 export const exportBillingReportValidation = [
+  // Validate for GET requests (query params)
   query('startDate')
+    .optional()
     .isISO8601()
     .withMessage('Start date must be a valid date in ISO format (YYYY-MM-DD)'),
   query('endDate')
+    .optional()
     .isISO8601()
-    .withMessage('End date must be a valid date in ISO format (YYYY-MM-DD)')
-    .custom((value, { req }) => {
-      if (req.query?.startDate && value < req.query.startDate) {
-        throw new Error('End date must be after start date');
-      }
-      return true;
-    }),
+    .withMessage('End date must be a valid date in ISO format (YYYY-MM-DD)'),
   query('format')
+    .optional()
     .isIn(['csv', 'pdf', 'excel'])
-    .withMessage('Format must be one of: csv, pdf, excel')
+    .withMessage('Format must be one of: csv, pdf, excel'),
+  // Validate for POST requests (body params)
+  body('startDate')
+    .optional()
+    .isISO8601()
+    .withMessage('Start date must be a valid date in ISO format (YYYY-MM-DD)'),
+  body('endDate')
+    .optional()
+    .isISO8601()
+    .withMessage('End date must be a valid date in ISO format (YYYY-MM-DD)'),
+  body('format')
+    .optional()
+    .isIn(['csv', 'pdf', 'excel'])
+    .withMessage('Format must be one of: csv, pdf, excel'),
+  // Custom validation to ensure required fields exist in either query or body
+  (req: Request, res: Response, next: any) => {
+    const data = req.method === 'GET' ? req.query : req.body;
+    const errors: string[] = [];
+
+    if (!data.startDate) {
+      errors.push('Start date is required');
+    }
+    if (!data.endDate) {
+      errors.push('End date is required');
+    }
+    if (!data.format) {
+      errors.push('Format is required');
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: errors.join(', ')
+      });
+    }
+
+    next();
+  }
 ];
 
 export const snapshotIdValidation = [

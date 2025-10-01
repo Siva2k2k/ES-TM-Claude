@@ -45,7 +45,12 @@ export interface Client {
 export interface Project {
   id: string;
   name: string;
-  client_id: string;
+  client_id: string | {
+    _id: string;
+    name: string;
+    contact_person?: string;
+    contact_email?: string;
+  };
   primary_manager_id: string;
   status: ProjectStatus;
   start_date: string;
@@ -57,6 +62,14 @@ export interface Project {
   updated_at: string;
   deleted_at?: string;
   // Populated client information (from joins/lookups)
+  client_name?: string;
+  client_contact_person?: string;
+  client_contact_email?: string;
+  // Enriched client data (from service layer merging)
+  client?: Client;
+}
+
+export interface ProjectWithClients extends Project {
   client_name?: string;
   client_contact_person?: string;
   client_contact_email?: string;

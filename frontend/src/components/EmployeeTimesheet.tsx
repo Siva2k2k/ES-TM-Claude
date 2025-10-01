@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../store/contexts/AuthContext';
 import { TimesheetApprovalService, TimeEntryInput } from '../services/TimesheetApprovalService';
 import ProjectService from '../services/ProjectService';
-
+import { showSuccess, showError, showWarning } from '../utils/toast';
 import type { TimesheetWithDetails, TimeEntry, CalendarData, Project, Task, UserRole } from '../types';
 import {
   Plus,
@@ -597,7 +597,7 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
               return; // Don't close the form, switch to edit mode
             }
           } else {
-            alert('Error creating timesheet! Please check the console for details.');
+            showError('Error creating timesheet! Please check the console for details.');
           }
           return;
         }
@@ -605,9 +605,9 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
         // Bulk add all time entries in a single call to speed up submission
         const added = await TimesheetApprovalService.addMultipleEntries(timesheet.id, formData.entries || []);
         if (added === null) {
-          alert('Timesheet created but failed to add time entries. Check logs.');
+          showError('Timesheet created but failed to add time entries. Check logs.');
         } else {
-          alert(`Timesheet created successfully with ${added.length} time entries!`);
+          showSuccess(`Timesheet created successfully with ${added.length} time entries!`);
         }
       } else if (formMode === 'edit' && selectedTimesheet) {
         // Update existing timesheet
@@ -617,9 +617,9 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
         );
 
         if (success) {
-          alert(`Timesheet updated successfully with ${formData.entries.length} entries!`);
+          showSuccess(`Timesheet updated successfully with ${formData.entries.length} entries!`);
         } else {
-          alert('Error updating timesheet! Please check the console for details.');
+          showError('Error updating timesheet! Please check the console for details.');
           return;
         }
       }
@@ -629,7 +629,7 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
       loadCalendarData();
     } catch (error) {
       console.error('Error in handleSubmitTimesheet:', error);
-      alert(`Error: ${error}`);
+      showError(`Error: ${error}`);
     }
     finally {
       setIsSubmitting(false);
@@ -665,15 +665,15 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
       console.log('📋 Submission completed with result:', success);
 
       if (success) {
-        alert('Timesheet submitted for approval!');
+        showSuccess('Timesheet submitted for approval!');
         console.log('🔄 Reloading timesheets...');
         loadTimesheets();
       } else {
-        alert('Failed to submit timesheet for approval!');
+        showError('Failed to submit timesheet for approval!');
       }
     } catch (error) {
       console.error('💥 Error submitting timesheet:', error);
-      alert('Error submitting timesheet for approval!');
+      showError('Error submitting timesheet for approval!');
     }
     finally {
       setIsSubmitting(false);
@@ -1667,9 +1667,15 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
                     if (isNaN(selectedDate.getTime())) return;
 
                     const monday = getMonday(selectedDate);
+
+                    // Check if user selected a non-Monday
+                    if (selectedDate.getDay() !== 1) {
+                      showWarning(`Please select a Monday. Auto-adjusted to ${monday.toLocaleDateString()}`);
+                    }
+
                     // If the selected week's Monday is after the current week's Monday, block it
                     if (monday.getTime() > currentWeekMonday.getTime()) {
-                      alert('Cannot select a future week. Please choose this week or an earlier week.');
+                      showError('Cannot select a future week. Please choose this week or an earlier week.');
                       return;
                     }
                     setFormData(prev => ({
@@ -1881,13 +1887,23 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
                         id="date-input"
                         type="date"
                         value={newEntry.date}
+                        min={formData.week_start_date}
+                        max={weekDates[6]?.toISOString().split('T')[0]}
                         onChange={(e) => {
                           const selected = new Date(e.target.value);
                           const selectedMonday = getMonday(selected);
+                          const weekStart = new Date(formData.week_start_date);
+
+                          // Check if date is within the selected timesheet week
+                          if (selectedMonday.getTime() !== weekStart.getTime()) {
+                            showWarning(`Date must be within the selected week (${weekDates[0]?.toLocaleDateString()} - ${weekDates[6]?.toLocaleDateString()})`);
+                            return;
+                          }
+
+                          // Also check if it's not a future week
                           const currentMonday = getMonday(new Date());
-                          // Allow any date if its week is <= current week; block if in a future week
                           if (selectedMonday.getTime() > currentMonday.getTime()) {
-                            alert('Cannot select a date in a future week. You can select any day within the current week.');
+                            showError('Cannot select a date in a future week.');
                             return;
                           }
                           setNewEntry(prev => ({ ...prev, date: e.target.value }));
@@ -1925,7 +1941,7 @@ export const EmployeeTimesheet: React.FC<EmployeeTimesheetProps> = ({ viewMode: 
                                   const currentMonday = getMonday(new Date());
                                   if (e.target.checked) {
                                     if (selectedMonday.getTime() > currentMonday.getTime()) {
-                                      alert('Cannot select days in a future week.');
+                                      showError('Cannot select days in a future week.');
                                       return;
                                     }
                                     setBulkDates(prev => [...prev, dateStr]);

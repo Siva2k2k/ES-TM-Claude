@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import * as React from 'react';
+import { toast, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from './store/contexts/AuthContext';
 import LoginForm from './components/forms/LoginForm';
 import { ManagementDashboard } from './pages/NewManagementDashboard';
@@ -14,6 +16,7 @@ import { EnhancedBillingManagement } from './components/EnhancedBillingManagemen
 import { AuditLogs } from './components/AuditLogs';
 import { Reports } from './components/Reports';
 import { EnhancedReports } from './components/EnhancedReports';
+import ReportsHub from './components/ReportsHub';
 import { ClientManagement } from './components/ClientManagement';
 import { RoleSpecificDashboard } from './components/RoleSpecificDashboard';
 import {
@@ -54,6 +57,7 @@ const App: React.FC = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(new Set());
+  const [showTimesheetPopup, setShowTimesheetPopup] = useState(false);
 
   // Ensure dropdown stays open when there's an active sub-section
   React.useEffect(() => {
@@ -65,6 +69,24 @@ const App: React.FC = () => {
       });
     }
   }, [activeSection, activeSubSection]);
+
+  // Close timesheet popup when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (showTimesheetPopup && !target.closest('[data-timesheet-menu]')) {
+        setShowTimesheetPopup(false);
+      }
+    };
+
+    if (showTimesheetPopup) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showTimesheetPopup]);
 
   // Handle navigation to create timesheet from list view
   React.useEffect(() => {
@@ -365,7 +387,7 @@ const App: React.FC = () => {
       case 'audit':
         return <AuditLogs />;
       case 'reports':
-        return <EnhancedReports />;
+        return <ReportsHub />;
       case 'tasks':
         // Handle My Tasks section for employee and lead
         if (currentUserRole === 'employee' || currentUserRole === 'lead') {
@@ -394,7 +416,7 @@ const App: React.FC = () => {
             <div className="flex items-center">
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-                className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors lg:hidden"
+                className="p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors"
               >
                 <Menu className="w-5 h-5" />
               </button>
@@ -493,8 +515,20 @@ const App: React.FC = () => {
       </header>
 
       <div className="flex pt-18">
+        {/* Mobile Overlay */}
+        {!sidebarCollapsed && (
+          <div
+            className="fixed inset-0 bg-black bg-opacity-50 z-30 lg:hidden"
+            onClick={() => setSidebarCollapsed(true)}
+          />
+        )}
+
         {/* Sidebar */}
-        <nav className={`${sidebarCollapsed ? 'w-16' : 'w-72'} bg-white/95 backdrop-blur-sm shadow-xl min-h-screen border-r border-slate-200/50 transition-all duration-300 fixed top-18 bottom-0 overflow-y-auto scrollbar-hide`}>
+        <nav className={`
+          ${sidebarCollapsed ? 'w-16 -translate-x-full lg:translate-x-0' : 'w-72 translate-x-0'}
+          bg-white/95 backdrop-blur-sm shadow-xl min-h-screen border-r border-slate-200/50
+          transition-all duration-300 fixed top-18 bottom-0 overflow-y-auto scrollbar-hide z-40
+        `}>
           <div className="p-4">
             
             
@@ -508,14 +542,26 @@ const App: React.FC = () => {
                 return (
                   <div
                     key={item.id}
+                    className="relative"
                   >
                     <button
-                      onClick={() => handleNavigation(item.id)}
-                      className={`w-full flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all group ${
+                      onClick={() => {
+                        // If collapsed and has sub-items, toggle popup instead
+                        if (sidebarCollapsed && hasSubItems) {
+                          if (item.id === 'timesheet') {
+                            setShowTimesheetPopup(!showTimesheetPopup);
+                          }
+                        } else {
+                          handleNavigation(item.id);
+                        }
+                      }}
+                      data-timesheet-menu={item.id === 'timesheet' ? '' : undefined}
+                      className={`w-full flex items-center justify-center ${sidebarCollapsed ? 'px-2' : 'px-4'} py-3 text-sm font-medium rounded-xl transition-all group relative ${
                         isActive
                           ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white shadow-lg'
                           : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                       }`}
+                      title={sidebarCollapsed ? item.label : ''}
                     >
                       <Icon className={`w-5 h-5 ${sidebarCollapsed ? '' : 'mr-3'} ${isActive ? 'text-white' : ''}`} />
                       {!sidebarCollapsed && (
@@ -526,7 +572,37 @@ const App: React.FC = () => {
                           )}
                         </>
                       )}
+                      {/* Tooltip for collapsed state */}
+                      {sidebarCollapsed && (
+                        <span className="absolute left-full ml-2 px-2 py-1 bg-slate-900 text-white text-xs rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none">
+                          {item.label}
+                        </span>
+                      )}
                     </button>
+                    
+                    {/* Popup menu for collapsed sidebar with sub-items */}
+                    {sidebarCollapsed && hasSubItems && item.id === 'timesheet' && showTimesheetPopup && (
+                      <div 
+                        data-timesheet-menu
+                        className="absolute left-full ml-2 top-0 bg-white rounded-xl shadow-2xl border border-slate-200 py-2 min-w-[200px] z-50 animate-in slide-in-from-left-2 duration-200">
+                        {item.subItems.map((subItem) => (
+                          <button
+                            key={subItem.id}
+                            onClick={() => {
+                              handleNavigation(item.id, subItem.id);
+                              setShowTimesheetPopup(false);
+                            }}
+                            className={`w-full text-left px-4 py-2 text-sm transition-all duration-200 ${
+                              activeSubSection === subItem.id
+                                ? 'bg-blue-50 text-blue-700 font-medium'
+                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                            }`}
+                          >
+                            {subItem.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                     
                     {/* Sub Items */}
                     {!sidebarCollapsed && hasSubItems && isDropdownOpen && (
@@ -567,7 +643,7 @@ const App: React.FC = () => {
         </nav>
 
         {/* Main Content */}
-        <main className={`flex-1 p-8 overflow-auto ${sidebarCollapsed ? 'ml-16' : 'ml-72'} transition-all duration-300`}>
+        <main className={`flex-1 p-4 md:p-8 overflow-auto ${sidebarCollapsed ? 'ml-0 md:ml-16' : 'ml-0 md:ml-72'} transition-all duration-300 w-full`}>
           {renderContent()}
         </main>
       </div>
@@ -581,6 +657,20 @@ const App: React.FC = () => {
           }}
         />
       )}
+
+      {/* Toast Notifications */}
+      <ToastContainer
+        position="top-right"
+        autoClose={5000}
+        hideProgressBar={false}
+        newestOnTop={false}
+        closeOnClick
+        rtl={false}
+        pauseOnFocusLoss
+        draggable
+        pauseOnHover
+        theme="light"
+      />
     </div>
   );
 };

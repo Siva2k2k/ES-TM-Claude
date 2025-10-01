@@ -19,6 +19,8 @@ import {
   requireManagerRole,
   canManageRoleHierarchy
 } from '@/utils/auth';
+import { AuditLogService } from '@/services/AuditLogService';
+import { ValidationUtils } from '@/utils/validation';
 
 export interface ProjectWithDetails extends IProject {
   client?: IClient;
@@ -67,6 +69,19 @@ export class ProjectService {
 
       await project.save();
 
+      // Audit log: Project created
+      await AuditLogService.logEvent(
+        'projects',
+        project._id.toString(),
+        'PROJECT_CREATED',
+        currentUser.id,
+        currentUser.full_name,
+        { name: project.name, client_id: project.client_id.toString() },
+        { created_by: currentUser.id },
+        null,
+        { name: project.name, status: project.status, is_billable: project.is_billable }
+      );
+
       console.log('Project created:', project.id);
       return { project };
     } catch (error) {
@@ -106,6 +121,22 @@ export class ProjectService {
 
       if (result.matchedCount === 0) {
         throw new NotFoundError('Project not found');
+      }
+
+      // Audit log: Project updated
+      const updatedProject = await (Project.findById as any)(projectId).lean();
+      if (updatedProject) {
+        await AuditLogService.logEvent(
+          'projects',
+          projectId,
+          'PROJECT_UPDATED',
+          currentUser.id,
+          currentUser.full_name,
+          { name: updatedProject.name, updated_fields: Object.keys(updates) },
+          { updated_by: currentUser.id },
+          null,
+          payload
+        );
       }
 
       console.log(`Updated project ${projectId}`);
@@ -403,7 +434,7 @@ export class ProjectService {
    */
   static async getAllClients(currentUser: AuthUser): Promise<{ clients: IClient[]; error?: string }> {
     try {
-      requireManagerRole(currentUser);
+      // requireManagerRole(currentUser);
 
       const clients = await (Client.find as any)({
         is_active: true,
@@ -519,6 +550,22 @@ export class ProjectService {
 
       if (result.matchedCount === 0) {
         throw new NotFoundError('Project not found');
+      }
+
+      // Audit log: Project deleted
+      const deletedProject = await (Project.findById as any)(projectId).lean();
+      if (deletedProject) {
+        await AuditLogService.logEvent(
+          'projects',
+          projectId,
+          'PROJECT_DELETED',
+          currentUser.id,
+          currentUser.full_name,
+          { name: deletedProject.name, client_id: deletedProject.client_id?.toString() },
+          { deleted_by: currentUser.id },
+          { deleted_at: null },
+          { deleted_at: new Date() }
+        );
       }
 
       console.log(`Soft deleted project: ${projectId}`);

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useRoleManager } from '../hooks/useRoleManager';
 import { useAuth } from '../store/contexts/AuthContext';
 import { ClientService } from '../services/ClientService';
+import { showSuccess, showError, showWarning } from '../utils/toast';
 import {
   Building,
   Plus,
@@ -141,18 +142,18 @@ export const ClientManagement: React.FC = () => {
     e.preventDefault();
 
     if (!canCreateClients) {
-      alert('You do not have permission to create clients');
+      showError('You do not have permission to create clients');
       return;
     }
 
     // Validate client name
     if (clientForm.name.trim().length < 2) {
-      alert('Client name must be at least 2 characters long');
+      showWarning('Client name must be at least 2 characters long');
       return;
     }
 
     if (clientForm.name.trim().length > 100) {
-      alert('Client name must be less than 100 characters');
+      showWarning('Client name must be less than 100 characters');
       return;
     }
 
@@ -160,7 +161,7 @@ export const ClientManagement: React.FC = () => {
     if (clientForm.contact_email && clientForm.contact_email.trim()) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(clientForm.contact_email.trim())) {
-        alert('Please enter a valid email address');
+        showWarning('Please enter a valid email address');
         return;
       }
     }
@@ -174,16 +175,16 @@ export const ClientManagement: React.FC = () => {
       });
 
       if (result.error) {
-        alert(`Error creating client: ${result.error}`);
+        showError(`Error creating client: ${result.error}`);
         return;
       }
 
-      alert('Client created successfully');
+      showSuccess('Client created successfully');
       setShowCreateModal(false);
       resetForm();
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      alert('Error creating client');
+      showError('Error creating client');
       console.error('Error creating client:', err);
     }
   };
@@ -192,18 +193,18 @@ export const ClientManagement: React.FC = () => {
     e.preventDefault();
 
     if (!editingClient || !canEditClients) {
-      alert('You do not have permission to edit clients');
+      showError('You do not have permission to edit clients');
       return;
     }
 
     // Validate client name
     if (clientForm.name.trim().length < 2) {
-      alert('Client name must be at least 2 characters long');
+      showWarning('Client name must be at least 2 characters long');
       return;
     }
 
     if (clientForm.name.trim().length > 100) {
-      alert('Client name must be less than 100 characters');
+      showWarning('Client name must be less than 100 characters');
       return;
     }
 
@@ -211,7 +212,7 @@ export const ClientManagement: React.FC = () => {
     if (clientForm.contact_email && clientForm.contact_email.trim()) {
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(clientForm.contact_email.trim())) {
-        alert('Please enter a valid email address');
+        showWarning('Please enter a valid email address');
         return;
       }
     }
@@ -225,24 +226,24 @@ export const ClientManagement: React.FC = () => {
       });
 
       if (result.error) {
-        alert(`Error updating client: ${result.error}`);
+        showError(`Error updating client: ${result.error}`);
         return;
       }
 
-      alert('Client updated successfully');
+      showSuccess('Client updated successfully');
       setShowEditModal(false);
       setEditingClient(null);
       resetForm();
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      alert('Error updating client');
+      showError('Error updating client');
       console.error('Error updating client:', err);
     }
   };
 
   const handleDeactivateClient = async (clientId: string) => {
     if (!canEditClients) {
-      alert('You do not have permission to deactivate clients');
+      showError('You do not have permission to deactivate clients');
       return;
     }
 
@@ -255,28 +256,26 @@ export const ClientManagement: React.FC = () => {
         // Check if it's the active projects error
         if (result.error.includes('active project')) {
           const projectCount = result.error.match(/(\d+) active project/)?.[1] || 'some';
-          alert(
-            `Cannot deactivate client: ${projectCount} active project(s) found.\n\n` +
-            `Please complete or archive all active projects for this client first, then try again.\n\n` +
-            `You can manage projects in the Project Management section.`
+          showWarning(
+            `Cannot deactivate client: ${projectCount} active project(s) found. Please complete or archive all active projects for this client first, then try again. You can manage projects in the Project Management section.`
           );
         } else {
-          alert(`Error deactivating client: ${result.error}`);
+          showError(`Error deactivating client: ${result.error}`);
         }
         return;
       }
 
-      alert('Client deactivated successfully');
+      showSuccess('Client deactivated successfully');
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      alert('Error deactivating client');
+      showError('Error deactivating client');
       console.error('Error deactivating client:', err);
     }
   };
 
   const handleReactivateClient = async (clientId: string) => {
     if (!canEditClients) {
-      alert('You do not have permission to reactivate clients');
+      showError('You do not have permission to reactivate clients');
       return;
     }
 
@@ -284,21 +283,21 @@ export const ClientManagement: React.FC = () => {
       const result = await ClientService.reactivateClient(clientId);
 
       if (result.error) {
-        alert(`Error reactivating client: ${result.error}`);
+        showError(`Error reactivating client: ${result.error}`);
         return;
       }
 
-      alert('Client reactivated successfully');
+      showSuccess('Client reactivated successfully');
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      alert('Error reactivating client');
+      showError('Error reactivating client');
       console.error('Error reactivating client:', err);
     }
   };
 
   const handleDeleteClient = async (clientId: string) => {
     if (!canDeleteClients) {
-      alert('You do not have permission to delete clients');
+      showError('You do not have permission to delete clients');
       return;
     }
 
@@ -308,14 +307,14 @@ export const ClientManagement: React.FC = () => {
       const result = await ClientService.deleteClient(clientId);
 
       if (result.error) {
-        alert(`Error deleting client: ${result.error}`);
+        showError(`Error deleting client: ${result.error}`);
         return;
       }
 
-      alert('Client deleted successfully');
+      showSuccess('Client deleted successfully');
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      alert('Error deleting client');
+      showError('Error deleting client');
       console.error('Error deleting client:', err);
     }
   };
@@ -325,14 +324,14 @@ export const ClientManagement: React.FC = () => {
       const result = await ClientService.getClientById(client.id);
 
       if (result.error) {
-        alert(`Error loading client details: ${result.error}`);
+        showError(`Error loading client details: ${result.error}`);
         return;
       }
 
       setSelectedClient(result.client || null);
       setShowDetailsModal(true);
     } catch (err) {
-      alert('Error loading client details');
+      showError('Error loading client details');
       console.error('Error loading client details:', err);
     }
   };

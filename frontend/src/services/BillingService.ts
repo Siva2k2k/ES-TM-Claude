@@ -83,15 +83,15 @@ export class BillingService {
     try {
       const response = await backendApi.get('/billing/dashboard');
 
-      if (response.success && response.data) {
+      if (response.success && response.dashboard) {
         return {
-          totalRevenue: response.data.totalRevenue || 0,
-          weeklyRevenue: response.data.weeklyRevenue || 0,
-          monthlyRevenue: response.data.monthlyRevenue || 0,
-          pendingApprovals: response.data.pendingApprovals || 0,
-          totalBillableHours: response.data.totalBillableHours || 0,
-          averageHourlyRate: response.data.averageHourlyRate || 0,
-          revenueGrowth: response.data.revenueGrowth || 0
+          totalRevenue: response.dashboard.totalRevenue || 0,
+          weeklyRevenue: response.dashboard.weeklyRevenue || 0,
+          monthlyRevenue: response.dashboard.monthlyRevenue || 0,
+          pendingApprovals: response.dashboard.pendingApprovals || 0,
+          totalBillableHours: response.dashboard.totalBillableHours || 0,
+          averageHourlyRate: response.dashboard.averageHourlyRate || 0,
+          revenueGrowth: response.dashboard.revenueGrowth || 0
         };
       } else {
         return {
@@ -287,6 +287,40 @@ export class BillingService {
     } catch (error: any) {
       console.error('Error in updateBillableHours:', error);
       return { success: false, error: error.message || 'Failed to update billable hours' };
+    }
+  }
+
+  /**
+   * Export report for Enhanced Reports component
+   */
+  static async exportReport(options: {
+    startDate: string;
+    endDate: string;
+    format: 'csv' | 'pdf' | 'excel';
+    reportType: string;
+  }): Promise<{ success: boolean; downloadUrl?: string; error?: string }> {
+    try {
+      console.log(`Generating ${options.reportType} report from ${options.startDate} to ${options.endDate} in ${options.format} format`);
+
+      // For now, use the billing export endpoint with additional metadata
+      const response = await backendApi.post('/billing/export', {
+        startDate: options.startDate,
+        endDate: options.endDate,
+        format: options.format,
+        reportType: options.reportType
+      });
+
+      if (response.success) {
+        return {
+          success: true,
+          downloadUrl: response.downloadUrl
+        };
+      } else {
+        return { success: false, error: response.message || 'Failed to generate report' };
+      }
+    } catch (error: any) {
+      console.error('Error in exportReport:', error);
+      return { success: false, error: error.message || 'Failed to generate report' };
     }
   }
 

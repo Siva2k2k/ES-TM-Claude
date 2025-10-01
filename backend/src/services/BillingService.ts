@@ -252,12 +252,12 @@ export class BillingService {
   }
 
   static async getBillingSummary(
+    currentUser: AuthUser,
     period: 'weekly' | 'monthly',
     filterType: 'project' | 'employee',
     filterId?: string,
     startDate?: string,
-    endDate?: string,
-    currentUser: AuthUser
+    endDate?: string
   ): Promise<{
     summary?: {
       total_revenue: number;
@@ -336,7 +336,7 @@ export class BillingService {
         }
       }
 
-      const pipeline = [
+      const pipeline: any[] = [
         {
           $lookup: {
             from: 'timesheets',
@@ -475,7 +475,7 @@ export class BillingService {
       }, 0);
 
       // Update timesheet
-      await Timesheet.updateOne(
+      await (Timesheet as any).updateOne(
         { _id: timesheetId },
         {
           total_hours: newTotalHours,

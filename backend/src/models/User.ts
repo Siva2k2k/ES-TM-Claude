@@ -27,7 +27,16 @@ export interface  IUser extends Document {
 
   created_at: Date;
   updated_at: Date;
+
+  // Soft delete fields
   deleted_at?: Date;
+  deleted_by?: mongoose.Types.ObjectId;
+  deleted_reason?: string;
+
+  // Hard delete fields
+  is_hard_deleted: boolean;
+  hard_deleted_at?: Date;
+  hard_deleted_by?: mongoose.Types.ObjectId;
 }
 
 const UserSchema: Schema = new Schema({
@@ -115,8 +124,33 @@ const UserSchema: Schema = new Schema({
     default: false
   },
 
+  // Soft delete fields
   deleted_at: {
     type: Date,
+    required: false
+  },
+  deleted_by: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    required: false
+  },
+  deleted_reason: {
+    type: String,
+    required: false
+  },
+
+  // Hard delete fields
+  is_hard_deleted: {
+    type: Boolean,
+    default: false
+  },
+  hard_deleted_at: {
+    type: Date,
+    required: false
+  },
+  hard_deleted_by: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
     required: false
   }
 }, {

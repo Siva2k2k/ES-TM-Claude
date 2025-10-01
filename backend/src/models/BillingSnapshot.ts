@@ -11,9 +11,17 @@ export interface IBillingSnapshot extends Document {
   total_amount: number;
   billable_amount: number;
   snapshot_data?: Record<string, unknown>;
+
+  // Delete tracking fields
+  deleted_at?: Date;
+  deleted_by?: mongoose.Types.ObjectId;
+  deleted_reason?: string;
+  is_hard_deleted: boolean;
+  hard_deleted_at?: Date;
+  hard_deleted_by?: mongoose.Types.ObjectId;
+
   created_at: Date;
   updated_at: Date;
-  deleted_at?: Date;
 }
 
 const BillingSnapshotSchema: Schema = new Schema(
@@ -68,10 +76,34 @@ const BillingSnapshotSchema: Schema = new Schema(
       type: Schema.Types.Mixed,
       default: {}
     },
+
+    // Delete tracking fields
     deleted_at: {
       type: Date,
       default: null,
       index: { sparse: true }
+    },
+    deleted_by: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: false
+    },
+    deleted_reason: {
+      type: String,
+      required: false
+    },
+    is_hard_deleted: {
+      type: Boolean,
+      default: false
+    },
+    hard_deleted_at: {
+      type: Date,
+      required: false
+    },
+    hard_deleted_by: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: false
     }
   },
   {

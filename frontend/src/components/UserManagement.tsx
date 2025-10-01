@@ -3,6 +3,8 @@ import { useRoleManager } from '../hooks/useRoleManager';
 import { UserService } from '../services/UserService';
 import { Users, UserPlus, UserCheck, Shield, Edit, Trash2, X, Save, ToggleLeft, ToggleRight, AlertTriangle } from 'lucide-react';
 import type { User } from '../types';
+import { showSuccess, showError, showWarning } from '../utils/toast';
+import { DeleteActionModal, type DeleteAction } from './DeleteActionModal';
 
 interface UserFormData {
   full_name: string;
@@ -32,6 +34,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Delete modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingUser, setDeletingUser] = useState<User | null>(null);
+  const [deleteAction, setDeleteAction] = useState<DeleteAction>('soft');
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteDependencies, setDeleteDependencies] = useState<string[]>([]);
 
   // Load users data
   useEffect(() => {
@@ -141,7 +150,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
     try {
       const result = await UserService.updateUser(editingUser.id, formData);
       if (result.success) {
-        alert('User updated successfully!');
+        showSuccess('User updated successfully!');
         setShowEditForm(false);
         setEditingUser(null);
         setFormData({
@@ -152,10 +161,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
         });
         await loadUsers();
       } else {
-        alert(`Error updating user: ${result.error}`);
+        showError(`Error updating user: ${result.error}`);
       }
     } catch (err) {
-      alert('Error updating user');
+      showError('Error updating user');
       console.error('Error updating user:', err);
     }
   };
@@ -176,16 +185,16 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
       if (canApproveUsers()) {
         const result = await UserService.approveUser(userId);
         if (result.success) {
-          alert('User approved successfully');
+          showSuccess('User approved successfully');
           setRefreshTrigger(prev => prev + 1);
         } else {
-          alert(`Error approving user: ${result.error}`);
+          showError(`Error approving user: ${result.error}`);
         }
       } else {
-        alert('You can only create users for Super Admin approval');
+        showError('You can only create users for Super Admin approval');
       }
     } catch (err) {
-      alert('Error approving user');
+      showError('Error approving user');
       console.error('Error approving user:', err);
     }
   };
@@ -198,18 +207,18 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
         // Super Admin can create users directly
         result = await UserService.createUser(formData);
         if (result.error) {
-          alert(`Error creating user: ${result.error}`);
+          showError(`Error creating user: ${result.error}`);
           return;
         }
-        alert('User created and activated successfully');
+        showSuccess('User created and activated successfully');
       } else {
         // Management creates for approval
         result = await UserService.createUserForApproval(formData);
         if (result.error) {
-          alert(`Error creating user: ${result.error}`);
+          showError(`Error creating user: ${result.error}`);
           return;
         }
-        alert('User created and submitted for Super Admin approval');
+        showSuccess('User created and submitted for Super Admin approval');
       }
       
       setShowCreateForm(false);
@@ -221,7 +230,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
       });
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      alert('Error creating user');
+      showError('Error creating user');
       console.error('Error creating user:', err);
     }
   };
@@ -231,17 +240,86 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
       if (currentRole === 'super_admin') {
         const result = await UserService.setUserStatus(userId, !currentStatus);
         if (result.success) {
-          alert(`User ${!currentStatus ? 'activated' : 'deactivated'} successfully`);
+          showSuccess(`User ${!currentStatus ? 'activated' : 'deactivated'} successfully`);
           setRefreshTrigger(prev => prev + 1);
         } else {
-          alert(`Error updating user status: ${result.error}`);
+          showError(`Error updating user status: ${result.error}`);
         }
       } else {
-        alert('Only Super Admin can activate/deactivate users');
+        showError('Only Super Admin can activate/deactivate users');
       }
     } catch (err) {
-      alert('Error updating user status');
+      showError('Error updating user status');
       console.error('Error updating user status:', err);
+    }
+  };
+
+  const handleDeleteClick = async (user: User) => {
+    setDeletingUser(user);
+    setDeleteAction('soft');
+
+    // Check dependencies before showing modal
+    try {
+      const result = await UserService.checkUserDependencies(user.id);
+      if (result.dependencies) {
+        setDeleteDependencies(result.dependencies);
+      } else {
+        setDeleteDependencies([]);
+      }
+    } catch (err) {
+      console.error('Error checking dependencies:', err);
+      setDeleteDependencies([]);
+    }
+
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteConfirm = async (action: DeleteAction, reason?: string) => {
+    if (!deletingUser) return;
+
+    setDeleteLoading(true);
+    try {
+      let result;
+
+      switch (action) {
+        case 'soft':
+          result = await UserService.softDeleteUser(deletingUser.id, reason || 'No reason provided');
+          if (result.success) {
+            showSuccess('User deleted successfully (can be restored)');
+          } else {
+            showError(`Error deleting user: ${result.error}`);
+          }
+          break;
+
+        case 'hard':
+          result = await UserService.hardDeleteUser(deletingUser.id);
+          if (result.success) {
+            showSuccess('User permanently deleted');
+          } else {
+            showError(`Error permanently deleting user: ${result.error}`);
+          }
+          break;
+
+        case 'restore':
+          result = await UserService.restoreUser(deletingUser.id);
+          if (result.success) {
+            showSuccess('User restored successfully');
+          } else {
+            showError(`Error restoring user: ${result.error}`);
+          }
+          break;
+      }
+
+      if (result?.success) {
+        setShowDeleteModal(false);
+        setDeletingUser(null);
+        setRefreshTrigger(prev => prev + 1);
+      }
+    } catch (err) {
+      showError('Error processing delete request');
+      console.error('Error with delete operation:', err);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -382,11 +460,11 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
               {canApproveUsers() && pendingUsers.length > 0 && (
                 <button 
                   onClick={() => {
-                    // Approve all pending users with single alert
+                    // Approve all pending users with single toast
                     const count = pendingUsers.length;
                     pendingUsers.forEach(user => UserService.approveUser(user.id));
                     setRefreshTrigger(prev => prev + 1);
-                    alert(`Successfully approved ${count} pending users`);
+                    showSuccess(`Successfully approved ${count} pending users`);
                   }}
                   className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                 >
@@ -711,9 +789,10 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
                           
                           {/* Delete Button - Only for Super Admin */}
                           {canApproveUsers() && (
-                            <button 
+                            <button
                               className="text-red-600 hover:text-red-900 p-1"
                               title="Delete User"
+                              onClick={() => handleDeleteClick(user)}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -728,6 +807,27 @@ export const UserManagement: React.FC<UserManagementProps> = ({ defaultTab = 'al
           </div>
         )}
       </div>
+
+      {/* Delete Action Modal */}
+      {deletingUser && (
+        <DeleteActionModal
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setDeletingUser(null);
+            setDeleteDependencies([]);
+          }}
+          onConfirm={handleDeleteConfirm}
+          title={deleteAction === 'soft' ? 'Delete User' : 'Permanently Delete User'}
+          itemName={deletingUser.full_name}
+          itemType="user"
+          action={deleteAction}
+          isLoading={deleteLoading}
+          dependencies={deleteDependencies}
+          isSoftDeleted={false}
+          canHardDelete={currentRole === 'super_admin'}
+        />
+      )}
     </div>
   );
 };

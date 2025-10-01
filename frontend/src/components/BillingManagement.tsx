@@ -4,6 +4,7 @@ import { useAuth } from '../store/contexts/AuthContext';
 import { BillingService } from '../services/BillingService';
 import { ProjectService } from '../services/ProjectService';
 import { UserService } from '../services/UserService';
+import { showSuccess, showError, showWarning } from '../utils/toast';
 import {
   DollarSign,
   Download,
@@ -107,7 +108,7 @@ export const BillingManagement: React.FC = () => {
 
   const handleGenerateSnapshot = async () => {
     if (!canGenerateSnapshots) {
-      alert('You can only view billing data. Snapshot generation requires Management role.');
+      showWarning('You can only view billing data. Snapshot generation requires Management role.');
       return;
     }
     
@@ -118,19 +119,19 @@ export const BillingManagement: React.FC = () => {
       
       const result = await BillingService.generateWeeklySnapshot(weekStartStr);
       if (result.error) {
-        alert(`Error generating snapshots: ${result.error}`);
+        showError(`Error generating snapshots: ${result.error}`);
       } else {
-        alert(`Generated ${result.snapshots.length} billing snapshots for week of ${weekStartStr}`);
+        showSuccess(`Generated ${result.snapshots.length} billing snapshots for week of ${weekStartStr}`);
       }
     } catch (err) {
-      alert('Error generating billing snapshot');
+      showWarning('Error generating billing snapshot');
       console.error('Error generating snapshot:', err);
     }
   };
 
   const handleApproveMonthly = async () => {
     if (!canApproveBilling) {
-      alert('You can only view billing data. Monthly approval requires Management role.');
+      showWarning('You can only view billing data. Monthly approval requires Management role.');
       return;
     }
     
@@ -138,12 +139,12 @@ export const BillingManagement: React.FC = () => {
       const now = new Date();
       const result = await BillingService.approveMonthlyBilling(now.getFullYear(), now.getMonth() + 1);
       if (result.success) {
-        alert('Monthly billing approved successfully');
+        showWarning('Monthly billing approved successfully');
       } else {
-        alert(`Error approving monthly billing: ${result.error}`);
+        showError(`Error approving monthly billing: ${result.error}`);
       }
     } catch (err) {
-      alert('Error approving monthly billing');
+      showWarning('Error approving monthly billing');
       console.error('Error approving monthly billing:', err);
     }
   };
@@ -155,12 +156,12 @@ export const BillingManagement: React.FC = () => {
       
       const result = await BillingService.exportBillingReport(startDate, endDate, 'csv');
       if (result.success) {
-        alert('Billing report exported successfully');
+        showWarning('Billing report exported successfully');
       } else {
-        alert(`Error exporting report: ${result.error}`);
+        showError(`Error exporting report: ${result.error}`);
       }
     } catch (err) {
-      alert('Error exporting billing report');
+      showWarning('Error exporting billing report');
       console.error('Error exporting report:', err);
     }
   };

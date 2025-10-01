@@ -27,6 +27,7 @@ import {
   RefreshCw
 } from 'lucide-react';
 import type { Project, User } from '../types';
+import { showSuccess, showError, showInfo } from '../utils/toast';
 
 interface ReportData {
   name: string;
@@ -201,7 +202,7 @@ export const EnhancedReports: React.FC = () => {
       const result = await BillingService.exportBillingReport(startDate, endDate, format);
 
       if (result.error) {
-        alert(`Report generation failed: ${result.error}`);
+        showError(`Report generation failed: ${result.error}`);
         return;
       }
 
@@ -217,9 +218,9 @@ export const EnhancedReports: React.FC = () => {
       };
 
       setReportHistory(prev => [newReport, ...prev]);
-      alert('Report generated successfully!');
+      showSuccess('Report generated successfully!');
     } catch (err) {
-      alert('Report generation failed');
+      showError('Report generation failed');
       console.error('Report generation error:', err);
     } finally {
       setLoading(false);
@@ -229,7 +230,7 @@ export const EnhancedReports: React.FC = () => {
   const handleDownloadReport = (report: any) => {
     // In a real implementation, this would trigger the actual download
     console.log('Downloading report:', report.name);
-    alert(`Downloading: ${report.name}`);
+    showInfo(`Downloading: ${report.name}`);
   };
 
   const filteredTemplates = REPORT_TEMPLATES.filter(template => {

@@ -4,6 +4,7 @@ import { useAuth } from '../store/contexts/AuthContext';
 import { BillingService } from '../services/BillingService';
 import { ProjectService } from '../services/ProjectService';
 import { UserService } from '../services/UserService';
+import { showSuccess, showError, showWarning } from '../utils/toast';
 import {
   BarChart3,
   Download,
@@ -45,7 +46,7 @@ export const Reports: React.FC = () => {
   const handleExportReport = (reportType: string) => {
     // In real implementation, this would call the appropriate service
     console.log(`Exporting ${reportType} report...`);
-    alert(`${reportType} report export initiated. This would generate a downloadable file in a real implementation.`);
+    showSuccess(`${reportType} report export initiated`);
   };
 
   return (

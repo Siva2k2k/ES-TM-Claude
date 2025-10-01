@@ -24,9 +24,10 @@ import { useAuth } from '../store/contexts/AuthContext';
 import { useRoleManager } from '../hooks/useRoleManager';
 import { TimesheetService } from '../services/TimesheetService';
 import { ProjectService } from '../services/ProjectService';
-import type { 
-  TimesheetStatus, 
-  TimesheetWithDetails 
+import { showSuccess, showError, showWarning } from '../utils/toast';
+import type {
+  TimesheetStatus,
+  TimesheetWithDetails
 } from '../types';
 
 interface StatusSummary {
@@ -180,7 +181,7 @@ const TimesheetStatusView = () => {
         ? { ...ts, status: 'submitted' as TimesheetStatus, updated_at: new Date().toISOString() }
         : ts
     ));
-    alert('Timesheet resubmitted for approval!');
+    showError('Timesheet resubmitted for approval!');
   };
 
   const viewTimesheetDetails = (timesheet: TimesheetWithDetails) => {

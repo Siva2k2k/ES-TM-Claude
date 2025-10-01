@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRoleManager } from '../hooks/useRoleManager';
 import { useAuth } from '../store/contexts/AuthContext';
+import { showSuccess, showError, showWarning, showLoading, updateToast } from '../utils/toast';
 import { ProjectService } from '../services/ProjectService';
 import { UserService } from '../services/UserService';
 import { 
@@ -23,7 +24,7 @@ import {
   Eye,
   UserPlus
 } from 'lucide-react';
-import type { Project, Client, User, Task } from '../types';
+import type { Project, Client, User, Task, ProjectWithClients } from '../types';
 
 interface ProjectFormData {
   name: string;
@@ -68,7 +69,7 @@ export const ProjectManagement: React.FC = () => {
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   
   // State for employee/lead view
-  const [userProjects, setUserProjects] = useState<Project[]>([]);
+  const [userProjects, setUserProjects] = useState<ProjectWithClients[]>([]);
   const [userTasks, setUserTasks] = useState<Task[]>([]);
   const [userLoading, setUserLoading] = useState(true);
 
@@ -140,7 +141,17 @@ export const ProjectManagement: React.FC = () => {
             ProjectService.getUserProjects(currentUser.id),
             ProjectService.getUserTasks(currentUser.id)
           ]);
-          setUserProjects(userProjectsData.projects || []);
+          const projectsWithClient: ProjectWithClients[] = userProjectsData.projects.map(p => {
+          const clientObj = typeof p.client_id === 'object' ? p.client_id : undefined;
+
+          return {
+            ...p,
+            client_name: clientObj?.name,
+            client_contact_person: clientObj?.contact_person,
+            client_contact_email: clientObj?.contact_email,
+          };
+        }); 
+          setUserProjects(projectsWithClient || []);
           setUserTasks(userTasksData.tasks || []);
         } else if (actualUserRole === 'lead') {
           const [userProjectsData, leadTasksData] = await Promise.all([
@@ -232,7 +243,7 @@ export const ProjectManagement: React.FC = () => {
     try {
       const result = await ProjectService.createProject(projectForm);
       if (result.error) {
-        alert(`Error creating project: ${result.error}`);
+        showError(`Error creating project: ${result.error}`);
         return;
       }
 
@@ -248,12 +259,12 @@ export const ProjectManagement: React.FC = () => {
         );
       }
 
-      alert('Project created successfully!');
+      showSuccess('Project created successfully!');
       setActiveTab('overview');
       resetProjectForm();
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      alert('Error creating project');
+      showError('Error creating project');
       console.error('Error creating project:', err);
     }
   };
@@ -265,12 +276,12 @@ export const ProjectManagement: React.FC = () => {
 
     // Validate task name length
     if (taskForm.name.trim().length < 2) {
-      alert('Task name must be at least 2 characters long');
+      showWarning('Task name must be at least 2 characters long');
       return;
     }
 
     if (taskForm.name.trim().length > 200) {
-      alert('Task name must be less than 200 characters');
+      showWarning('Task name must be less than 200 characters');
       return;
     }
 
@@ -287,16 +298,16 @@ export const ProjectManagement: React.FC = () => {
       });
 
       if (result.error) {
-        alert(`Error creating task: ${result.error}`);
+        showError(`Error creating task: ${result.error}`);
         return;
       }
 
-      alert('Task created successfully!');
+      showSuccess('Task created successfully!');
       setShowCreateTask(false);
       resetTaskForm();
       await loadProjectTasks(selectedProject.id);
     } catch (err) {
-      alert('Error creating task');
+      showError('Error creating task');
       console.error('Error creating task:', err);
     }
   };
@@ -348,10 +359,10 @@ export const ProjectManagement: React.FC = () => {
           await loadProjectTasks(selectedProject.id);
         }
       } else {
-        alert(`Error updating task: ${result.error}`);
+        showError(`Error updating task: ${result.error}`);
       }
     } catch (err) {
-      alert('Error updating task status');
+      showError('Error updating task status');
       console.error('Error updating task status:', err);
     }
   };
@@ -398,23 +409,56 @@ export const ProjectManagement: React.FC = () => {
   const handleEditProject = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!editingProject) return;
+    if (!editingProject) {
+      showWarning('No project selected for editing');
+      return;
+    }
+
+    // Validate project name
+    if (!projectForm.name || projectForm.name.trim().length < 2) {
+      showWarning('Project name must be at least 2 characters');
+      return;
+    }
+
+    if (projectForm.name.trim().length > 200) {
+      showWarning('Project name must be less than 200 characters');
+      return;
+    }
+
+    // Validate manager ID - check if it's a valid string
+    const managerIdStr = typeof projectForm.primary_manager_id === 'string' 
+      ? projectForm.primary_manager_id 
+      : '';
+    
+    if (!managerIdStr || managerIdStr.trim() === '') {
+      showWarning('Please select a primary manager');
+      return;
+    }
 
     try {
-      const result = await ProjectService.updateProject(editingProject.id, projectForm);
+      // Clean the form data before sending
+      const updates = {
+        ...projectForm,
+        name: projectForm.name.trim(),
+        primary_manager_id: managerIdStr.trim(),
+        description: projectForm.description?.trim() || ''
+      };
+
+      const result = await ProjectService.updateProject(editingProject.id, updates);
+      
       if (result.error) {
-        alert(`Error updating project: ${result.error}`);
+        showError(`Error updating project: ${result.error}`);
         return;
       }
 
-      alert('Project updated successfully!');
+      showSuccess('Project updated successfully!');
       setShowEditProject(false);
       setEditingProject(null);
       resetProjectForm();
       setRefreshTrigger(prev => prev + 1);
     } catch (err) {
-      alert('Error updating project');
       console.error('Error updating project:', err);
+      showError('Error updating project');
     }
   };
 
@@ -426,12 +470,12 @@ export const ProjectManagement: React.FC = () => {
 
     // Validate task name length
     if (taskForm.name.trim().length < 2) {
-      alert('Task name must be at least 2 characters long');
+      showWarning('Task name must be at least 2 characters long');
       return;
     }
 
     if (taskForm.name.trim().length > 200) {
-      alert('Task name must be less than 200 characters');
+      showWarning('Task name must be less than 200 characters');
       return;
     }
 
@@ -446,11 +490,11 @@ export const ProjectManagement: React.FC = () => {
       });
 
       if (!result.success) {
-        alert(`Error updating task: ${result.error}`);
+        showError(`Error updating task: ${result.error}`);
         return;
       }
 
-      alert('Task updated successfully!');
+      showSuccess('Task updated successfully!');
       setShowEditTask(false);
       setEditingTask(null);
       resetTaskForm();
@@ -458,7 +502,7 @@ export const ProjectManagement: React.FC = () => {
         await loadProjectTasks(selectedProject.id);
       }
     } catch (err) {
-      alert('Error updating task');
+      showError('Error updating task');
       console.error('Error updating task:', err);
     }
   };
@@ -479,17 +523,17 @@ export const ProjectManagement: React.FC = () => {
         isSecondaryManager);
 
       if (!res.success) {
-        alert(`Error adding member: ${res.error || 'Unknown error'}`);
+        showError(`Error adding member: ${res.error || 'Unknown error'}`);
         console.error('addUserToProject failed:', res.error);
         return;
       }
-      alert('Employee added successfully!');
+      showSuccess('Employee added successfully!');
       setShowAddMember(false);
       setSelectedUserId('');
       setSelectedRole('employee');
       await loadProjectMembers(selectedMemberProject.id);
     } catch (err) {
-      alert('Error adding member');
+      showError('Error adding member');
       console.error('Error adding member:', err);
     }
   };
@@ -501,10 +545,10 @@ export const ProjectManagement: React.FC = () => {
     if (confirm('Are you sure you want to remove this member from the project?')) {
       try {
         await ProjectService.removeProjectMember(selectedMemberProject.id, userId);
-        alert('Employee removed successfully!');
+        showSuccess('Employee removed successfully!');
         await loadProjectMembers(selectedMemberProject.id);
       } catch (err) {
-        alert('Error removing employee');
+        showError('Error removing employee');
         console.error('Error removing employee:', err);
       }
     }
@@ -700,14 +744,13 @@ export const ProjectManagement: React.FC = () => {
                       )}
 
                       {/* Client Information */}
-                      {project.client_name && (
+                      {project.client_id && (
                         <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
                           <h4 className="text-sm font-semibold text-blue-900 mb-2 flex items-center">
-                            <Building2 className="h-4 w-4 mr-2" />
-                            Client Details
                           </h4>
                           <div className="space-y-1">
                             <div className="flex items-center text-sm text-blue-800">
+                              <Building2 className="h-4 w-4 mr-2" />
                               <span className="font-medium">{project.client_name}</span>
                             </div>
                             {project.client_contact_person && (
@@ -1574,8 +1617,12 @@ export const ProjectManagement: React.FC = () => {
                                   setEditingProject(project);
                                   setProjectForm({
                                     name: project.name,
-                                    client_id: project.client_id,
-                                    primary_manager_id: project.primary_manager_id,
+                                    client_id: typeof project.client_id === 'string' 
+                                        ? project.client_id 
+                                        : project.client_id?._id,   // take the object’s _id
+                                    primary_manager_id: typeof project.primary_manager_id === 'string'
+                                        ? project.primary_manager_id
+                                        : project.primary_manager_id?._id || '',  // handle manager objects too
                                     status: project.status,
                                     start_date: project.start_date,
                                     end_date: project.end_date || '',
@@ -1930,6 +1977,25 @@ export const ProjectManagement: React.FC = () => {
                       {clients.map(client => (
                         <option key={client.id} value={client.id}>
                           {client.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Primary Manager *
+                    </label>
+                    <select
+                      required
+                      value={projectForm.primary_manager_id}
+                      onChange={(e) => setProjectForm({...projectForm, primary_manager_id: e.target.value})}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    >
+                      <option value="">Select a manager</option>
+                      {managers.map(manager => (
+                        <option key={manager.id} value={manager.id}>
+                          {manager.full_name}
                         </option>
                       ))}
                     </select>

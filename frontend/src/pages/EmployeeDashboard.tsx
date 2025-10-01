@@ -23,6 +23,7 @@ import {
   X
 } from 'lucide-react';
 import type { Project, Task, User as UserType, TimeEntry } from '../types';
+import { showSuccess, showError, showWarning } from '../utils/toast';
 
 interface EmployeeDashboardProps {
   activeSection: string;
@@ -199,7 +200,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ activeSection, se
       alert(`Task status updated to: ${newStatus}`);
     } catch (error) {
       console.error('Error updating task status:', error);
-      alert('Failed to update task status');
+      showError('Failed to update task status');
     }
   };
 
@@ -230,7 +231,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ activeSection, se
       // Find the task to get project info
       const task = tasks.find(t => t.id === taskId);
       if (!task) {
-        alert('Task not found');
+        showError('Task not found');
         return;
       }
 
@@ -279,7 +280,7 @@ const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ activeSection, se
       }
     } catch (error) {
       console.error('Error logging time:', error);
-      alert('Failed to log time');
+      showError('Failed to log time');
     }
   };
 

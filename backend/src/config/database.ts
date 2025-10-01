@@ -59,4 +59,4 @@ const connectDB = async (): Promise<void> => {
   }
 };
 
-export { connectDB };
+export { connectDB, connectDB as connectToDatabase };

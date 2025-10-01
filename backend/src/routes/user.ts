@@ -45,6 +45,13 @@ router.post('/for-approval', requireManagement, createUserValidation, UserContro
 router.get('/pending-approvals', requireManager, UserController.getPendingApprovals);
 
 /**
+ * @route GET /api/v1/users/deleted
+ * @desc Get all deleted users (Super Admin only)
+ * @access Private (Super Admin)
+ */
+router.get('/deleted', requireSuperAdmin, UserController.getDeletedUsers);
+
+/**
  * @route GET /api/v1/users/by-role
  * @desc Get users based on role permissions
  * @access Private
@@ -113,5 +120,33 @@ router.put('/:userId/billing', requireSuperAdmin, setUserBillingValidation, User
  * @access Private (Manager+)
  */
 router.get('/:managerId/team-members', requireManager, userIdValidation, UserController.getTeamMembers);
+
+/**
+ * @route POST /api/v1/users/:userId/soft-delete
+ * @desc Soft delete user (recoverable)
+ * @access Private (Super Admin)
+ */
+router.post('/:userId/soft-delete', requireSuperAdmin, userIdValidation, UserController.softDeleteUser);
+
+/**
+ * @route POST /api/v1/users/:userId/hard-delete
+ * @desc Hard delete user (permanent)
+ * @access Private (Super Admin)
+ */
+router.post('/:userId/hard-delete', requireSuperAdmin, userIdValidation, UserController.hardDeleteUser);
+
+/**
+ * @route POST /api/v1/users/:userId/restore
+ * @desc Restore soft deleted user
+ * @access Private (Super Admin)
+ */
+router.post('/:userId/restore', requireSuperAdmin, userIdValidation, UserController.restoreUser);
+
+/**
+ * @route GET /api/v1/users/:userId/dependencies
+ * @desc Check if user can be deleted (check dependencies)
+ * @access Private (Super Admin)
+ */
+router.get('/:userId/dependencies', requireSuperAdmin, userIdValidation, UserController.checkUserDependencies);
 
 export default router;

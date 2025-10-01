@@ -52,6 +52,7 @@ export const RoleSpecificDashboard: React.FC = () => {
 
       if (result.error) {
         // Use fallback data instead of showing error
+        console.warn('Dashboard API failed, using fallback data:');
         setDashboardData(getFallbackDashboardData());
       } else {
         setDashboardData(result.dashboard || getFallbackDashboardData());

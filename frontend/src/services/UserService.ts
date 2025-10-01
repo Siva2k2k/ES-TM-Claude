@@ -443,12 +443,146 @@ export class UserService {
       const errorMessage = (error as { response?: { data?: { error?: string } }; message?: string })?.response?.data?.error 
         || (error as { message?: string })?.message 
         || 'Failed to fetch team members with project roles';
-      return { 
-        users: [], 
-        userProjectRoles: new Map(), 
-        userManagerProjects: new Map(), 
-        error: errorMessage 
+      return {
+        users: [],
+        userProjectRoles: new Map(),
+        userManagerProjects: new Map(),
+        error: errorMessage
       };
+    }
+  }
+
+  /**
+   * Soft delete user (recoverable)
+   */
+  static async softDeleteUser(userId: string, reason: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await backendApi.post<{ success: boolean; error?: string }>(
+        `/users/${userId}/soft-delete`,
+        { reason }
+      );
+
+      if (response.success) {
+        console.log('User soft deleted:', userId);
+        return { success: true };
+      } else {
+        console.error('Error soft deleting user:', response.error);
+        return { success: false, error: response.error };
+      }
+    } catch (error: unknown) {
+      console.error('Error in softDeleteUser:', error);
+      if (error instanceof Error) {
+        return { success: false, error: error.message || 'Failed to delete user' };
+      }
+      return { success: false, error: 'Failed to delete user' };
+    }
+  }
+
+  /**
+   * Hard delete user (permanent)
+   */
+  static async hardDeleteUser(userId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await backendApi.post<{ success: boolean; error?: string }>(
+        `/users/${userId}/hard-delete`
+      );
+
+      if (response.success) {
+        console.log('User permanently deleted:', userId);
+        return { success: true };
+      } else {
+        console.error('Error permanently deleting user:', response.error);
+        return { success: false, error: response.error };
+      }
+    } catch (error: unknown) {
+      console.error('Error in hardDeleteUser:', error);
+      if (error instanceof Error) {
+        return { success: false, error: error.message || 'Failed to permanently delete user' };
+      }
+      return { success: false, error: 'Failed to permanently delete user' };
+    }
+  }
+
+  /**
+   * Restore soft deleted user
+   */
+  static async restoreUser(userId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await backendApi.post<{ success: boolean; error?: string }>(
+        `/users/${userId}/restore`
+      );
+
+      if (response.success) {
+        console.log('User restored:', userId);
+        return { success: true };
+      } else {
+        console.error('Error restoring user:', response.error);
+        return { success: false, error: response.error };
+      }
+    } catch (error: unknown) {
+      console.error('Error in restoreUser:', error);
+      if (error instanceof Error) {
+        return { success: false, error: error.message || 'Failed to restore user' };
+      }
+      return { success: false, error: 'Failed to restore user' };
+    }
+  }
+
+  /**
+   * Get all deleted users
+   */
+  static async getDeletedUsers(): Promise<{ users: User[]; error?: string }> {
+    try {
+      const response = await backendApi.get<{ success: boolean; users: User[]; error?: string }>(
+        '/users/deleted'
+      );
+
+      if (response.success) {
+        return { users: response.users };
+      } else {
+        console.error('Error fetching deleted users:', response.error);
+        return { users: [], error: response.error };
+      }
+    } catch (error: unknown) {
+      console.error('Error in getDeletedUsers:', error);
+      if (error instanceof Error) {
+        return { users: [], error: error.message || 'Failed to fetch deleted users' };
+      }
+      return { users: [], error: 'Failed to fetch deleted users' };
+    }
+  }
+
+  /**
+   * Check if user can be deleted (check dependencies)
+   */
+  static async checkUserDependencies(userId: string): Promise<{
+    canDelete: boolean;
+    dependencies: string[];
+    error?: string
+  }> {
+    try {
+      const response = await backendApi.get<{
+        success: boolean;
+        canDelete: boolean;
+        dependencies: string[];
+        error?: string
+      }>(`/users/${userId}/dependencies`);
+
+      if (response.success) {
+        return {
+          canDelete: response.canDelete,
+          dependencies: response.dependencies
+        };
+      } else {
+        console.error('Error checking user dependencies:', response.error);
+        return { canDelete: false, dependencies: [], error: response.error };
+      }
+    } catch (error: unknown) {
+      console.error('Error in checkUserDependencies:', error);
+      if (error instanceof Error) {
+        return { canDelete: false, dependencies: [], error: error.message };
+      }
+      return { canDelete: false, dependencies: [], error: 'Failed to check dependencies' };
     }
   }
 }

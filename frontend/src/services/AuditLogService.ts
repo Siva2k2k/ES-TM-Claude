@@ -243,7 +243,7 @@ export class AuditLogService {
       const result = await this.getAuditLogs({
         startDate,
         endDate,
-        limit: 10000
+        limit: 1000
       });
 
       if (result.error) {

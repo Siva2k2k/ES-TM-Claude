@@ -17,6 +17,7 @@ import { ProjectService } from '../services/ProjectService';
 import { TimesheetService } from '../services/TimesheetService';
 import { BillingService } from '../services/BillingService';
 import { AuditLogService, ActivityAuditLog } from '../services/AuditLogService';
+import { showSuccess, showError, showWarning } from '../utils/toast';
 
 interface DashboardStats {
   totalUsers: number;
@@ -158,7 +159,7 @@ export const ManagementDashboard: React.FC = () => {
       const result = await UserService.approveUser(userId);
       if (result.success) {
         loadDashboardData(); // Refresh data
-        alert('User approved successfully');
+        showError('User approved successfully');
       } else {
         alert(`Error approving user: ${result.error}`);
       }
@@ -425,7 +426,7 @@ export const ManagementDashboard: React.FC = () => {
                     onClick={() => {
                       const now = new Date();
                       BillingService.approveMonthlyBilling(now.getFullYear(), now.getMonth() + 1);
-                      alert('Monthly billing approved');
+                      showError('Monthly billing approved');
                     }}
                     className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                   >
@@ -503,7 +504,7 @@ export const ManagementDashboard: React.FC = () => {
                 <button 
                   onClick={() => {
                     // Mock timesheet approval
-                    alert('Pending timesheets approved');
+                    showError('Pending timesheets approved');
                   }}
                   className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
                 >

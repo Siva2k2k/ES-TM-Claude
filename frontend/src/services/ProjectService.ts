@@ -630,6 +630,64 @@ export class ProjectService {
   }
 
   /**
+   * Get projects enriched with client data
+   * This method fetches projects and clients separately, then merges them
+   */
+  static async getProjectsWithClientData(userId?: string): Promise<{ projects: (Project & { client?: Client })[]; error?: string }> {
+    try {
+      // Fetch projects and clients in parallel
+      const [projectsResult, clientsResult] = await Promise.all([
+        userId ? this.getUserProjects(userId) : this.getAllProjects(),
+        this.getAllClients()
+      ]);
+
+      if (projectsResult.error) {
+        return { projects: [], error: projectsResult.error };
+      }
+
+      if (clientsResult.error) {
+        console.warn('Failed to fetch clients for project enrichment:', clientsResult.error);
+        // Return projects without client data if clients fetch fails
+        return { projects: projectsResult.projects || [], error: undefined };
+      }
+
+      // Create client lookup map
+      const clients = clientsResult.clients || [];
+      const clientById = new Map<string, Client>();
+      
+      clients.forEach(client => {
+        if (client.id) {
+          clientById.set(client.id, client);
+        }
+      });
+
+      // Enrich projects with client data
+      const enrichedProjects = (projectsResult.projects || []).map(project => {
+        const clientData = project.client_id ? clientById.get(project.client_id) : null;
+        
+        return {
+          ...project,
+          client: clientData || undefined
+        };
+      });
+
+      console.log(`🔍 getProjectsWithClientData: Enriched ${enrichedProjects.length} projects with client data`);
+      return { projects: enrichedProjects };
+    } catch (error) {
+      console.error('Error in getProjectsWithClientData:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch projects with client data';
+      return { projects: [], error: errorMessage };
+    }
+  }
+
+  /**
+   * Get user projects enriched with client data
+   */
+  static async getUserProjectsWithClientData(userId: string): Promise<{ projects: (Project & { client?: Client })[]; error?: string }> {
+    return this.getProjectsWithClientData(userId);
+  }
+
+  /**
    * Create task
    */
   static async createTask(taskData: {

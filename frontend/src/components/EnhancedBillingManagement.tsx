@@ -26,6 +26,7 @@ import {
   Plus
 } from 'lucide-react';
 import type { Project, User } from '../types';
+import { showSuccess, showError, showWarning } from '../utils/toast';
 
 interface BillingSummary {
   total_revenue: number;
@@ -171,23 +172,23 @@ export const EnhancedBillingManagement: React.FC = () => {
       );
 
       if (result.error) {
-        alert(`Error updating hours: ${result.error}`);
+        showError(`Error updating hours: ${result.error}`);
         return;
       }
 
-      alert('Hours updated successfully');
+      showSuccess('Hours updated successfully');
       setShowEditModal(false);
       setEditingEntry(null);
       loadBillingSummary();
     } catch (err) {
-      alert('Error updating hours');
+      showError('Error updating hours');
       console.error('Error updating hours:', err);
     }
   };
 
   const handleExportReport = async (format: 'csv' | 'pdf' | 'excel') => {
     if (!canGenerateReports) {
-      alert('You do not have permission to generate reports');
+      showError('You do not have permission to generate reports');
       return;
     }
 
@@ -199,14 +200,14 @@ export const EnhancedBillingManagement: React.FC = () => {
       );
 
       if (result.error) {
-        alert(`Export failed: ${result.error}`);
+        showError(`Export failed: ${result.error}`);
         return;
       }
 
       // In a real implementation, this would trigger a download
-      alert(`${format.toUpperCase()} report generated successfully`);
+      showSuccess(`${format.toUpperCase()} report generated successfully`);
     } catch (err) {
-      alert('Export failed');
+      showError('Export failed');
       console.error('Export error:', err);
     }
   };
