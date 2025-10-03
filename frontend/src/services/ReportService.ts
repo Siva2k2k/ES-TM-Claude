@@ -159,8 +159,6 @@ export class ReportService {
     error?: string;
   }> {
     try {
-      // Use fetch for blob response
-      const token = localStorage.getItem('accessToken');
       // Convert dates to ISO8601 format as required by backend validation
       const requestPayload = {
         ...request,
@@ -169,8 +167,12 @@ export class ReportService {
           end: new Date(request.date_range.end).toISOString()
         }
       };
-      
-      const response = await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:3001'}/reports/generate`, {
+
+      // Use backendApi with manual fetch for blob response
+      const token = localStorage.getItem('accessToken');
+      const baseURL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1').replace(/\/+$/, '');
+      console.log("Sending report request payload:", requestPayload);
+      const response = await fetch(`${baseURL}/reports/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -196,7 +198,16 @@ export class ReportService {
 
       // Get filename from Content-Disposition header
       const contentDisposition = response.headers.get('Content-Disposition');
-      let filename = `report_${Date.now()}.${request.format}`;
+      
+      // Map format to proper file extension
+      const extensionMap: Record<string, string> = {
+        'excel': 'xlsx',
+        'csv': 'csv',
+        'pdf': 'pdf'
+      };
+      const fileExtension = extensionMap[request.format] || request.format;
+      
+      let filename = `report_${Date.now()}.${fileExtension}`;
       if (contentDisposition) {
         const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
         if (filenameMatch && filenameMatch[1]) {

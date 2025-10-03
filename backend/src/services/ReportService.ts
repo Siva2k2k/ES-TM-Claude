@@ -3,8 +3,10 @@ import mongoose from 'mongoose';
 import { ReportTemplate, IReportTemplate, ReportCategory } from '../models/ReportTemplate';
 import { User, IUser, UserRole } from '../models/User';
 import { Timesheet } from '../models/Timesheet';
+import { TimeEntry } from '../models/TimeEntry';
 import { Project } from '../models/Project';
 import { BillingSnapshot } from '../models/BillingSnapshot';
+import { AuditLog } from '../models/AuditLog';
 import { AuditLogService } from './AuditLogService';
 import { AuthUser } from '@/utils/auth';
 import {
@@ -151,7 +153,9 @@ export class ReportService {
     const accessRules = template.data_access_rules[currentUser.role];
 
     if (!accessRules) {
-      throw new AuthorizationError('No access rules defined for this role');
+      // Provide default access rules based on role
+      logger.warn(`No access rules defined for role: ${currentUser.role}, using defaults`);
+      return this.getDefaultAccessRulesForRole(currentUser, baseFilter);
     }
 
     let filter = { ...baseFilter };
@@ -216,6 +220,54 @@ export class ReportService {
   }
 
   /**
+   * Get default access rules for a role when none are defined in template
+   */
+  private static getDefaultAccessRulesForRole(
+    currentUser: AuthUser,
+    baseFilter: any = {}
+  ): any {
+    let filter = { ...baseFilter };
+
+    // Apply default role-based filters
+    switch (currentUser.role) {
+      case 'employee':
+        // Employee can only see their own data
+        filter.user_id = new mongoose.Types.ObjectId(currentUser.id);
+        break;
+
+      case 'lead':
+        // Lead can see own data + team data
+        filter.$or = [
+          { user_id: new mongoose.Types.ObjectId(currentUser.id) },
+          { manager_id: new mongoose.Types.ObjectId(currentUser.id) }
+        ];
+        break;
+
+      case 'manager':
+        // Manager can see own + team + managed projects  
+        filter.$or = [
+          { user_id: new mongoose.Types.ObjectId(currentUser.id) },
+          { manager_id: new mongoose.Types.ObjectId(currentUser.id) }
+        ];
+        break;
+
+      case 'management':
+      case 'super_admin':
+        // Management and Super Admin can see all data
+        // No additional filters needed
+        break;
+
+      default:
+        // Unknown role - restrict to own data only
+        logger.warn(`Unknown role: ${currentUser.role}, restricting to own data`);
+        filter.user_id = new mongoose.Types.ObjectId(currentUser.id);
+        break;
+    }
+
+    return filter;
+  }
+
+  /**
    * Generate report data based on template and user access
    */
   static async generateReportData(
@@ -268,6 +320,9 @@ export class ReportService {
         case 'billing_snapshots':
           data = await this.fetchBillingData(filter, template);
           break;
+        case 'audit_logs':
+          data = await this.fetchAuditLogData(filter, template);
+          break;
         default:
           return { error: 'Unsupported data source' };
       }
@@ -318,23 +373,38 @@ export class ReportService {
   private static async fetchTimesheetData(filter: any, template: IReportTemplate): Promise<any[]> {
     const query = Timesheet.find(filter);
 
-    // Populate related data based on template configuration
-    if (template.data_source.include_related?.includes('users')) {
-      query.populate('user_id', 'full_name email role hourly_rate');
-    }
-    if (template.data_source.include_related?.includes('time_entries')) {
-      query.populate('time_entries');
-    }
+    // Always populate user information for display purposes
+    query.populate('user_id', 'full_name email role hourly_rate');
+    
+    // Populate additional related data based on template configuration
     if (template.data_source.include_related?.includes('projects')) {
-      // Time entries have project references
-      query.populate({
-        path: 'time_entries',
-        populate: { path: 'project_id', select: 'name client_id' }
-      });
+      // Additional project data will be populated via time entries
     }
 
-    const data = await query.lean().exec();
-    return data;
+    let timesheets = await query.lean().exec();
+
+    // If template needs time entries, fetch them separately and add to timesheets
+    if (template.data_source.include_related?.includes('time_entries') || 
+        template.data_source.include_related?.includes('projects')) {
+      
+      for (const timesheet of timesheets) {
+        // Fetch time entries for this timesheet
+        const timeEntryQuery = TimeEntry.find({ timesheet_id: timesheet._id });
+        
+        // Populate projects if needed
+        if (template.data_source.include_related?.includes('projects')) {
+          timeEntryQuery.populate('project_id', 'name client_id');
+          timeEntryQuery.populate('task_id', 'name description');
+        }
+        
+        const timeEntries = await timeEntryQuery.lean().exec();
+        
+        // Add time entries to timesheet
+        (timesheet as any).time_entries = timeEntries;
+      }
+    }
+
+    return timesheets;
   }
 
   /**
@@ -386,6 +456,21 @@ export class ReportService {
     }
     if (template.data_source.include_related?.includes('users')) {
       query.populate('user_id', 'full_name email role');
+    }
+
+    const data = await query.lean().exec();
+    return data;
+  }
+
+  /**
+   * Fetch audit log data with relations
+   */
+  private static async fetchAuditLogData(filter: any, template: IReportTemplate): Promise<any[]> {
+    const query = AuditLog.find(filter);
+
+    // Include user information if requested
+    if (template.data_source.include_related?.includes('users')) {
+      query.populate('actor_id', 'full_name email role');
     }
 
     const data = await query.lean().exec();

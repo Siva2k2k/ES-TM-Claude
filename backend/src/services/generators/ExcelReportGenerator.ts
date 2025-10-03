@@ -1,5 +1,6 @@
 import { ReportData } from '../ReportService';
 import { logger } from '@/config/logger';
+import { ReportFieldMapper } from './ReportFieldMapper';
 import ExcelJS from 'exceljs';
 
 /**
@@ -37,11 +38,11 @@ export class ExcelReportGenerator {
         this.addSummarySheet(workbook, data, template);
       }
 
-      // Generate buffer
+      // Generate buffer with proper encoding
       const buffer = await workbook.xlsx.writeBuffer();
 
       logger.info(`Excel report generated: ${template.name} (${data.length} records)`);
-      return { buffer: buffer as unknown as Buffer };
+      return { buffer: Buffer.from(buffer) };
     } catch (error) {
       logger.error('Error generating Excel report:', error);
       return { error: 'Failed to generate Excel report' };
@@ -80,7 +81,7 @@ export class ExcelReportGenerator {
    * Add data table with formatting
    */
   private static addDataTable(worksheet: ExcelJS.Worksheet, data: any[], templateId: string): void {
-    const headers = this.getColumnHeaders(templateId);
+    const headers = ReportFieldMapper.getHeaders(templateId);
     const columns = this.getColumnDefinitions(headers);
 
     // Add headers
@@ -95,9 +96,9 @@ export class ExcelReportGenerator {
     };
     headerRow.height = 20;
 
-    // Add data rows
+    // Add data rows using shared mapper
     data.forEach(record => {
-      const row = this.extractRowData(record, headers, templateId);
+      const row = ReportFieldMapper.extractRowData(record, headers);
       worksheet.addRow(row);
     });
 
@@ -120,26 +121,7 @@ export class ExcelReportGenerator {
     ];
   }
 
-  /**
-   * Get column headers based on template
-   */
-  private static getColumnHeaders(templateId: string): string[] {
-    const headerMap: Record<string, string[]> = {
-      'employee-payslip': ['Month', 'Year', 'Total Hours', 'Billable Hours', 'Hourly Rate', 'Gross Pay', 'Deductions', 'Net Pay'],
-      'employee-timesheet-summary': ['Week Start', 'Week End', 'Total Hours', 'Status', 'Submitted At', 'Approved At'],
-      'employee-performance': ['Period', 'Total Hours', 'Projects', 'Tasks Completed', 'Productivity Score'],
-      'lead-team-timesheet': ['Employee', 'Email', 'Week Start', 'Total Hours', 'Status', 'Submitted At'],
-      'lead-team-performance': ['Employee', 'Total Hours', 'Projects', 'Productivity Score', 'Rating'],
-      'manager-project-performance': ['Project', 'Client', 'Status', 'Budget', 'Hours Spent', 'Budget Utilization %', 'Timeline Status'],
-      'manager-project-financial': ['Project', 'Revenue', 'Cost', 'Margin', 'Billable Hours', 'ROI %', 'Profit'],
-      'manager-resource-allocation': ['Employee', 'Role', 'Allocated Hours', 'Available Hours', 'Utilization %', 'Projects'],
-      'management-financial-dashboard': ['Period', 'Revenue', 'Cost', 'Profit', 'Margin %', 'Growth %'],
-      'management-org-utilization': ['Department', 'Employees', 'Total Hours', 'Billable Hours', 'Utilization %'],
-      'default': ['ID', 'Name', 'Value', 'Status', 'Created At']
-    };
 
-    return headerMap[templateId] || headerMap['default'];
-  }
 
   /**
    * Get column definitions for Excel
@@ -152,35 +134,7 @@ export class ExcelReportGenerator {
     }));
   }
 
-  /**
-   * Extract row data from record
-   */
-  private static extractRowData(record: any, headers: string[], templateId: string): any[] {
-    return headers.map(header => {
-      const key = header.toLowerCase().replace(/ /g, '_');
-      let value = record[key];
 
-      // Handle nested objects
-      if (typeof value === 'object' && value !== null) {
-        if (value.name) return value.name;
-        if (value.email) return value.email;
-        if (value instanceof Date) return value.toLocaleDateString();
-        return JSON.stringify(value);
-      }
-
-      // Format dates
-      if (value instanceof Date) {
-        return value.toLocaleDateString();
-      }
-
-      // Format numbers
-      if (typeof value === 'number' && header.includes('%')) {
-        return `${(value * 100).toFixed(2)}%`;
-      }
-
-      return value || '';
-    });
-  }
 
   /**
    * Add summary sheet with aggregations

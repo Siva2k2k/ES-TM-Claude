@@ -1,5 +1,6 @@
 import { ReportData } from '../ReportService';
 import { logger } from '@/config/logger';
+import { ReportFieldMapper } from './ReportFieldMapper';
 
 /**
  * CSV Report Generator
@@ -17,9 +18,9 @@ export class CsvReportGenerator {
         return { csv: this.generateEmptyReport(template.name, metadata) };
       }
 
-      // Generate CSV header and rows
-      const headers = this.extractHeaders(data[0], template.template_id);
-      const rows = data.map(record => this.convertToRow(record, headers));
+      // Generate CSV header and rows using shared mapper
+      const headers = ReportFieldMapper.getHeaders(template.template_id);
+      const rows = data.map(record => ReportFieldMapper.extractRowData(record, headers));
 
       // Build CSV content
       const csvLines: string[] = [];
@@ -35,9 +36,15 @@ export class CsvReportGenerator {
       // Add column headers
       csvLines.push(headers.join(','));
 
-      // Add data rows
+      // Add data rows with proper CSV escaping
       rows.forEach(row => {
-        csvLines.push(row.join(','));
+        const escapedRow = row.map(value => {
+          if (typeof value === 'string' && (value.includes(',') || value.includes('"') || value.includes('\n'))) {
+            return `"${value.replace(/"/g, '""')}"`;
+          }
+          return value || '';
+        });
+        csvLines.push(escapedRow.join(','));
       });
 
       const csv = csvLines.join('\n');
@@ -50,49 +57,7 @@ export class CsvReportGenerator {
     }
   }
 
-  /**
-   * Extract headers from data object
-   */
-  private static extractHeaders(dataObject: any, templateId: string): string[] {
-    // Define headers based on report template
-    const headerMap: Record<string, string[]> = {
-      'employee-payslip': ['Month', 'Year', 'Total Hours', 'Billable Hours', 'Hourly Rate', 'Gross Pay', 'Deductions', 'Net Pay'],
-      'employee-timesheet-summary': ['Week Start', 'Week End', 'Total Hours', 'Status', 'Submitted At', 'Approved At'],
-      'employee-performance': ['Period', 'Total Hours', 'Projects', 'Tasks Completed', 'Productivity Score'],
-      'lead-team-timesheet': ['Employee', 'Week Start', 'Total Hours', 'Status', 'Submitted At'],
-      'manager-project-performance': ['Project', 'Client', 'Status', 'Budget', 'Hours Spent', 'Budget Utilization %'],
-      'manager-project-financial': ['Project', 'Revenue', 'Cost', 'Margin', 'Billable Hours', 'ROI %'],
-      'default': Object.keys(dataObject).filter(key => !key.startsWith('_') && key !== '__v')
-    };
 
-    return headerMap[templateId] || headerMap['default'];
-  }
-
-  /**
-   * Convert data object to CSV row
-   */
-  private static convertToRow(dataObject: any, headers: string[]): string[] {
-    return headers.map(header => {
-      const key = header.toLowerCase().replace(/ /g, '_');
-      let value = dataObject[key];
-
-      // Handle nested objects
-      if (typeof value === 'object' && value !== null) {
-        if (value.name) value = value.name;
-        else if (value.toString) value = value.toString();
-        else value = JSON.stringify(value);
-      }
-
-      // Escape commas and quotes
-      if (typeof value === 'string') {
-        if (value.includes(',') || value.includes('"') || value.includes('\n')) {
-          value = `"${value.replace(/"/g, '""')}"`;
-        }
-      }
-
-      return value || '';
-    });
-  }
 
   /**
    * Generate empty report with message

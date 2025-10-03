@@ -1,25 +1,52 @@
 import { ReportData } from '../ReportService';
 import { logger } from '@/config/logger';
+import puppeteer from 'puppeteer';
+import { ReportFieldMapper } from './ReportFieldMapper';
 
 /**
  * PDF Report Generator
- * Generates PDF format reports (simplified version - returns HTML for now)
- *
- * TODO: Integrate with puppeteer or pdfkit for actual PDF generation
- * For now, generates HTML that can be converted to PDF on frontend
+ * Generates PDF format reports using puppeteer
  */
 export class PdfReportGenerator {
   /**
-   * Generate PDF HTML content from report data
+   * Generate PDF buffer from report data
    */
-  static async generate(reportData: ReportData): Promise<{ html?: string; error?: string }> {
+  static async generate(reportData: ReportData): Promise<{ buffer?: Buffer; error?: string }> {
     try {
       const { data, metadata, template } = reportData;
 
+      // Generate HTML content
       const html = this.generateHtml(data, metadata, template);
 
-      logger.info(`PDF HTML generated: ${template.name} (${data.length} records)`);
-      return { html };
+      // Convert HTML to PDF using puppeteer
+      const browser = await puppeteer.launch({
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+
+      try {
+        const page = await browser.newPage();
+        await page.setContent(html, { waitUntil: 'networkidle0' });
+        
+        const pdfBuffer = await page.pdf({
+          format: 'A4',
+          margin: {
+            top: '20mm',
+            right: '15mm',
+            bottom: '20mm',
+            left: '15mm'
+          },
+          printBackground: true
+        });
+
+        await browser.close();
+
+        logger.info(`PDF report generated: ${template.name} (${data.length} records)`);
+        return { buffer: Buffer.from(pdfBuffer) };
+      } catch (pdfError) {
+        await browser.close();
+        throw pdfError;
+      }
     } catch (error) {
       logger.error('Error generating PDF report:', error);
       return { error: 'Failed to generate PDF report' };
@@ -210,8 +237,17 @@ export class PdfReportGenerator {
    * Generate HTML table
    */
   private static generateTable(data: any[], templateId: string): string {
-    const headers = this.getTableHeaders(templateId);
-    const rows = data.map(record => this.generateTableRow(record, headers, templateId));
+    const headers = ReportFieldMapper.getHeaders(templateId);
+    
+    // Debug logging
+    if (data.length > 0) {
+      logger.info(`PDF Table Generation - Sample data keys: ${JSON.stringify(Object.keys(data[0]))}`);
+    }
+    
+    const rows = data.map(record => {
+      const rowData = ReportFieldMapper.extractRowData(record, headers);
+      return `<tr>${rowData.map(cell => `<td>${cell}</td>`).join('')}</tr>`;
+    });
 
     return `
       <table>
@@ -227,73 +263,9 @@ export class PdfReportGenerator {
     `;
   }
 
-  /**
-   * Generate HTML table row
-   */
-  private static generateTableRow(record: any, headers: string[], templateId: string): string {
-    const cells = headers.map(header => {
-      const key = header.toLowerCase().replace(/ /g, '_');
-      let value = record[key];
 
-      // Handle nested objects
-      if (typeof value === 'object' && value !== null) {
-        if (value.name) value = value.name;
-        else if (value.email) value = value.email;
-        else if (value instanceof Date) value = value.toLocaleDateString();
-        else value = JSON.stringify(value);
-      }
 
-      // Format dates
-      if (value instanceof Date) {
-        value = value.toLocaleDateString();
-      }
 
-      // Format currency
-      if (header.includes('Pay') || header.includes('Revenue') || header.includes('Cost') || header.includes('Profit')) {
-        if (typeof value === 'number') {
-          value = `$${value.toFixed(2)}`;
-        }
-      }
-
-      // Format percentages
-      if (header.includes('%') && typeof value === 'number') {
-        value = `${(value * 100).toFixed(2)}%`;
-      }
-
-      return `<td>${value || '-'}</td>`;
-    });
-
-    return `<tr>${cells.join('')}</tr>`;
-  }
-
-  /**
-   * Get table headers based on template
-   */
-  private static getTableHeaders(templateId: string): string[] {
-    const headerMap: Record<string, string[]> = {
-      'employee-payslip': ['Month', 'Year', 'Total Hours', 'Billable Hours', 'Hourly Rate', 'Gross Pay', 'Deductions', 'Net Pay'],
-      'employee-timesheet-summary': ['Week Start', 'Week End', 'Total Hours', 'Status', 'Submitted At'],
-      'employee-performance': ['Period', 'Total Hours', 'Projects', 'Tasks Completed', 'Productivity Score'],
-      'employee-attendance': ['Date', 'Hours Worked', 'Status', 'Leave Type'],
-      'lead-team-timesheet': ['Employee', 'Email', 'Week Start', 'Total Hours', 'Status'],
-      'lead-team-performance': ['Employee', 'Total Hours', 'Projects', 'Productivity Score'],
-      'lead-team-attendance': ['Employee', 'Present Days', 'Absent Days', 'Leave Days'],
-      'manager-project-performance': ['Project', 'Client', 'Status', 'Budget', 'Hours Spent', 'Utilization %'],
-      'manager-project-financial': ['Project', 'Revenue', 'Cost', 'Margin', 'ROI %'],
-      'manager-resource-allocation': ['Employee', 'Allocated Hours', 'Utilization %'],
-      'manager-team-billing': ['Employee', 'Billable Hours', 'Revenue', 'Rate'],
-      'management-financial-dashboard': ['Period', 'Revenue', 'Cost', 'Profit', 'Margin %'],
-      'management-org-utilization': ['Department', 'Employees', 'Utilization %'],
-      'management-client-billing': ['Client', 'Projects', 'Revenue', 'Hours Billed'],
-      'management-workforce-analytics': ['Department', 'Employees', 'Total Hours', 'Productivity'],
-      'management-portfolio-analysis': ['Project', 'Status', 'Budget', 'Timeline'],
-      'admin-audit-logs': ['Date', 'User', 'Action', 'Entity', 'Details'],
-      'admin-user-access': ['User', 'Email', 'Role', 'Status', 'Last Login'],
-      'default': ['ID', 'Name', 'Value', 'Status', 'Date']
-    };
-
-    return headerMap[templateId] || headerMap['default'];
-  }
 
   /**
    * Generate HTML footer

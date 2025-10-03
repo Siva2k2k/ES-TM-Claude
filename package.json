@@ -21,7 +21,8 @@
     "axios": "^1.12.2",
     "dotenv": "^17.2.2",
     "exceljs": "^4.4.0",
-    "mongodb": "^6.20.0"
+    "mongodb": "^6.20.0",
+    "node-fetch": "^2.7.0"
   },
   "devDependencies": {
     "@types/exceljs": "^0.5.3",

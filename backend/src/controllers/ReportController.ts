@@ -161,15 +161,15 @@ export class ReportController {
 
       case 'pdf':
         const pdfResult = await PdfReportGenerator.generate(reportData);
-        if (pdfResult.error || !pdfResult.html) {
+        if (pdfResult.error || !pdfResult.buffer) {
           return res.status(500).json({
             success: false,
             error: pdfResult.error || 'Failed to generate PDF'
           });
         }
-        fileContent = pdfResult.html;
-        contentType = 'text/html'; // In production, this would be application/pdf
-        filename = `${reportData.template.template_id}_${Date.now()}.html`;
+        fileContent = pdfResult.buffer;
+        contentType = 'application/pdf';
+        filename = `${reportData.template.template_id}_${Date.now()}.pdf`;
         break;
 
       default:
