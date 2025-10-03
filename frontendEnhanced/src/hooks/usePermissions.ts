@@ -70,6 +70,8 @@ export interface UsePermissionsReturn {
   hasRole: (roles: UserRole | UserRole[]) => boolean;
   loadPermissions: () => Promise<void>;
   refresh: () => Promise<void>;
+  canManageUsers: () => boolean;
+  canModifySystemSettings: () => boolean;
 }
 
 /**
@@ -169,6 +171,20 @@ export function usePermissions(
     return roleArray.includes(currentRole);
   }, [currentRole]);
 
+  /**
+   * Check if user can manage other users
+   */
+  const canManageUsers = useCallback((): boolean => {
+    return hasRole(['super_admin', 'management', 'manager']);
+  }, [hasRole]);
+
+  /**
+   * Check if user can modify system settings
+   */
+  const canModifySystemSettings = useCallback((): boolean => {
+    return hasRole(['super_admin']);
+  }, [hasRole]);
+
   return {
     permissions: localPermissions,
     loading,
@@ -179,6 +195,8 @@ export function usePermissions(
     hasRole,
     loadPermissions: fetchData,
     refresh: refetch,
+    canManageUsers,
+    canModifySystemSettings,
   };
 }
 

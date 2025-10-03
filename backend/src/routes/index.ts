@@ -9,6 +9,7 @@ import auditRoutes from './audit';
 import clientRoutes from './client';
 import dashboardRoutes from './dashboard';
 import reportRoutes from './reports';
+import settingsRoutes from './settings';
 
 export const registerRoutes = (app: Express): void => {
   // Test routes (for development and health checks)
@@ -24,6 +25,7 @@ export const registerRoutes = (app: Express): void => {
   app.use('/api/v1/clients', clientRoutes);
   app.use('/api/v1/dashboard', dashboardRoutes);
   app.use('/api/v1/reports', reportRoutes);
+  app.use('/api/settings', settingsRoutes);
   
   // Health check at root
   app.get('/health', (req, res) => {

@@ -9,12 +9,15 @@ import {
   TrendingUp,
   Activity,
   UserCheck,
-  CheckSquare,
   ChevronDown,
   ChevronRight,
+  Settings,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '../utils/cn';
 import { usePermissions } from '../hooks/usePermissions';
+import { useAuth } from '../store/contexts/AuthContext';
+import { SettingsModal } from '../components/settings/SettingsModal';
 
 export interface NavItem {
   id: string;
@@ -49,7 +52,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const location = useLocation();
   const permissions = usePermissions();
+  const { currentUser, signOut } = useAuth();
   const [expandedItems, setExpandedItems] = React.useState<Set<string>>(new Set());
+  const [showSettings, setShowSettings] = React.useState(false);
+  const [showProfileMenu, setShowProfileMenu] = React.useState(false);
+  const profileMenuRef = React.useRef<HTMLDivElement>(null);
+
+  // Close profile menu when clicking outside
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setShowProfileMenu(false);
+      }
+    }
+
+    if (showProfileMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showProfileMenu]);
 
   // Define navigation items based on permissions
   const navigationItems: NavItem[] = React.useMemo(() => {
@@ -256,20 +277,147 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </nav>
 
-      {/* Footer - Current Week Progress */}
-      {!collapsed && (
-        <div className="p-4 border-t border-slate-200">
-          <div className="px-3 py-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg">
-            <div className="text-xs font-medium text-slate-600 mb-1">Current Week</div>
-            <div className="text-sm font-bold text-slate-900">40.5 hours logged</div>
-            <div className="w-full bg-slate-200 rounded-full h-2 mt-2">
-              <div
-                className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-300"
-                style={{ width: '81%' }}
-              />
+      {/* Footer - User Profile & Progress */}
+      <div className="border-t border-slate-200">
+        {!collapsed && (
+          <div className="p-4">
+            {/* Current Week Progress */}
+            <div className="px-3 py-3 bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg mb-3">
+              <div className="text-xs font-medium text-slate-600 mb-1">Current Week</div>
+              <div className="text-sm font-bold text-slate-900">40.5 hours logged</div>
+              <div className="w-full bg-slate-200 rounded-full h-2 mt-2">
+                <div
+                  className="bg-gradient-to-r from-blue-500 to-purple-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: '81%' }}
+                />
+              </div>
             </div>
           </div>
+        )}
+        
+        {/* User Profile Section */}
+        <div className="relative">
+          {!collapsed ? (
+            /* Expanded Profile Section */
+            <div className="p-4 pt-0">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3 min-w-0 flex-1">
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                    {currentUser?.full_name ? currentUser.full_name.charAt(0).toUpperCase() : 'U'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-900 truncate">
+                      {currentUser?.full_name || 'User'}
+                    </p>
+                    <p className="text-xs text-slate-500 truncate">
+                      {currentUser?.role || 'Employee'}
+                    </p>
+                  </div>
+                </div>
+                
+                {/* Profile Menu Button */}
+                <div className="relative" ref={profileMenuRef}>
+                  <button
+                    onClick={() => setShowProfileMenu(!showProfileMenu)}
+                    className="p-1 rounded-lg hover:bg-slate-100 transition-colors"
+                    aria-label="User menu"
+                  >
+                    <ChevronDown 
+                      size={16} 
+                      className={cn(
+                        "text-slate-400 transition-transform duration-200",
+                        showProfileMenu && "rotate-180"
+                      )} 
+                    />
+                  </button>
+                  
+                  {/* Profile Dropdown Menu */}
+                  {showProfileMenu && (
+                    <div className="absolute bottom-full right-0 mb-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50">
+                      <button
+                        onClick={() => {
+                          setShowSettings(true);
+                          setShowProfileMenu(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center space-x-2"
+                      >
+                        <Settings size={16} />
+                        <span>Settings</span>
+                      </button>
+                      <div className="border-t border-slate-100 my-1" />
+                      <button
+                        onClick={() => {
+                          signOut();
+                          setShowProfileMenu(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
+                      >
+                        <LogOut size={16} />
+                        <span>Sign Out</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Collapsed Profile Section */
+            <div className="p-2" ref={profileMenuRef}>
+              <button
+                onClick={() => setShowProfileMenu(!showProfileMenu)}
+                className="w-full flex items-center justify-center p-2 rounded-lg hover:bg-slate-100 transition-colors relative"
+                aria-label="User menu"
+              >
+                <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-sm font-semibold">
+                  {currentUser?.full_name ? currentUser.full_name.charAt(0).toUpperCase() : 'U'}
+                </div>
+                
+                {/* Collapsed Profile Dropdown Menu */}
+                {showProfileMenu && (
+                  <div className="absolute bottom-full left-full ml-2 mb-2 w-48 bg-white rounded-lg shadow-lg border border-slate-200 py-1 z-50">
+                    <div className="px-4 py-2 border-b border-slate-100">
+                      <p className="text-sm font-medium text-slate-900 truncate">
+                        {currentUser?.full_name || 'User'}
+                      </p>
+                      <p className="text-xs text-slate-500 truncate">
+                        {currentUser?.role || 'Employee'}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => {
+                        setShowSettings(true);
+                        setShowProfileMenu(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center space-x-2"
+                    >
+                      <Settings size={16} />
+                      <span>Settings</span>
+                    </button>
+                    <div className="border-t border-slate-100 my-1" />
+                    <button
+                      onClick={() => {
+                        signOut();
+                        setShowProfileMenu(false);
+                      }}
+                      className="w-full px-4 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
+                    >
+                      <LogOut size={16} />
+                      <span>Sign Out</span>
+                    </button>
+                  </div>
+                )}
+              </button>
+            </div>
+          )}
         </div>
+      </div>
+      
+      {/* Settings Modal */}
+      {showSettings && (
+        <SettingsModal 
+          isOpen={showSettings} 
+          onClose={() => setShowSettings(false)} 
+        />
       )}
     </aside>
   );

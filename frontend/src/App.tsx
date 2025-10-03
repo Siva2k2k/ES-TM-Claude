@@ -34,8 +34,11 @@ import {
   CheckSquare,
   TrendingUp,
   Activity,
-  UserCheck
+  UserCheck,
+  Settings,
+  User
 } from 'lucide-react';
+import { SettingsModal } from './components/settings/SettingsModal';
 
 interface SubItem {
   id: string;
@@ -58,6 +61,8 @@ const App: React.FC = () => {
   const [showNotifications, setShowNotifications] = useState(false);
   const [openDropdowns, setOpenDropdowns] = useState<Set<string>>(new Set());
   const [showTimesheetPopup, setShowTimesheetPopup] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
 
   // Ensure dropdown stays open when there's an active sub-section
   React.useEffect(() => {
@@ -103,6 +108,24 @@ const App: React.FC = () => {
     window.addEventListener('navigate-to-create', handleNavigateToCreate);
     return () => window.removeEventListener('navigate-to-create', handleNavigateToCreate);
   }, []);
+
+  // Handle click outside user dropdown
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (showUserDropdown && !target.closest('[data-user-menu]')) {
+        setShowUserDropdown(false);
+      }
+    };
+
+    if (showUserDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showUserDropdown]);
 
   // Show loading screen
   if (isLoading) {
@@ -627,6 +650,60 @@ const App: React.FC = () => {
               })}
             </div>
             
+            {/* User Profile Section */}
+            {!sidebarCollapsed && currentUser && (
+              <div className="mt-6 px-3">
+                <div className="relative" data-user-menu>
+                  <button
+                    onClick={() => setShowUserDropdown(!showUserDropdown)}
+                    className="w-full flex items-center gap-3 p-3 rounded-lg bg-slate-50 hover:bg-slate-100 transition-colors"
+                  >
+                    <div className="w-8 h-8 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+                      <User size={16} className="text-white" />
+                    </div>
+                    <div className="flex-1 text-left">
+                      <div className="font-medium text-slate-900 text-sm">
+                        {currentUser.full_name}
+                      </div>
+                      <div className="text-xs text-slate-500 capitalize">
+                        {currentUser.role?.replace('_', ' ')}
+                      </div>
+                    </div>
+                    <ChevronDown
+                      size={16}
+                      className={`text-slate-400 transition-transform ${showUserDropdown ? 'rotate-180' : ''}`}
+                    />
+                  </button>
+
+                  {/* User Dropdown Menu */}
+                  {showUserDropdown && (
+                    <div className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-lg shadow-lg border border-slate-200 py-2">
+                      <button
+                        onClick={() => {
+                          setShowSettings(true);
+                          setShowUserDropdown(false);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                      >
+                        <Settings size={14} />
+                        Settings
+                      </button>
+                      <button
+                        onClick={() => {
+                          signOut();
+                          setShowUserDropdown(false);
+                        }}
+                        className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 flex items-center gap-2"
+                      >
+                        <LogOut size={14} />
+                        Sign Out
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+            
             {/* Sidebar Footer */}
             {!sidebarCollapsed && (
               <div className="mt-8 pt-4 border-t border-slate-200">
@@ -657,6 +734,12 @@ const App: React.FC = () => {
           }}
         />
       )}
+
+      {/* Settings Modal */}
+      <SettingsModal 
+        isOpen={showSettings} 
+        onClose={() => setShowSettings(false)} 
+      />
 
       {/* Toast Notifications */}
       <ToastContainer

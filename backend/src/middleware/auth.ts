@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import User, { UserRole } from '@/models/User';
 import { JWTUtils } from '@/utils/jwt';
 
-interface AuthUser {
+export interface AuthUser {
   id: string;
   email: string;
   role: UserRole;
@@ -12,7 +12,7 @@ interface AuthUser {
   is_approved_by_super_admin: boolean;
 }
 
-interface AuthRequest extends Request {
+export interface AuthRequest extends Request {
   user?: AuthUser;
 }
 
