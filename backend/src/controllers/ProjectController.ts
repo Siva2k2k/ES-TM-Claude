@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { ProjectService } from '@/services/ProjectService';
+import { ProjectService, NotificationService } from '@/services';
 import { UserRole } from '@/models/User';
 import {
   ValidationError,
@@ -246,6 +246,18 @@ export class ProjectController {
       });
     }
 
+    // 🔔 Trigger automatic project allocation notification
+    try {
+      // Get project name for notification
+      const projectResult = await ProjectService.getProjectById(projectId, req.user);
+      const projectName = projectResult.project?.name || 'Unknown Project';
+      
+      await NotificationService.notifyProjectAllocation(userId, projectId, projectName, req.user.id);
+    } catch (notificationError) {
+      console.error('Failed to send project allocation notification:', notificationError);
+      // Don't fail the main operation if notification fails
+    }
+
     res.json({
       success: true,
       message: 'Project member added successfully'
@@ -325,6 +337,28 @@ export class ProjectController {
       });
     }
 
+    // 🔔 Trigger automatic task allocation notification
+    try {
+      const task = result.task;
+      if (task && taskData.assigned_to_user_id) {
+        // Get project name for notification
+        const projectResult = await ProjectService.getProjectById(projectId, req.user);
+        const projectName = projectResult.project?.name || 'Unknown Project';
+        const taskName = task.name || taskData.name || 'Unknown Task';
+        
+        await NotificationService.notifyTaskAllocation(
+          taskData.assigned_to_user_id, 
+          task._id.toString(), 
+          taskName, 
+          projectName, 
+          req.user.id
+        );
+      }
+    } catch (notificationError) {
+      console.error('Failed to send task allocation notification:', notificationError);
+      // Don't fail the main operation if notification fails
+    }
+
     res.status(201).json({
       success: true,
       message: 'Task created successfully',
@@ -350,6 +384,30 @@ export class ProjectController {
         success: false,
         error: result.error
       });
+    }
+
+    // 🔔 Trigger automatic task assignment notification (if assigned_to_user_id changed)
+    try {
+      if (req.body.assigned_to_user_id) {
+        // Get task details from the task name in request body or use default
+        const taskName = req.body.name || 'Task';
+        const projectId = req.body.project_id || 'unknown';
+        
+        // Get project name for notification
+        const projectResult = await ProjectService.getProjectById(projectId, req.user);
+        const projectName = projectResult.project?.name || 'Unknown Project';
+        
+        await NotificationService.notifyTaskAllocation(
+          req.body.assigned_to_user_id, 
+          taskId, 
+          taskName, 
+          projectName, 
+          req.user.id
+        );
+      }
+    } catch (notificationError) {
+      console.error('Failed to send task assignment notification:', notificationError);
+      // Don't fail the main operation if notification fails
     }
 
     res.json({

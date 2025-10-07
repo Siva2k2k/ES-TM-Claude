@@ -1,5 +1,5 @@
 import { Request, Response } from 'express';
-import { TimesheetService } from '@/services';
+import { TimesheetService, NotificationService } from '@/services';
 import { handleAsyncError } from '@/utils/errors';
 import { AuthUser } from '@/utils/auth';
 
@@ -169,6 +169,18 @@ export class TimesheetController {
       });
     }
 
+    // 🔔 Trigger automatic notification
+    try {
+      if (action === 'approve') {
+        await NotificationService.notifyTimesheetApproval(timesheetId, currentUser.id, 'manager');
+      } else {
+        await NotificationService.notifyTimesheetRejection(timesheetId, currentUser.id, reason || 'No reason provided', 'manager');
+      }
+    } catch (notificationError) {
+      console.error('Failed to send notification:', notificationError);
+      // Don't fail the main operation if notification fails
+    }
+
     res.json({
       success: true,
       message: `Timesheet ${action}ed successfully`
@@ -202,6 +214,18 @@ export class TimesheetController {
         success: false,
         error: result.error
       });
+    }
+
+    // 🔔 Trigger automatic notification
+    try {
+      if (action === 'approve') {
+        await NotificationService.notifyTimesheetApproval(timesheetId, currentUser.id, 'management');
+      } else {
+        await NotificationService.notifyTimesheetRejection(timesheetId, currentUser.id, reason || 'No reason provided', 'management');
+      }
+    } catch (notificationError) {
+      console.error('Failed to send notification:', notificationError);
+      // Don't fail the main operation if notification fails
     }
 
     res.json({

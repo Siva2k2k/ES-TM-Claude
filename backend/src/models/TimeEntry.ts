@@ -11,6 +11,7 @@ export interface ITimeEntry extends Document {
   hours: number;
   description?: string;
   is_billable: boolean;
+  billable_hours?: number; // Management can override billable hours (defaults to hours if is_billable=true)
   custom_task_description?: string;
   entry_type: EntryType;
   hourly_rate?: number;
@@ -53,6 +54,12 @@ const TimeEntrySchema: Schema = new Schema({
   is_billable: {
     type: Boolean,
     default: true
+  },
+  billable_hours: {
+    type: Number,
+    min: 0,
+    max: 24,
+    required: false // Will default to hours if not set
   },
   custom_task_description: {
     type: String,

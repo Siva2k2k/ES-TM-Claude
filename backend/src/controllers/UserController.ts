@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
-import { UserService } from '@/services/UserService';
+import { UserService, NotificationService } from '@/services';
 import { UserRole } from '@/models/User';
 import {
   ValidationError,
@@ -108,6 +108,14 @@ export class UserController {
         success: false,
         error: result.error
       });
+    }
+
+    // 🔔 Trigger automatic notification for user approval
+    try {
+      await NotificationService.notifyUserApproval(userId, req.user.id);
+    } catch (notificationError) {
+      console.error('Failed to send user approval notification:', notificationError);
+      // Don't fail the main operation if notification fails
     }
 
     res.json({

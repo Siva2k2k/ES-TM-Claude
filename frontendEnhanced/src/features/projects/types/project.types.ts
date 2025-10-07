@@ -5,6 +5,7 @@
 
 export type ProjectStatus = 'active' | 'completed' | 'archived';
 export type TaskStatus = 'open' | 'in_progress' | 'completed' | 'blocked';
+export type TaskPriority = 'low' | 'medium' | 'high' | 'urgent';
 export type ProjectRole = 'employee' | 'lead' | 'manager' | 'admin';
 
 export interface Client {
@@ -45,6 +46,7 @@ export interface Task {
   assigned_to_user_id: string;
   assigned_to_user_name?: string;
   status: TaskStatus;
+  priority?: TaskPriority;
   estimated_hours: number;
   actual_hours?: number;
   is_billable: boolean;

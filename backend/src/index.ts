@@ -16,6 +16,7 @@ import { configurePassport } from './config/passport';
 import { errorHandler, notFound } from './middleware/errorHandler';
 import { checkMaintenanceMode } from './middleware/auth';
 import { registerRoutes } from './routes';
+import { SearchService } from './services/SearchService';
 
 dotenv.config();
 
@@ -115,6 +116,14 @@ app.use(errorHandler);
 const startServer = async () => {
   try {
     await connectDB();
+    
+    // Initialize search index on startup
+    try {
+      await SearchService.initializeSearchIndex();
+      logger.info('Search index initialized successfully');
+    } catch (searchError) {
+      logger.warn('Failed to initialize search index:', searchError);
+    }
     
     app.listen(PORT, () => {
       logger.info(`Server is running on port ${PORT}`);

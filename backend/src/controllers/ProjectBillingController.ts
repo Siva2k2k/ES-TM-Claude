@@ -2,7 +2,9 @@ import { Request, Response } from 'express';
 import { body, query, validationResult } from 'express-validator';
 import { Project } from '@/models/Project';
 import { TimeEntry } from '@/models/TimeEntry';
+import { Timesheet } from '@/models/Timesheet';
 import { User } from '@/models/User';
+import { BillingAdjustment } from '@/models/BillingAdjustment';
 import { BillingRateService } from '@/services/BillingRateService';
 import mongoose from 'mongoose';
 
@@ -94,7 +96,7 @@ export class ProjectBillingController {
         projectFilter._id = { $in: ids };
       }
 
-      // Get projects with time entries in date range
+      // Get projects with time entries from TimeEntry collection
       const projects = await Project.aggregate([
         { $match: projectFilter },
         {
@@ -104,13 +106,51 @@ export class ProjectBillingController {
             pipeline: [
               {
                 $match: {
-                  $expr: {
-                    $and: [
-                      { $eq: ['$project_id', '$$projectId'] },
-                      { $gte: ['$date', start] },
-                      { $lte: ['$date', end] }
-                    ]
-                  }
+                  $expr: { $eq: ['$project_id', '$$projectId'] },
+                  deleted_at: null,
+                  ...(startDate && endDate ? {
+                    date: { $gte: start, $lte: end }
+                  } : {})
+                }
+              },
+              {
+                $lookup: {
+                  from: 'timesheets',
+                  localField: 'timesheet_id',
+                  foreignField: '_id',
+                  as: 'timesheet'
+                }
+              },
+              {
+                $unwind: '$timesheet'
+              },
+              {
+                $match: {
+                  'timesheet.user_id': { $ne: null },
+                  'timesheet.status': { $in: ['frozen', 'approved', 'manager_approved', 'management_approved'] }
+                }
+              },
+              {
+                $lookup: {
+                  from: 'users',
+                  localField: 'timesheet.user_id',
+                  foreignField: '_id',
+                  as: 'user'
+                }
+              },
+              {
+                $unwind: '$user'
+              },
+              {
+                $project: {
+                  user_id: '$timesheet.user_id',
+                  user_name: '$user.full_name',
+                  user_email: '$user.email',
+                  date: 1,
+                  hours: 1,
+                  is_billable: 1,
+                  project_id: 1,
+                  description: 1
                 }
               }
             ],
@@ -153,9 +193,12 @@ export class ProjectBillingController {
           const userId = entry.user_id.toString();
           
           if (!userTimeMap.has(userId)) {
-            const user = await User.findById(entry.user_id);
             userTimeMap.set(userId, {
-              user,
+              user: {
+                _id: entry.user_id,
+                full_name: entry.user_name,
+                email: entry.user_email
+              },
               entries: [],
               totalHours: 0,
               billableHours: 0
@@ -175,25 +218,36 @@ export class ProjectBillingController {
           const user = userTime.user;
           if (!user) continue;
 
+          // Check for billing adjustment first
+          const adjustedBillableHours = await ProjectBillingController.getBillingAdjustment(
+            userId, 
+            project._id.toString(), 
+            start, 
+            end
+          );
+
+          // Use adjusted hours if available, otherwise use calculated hours from time entries
+          const finalBillableHours = adjustedBillableHours !== null ? adjustedBillableHours : userTime.billableHours;
+
           // Get effective rate for this user/project
           const rateResult = await BillingRateService.getEffectiveRate({
             user_id: mongoose.Types.ObjectId.createFromHexString(userId),
             project_id: mongoose.Types.ObjectId.createFromHexString(project._id.toString()),
             client_id: project.client_id,
             date: new Date(),
-            hours: userTime.billableHours,
+            hours: finalBillableHours,
             day_of_week: 1
           });
 
           const resourceBilling: ResourceBillingData = {
             user_id: userId,
-            user_name: `${user.first_name} ${user.last_name}`,
+            user_name: user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
             role: user.role,
             total_hours: userTime.totalHours,
-            billable_hours: userTime.billableHours,
-            non_billable_hours: userTime.totalHours - userTime.billableHours,
+            billable_hours: finalBillableHours,
+            non_billable_hours: userTime.totalHours - finalBillableHours,
             hourly_rate: rateResult.effective_rate,
-            total_amount: userTime.billableHours * rateResult.effective_rate,
+            total_amount: finalBillableHours * rateResult.effective_rate,
             weekly_breakdown: view === 'weekly' ? await ProjectBillingController.getWeeklyBreakdown(
               userTime.entries, rateResult.effective_rate, start, end
             ) : undefined
@@ -255,14 +309,15 @@ export class ProjectBillingController {
         projectIds,
         taskIds 
       } = req.query as {
-        startDate: string;
-        endDate: string;
+        startDate?: string;
+        endDate?: string;
         projectIds?: string;
         taskIds?: string;
       };
 
-      const start = new Date(startDate);
-      const end = new Date(endDate);
+      // Use default date range if not provided (last 3 months)
+      const start = startDate ? new Date(startDate) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      const end = endDate ? new Date(endDate) : new Date();
 
       // Build filters
       const matchFilter: any = {
@@ -279,14 +334,53 @@ export class ProjectBillingController {
         matchFilter.task_id = { $in: ids };
       }
 
-      // Get time entries for the period
-      const timeEntries = await (TimeEntry as any).find(matchFilter)
-        .populate('project_id', 'name')
-        .populate('task_id', 'name')
-        .populate('user_id', 'first_name last_name')
-        .exec();
+      // Get time entries from timesheets for the period
+      const timesheets = await (Timesheet as any).find({
+        user_id: { $ne: null },
+        $or: [
+          { status: 'frozen' },
+          { status: 'approved' }, 
+          { status: 'manager_approved' },
+          { status: 'management_approved' }
+        ]
+      }).populate('user_id', 'full_name email').exec();
 
-      // Group by task
+      const timeEntries: any[] = [];
+      
+      for (const timesheet of timesheets) {
+        if (timesheet.entries && timesheet.entries.length > 0) {
+          for (const entry of timesheet.entries) {
+            const entryDate = new Date(entry.date);
+            if (entryDate >= start && entryDate <= end) {
+              // Apply project and task filters if specified
+              if (projectIds) {
+                const ids = projectIds.split(',');
+                if (!entry.project_id || !ids.includes(entry.project_id.toString())) {
+                  continue;
+                }
+              }
+              
+              timeEntries.push({
+                ...entry,
+                user_id: timesheet.user_id,
+                timesheet_id: timesheet._id
+              });
+            }
+          }
+        }
+      }
+
+      // Get project details for reference
+      const projectDetails = await (Project as any).find({}).populate('client_id', 'name').exec();
+      const projectMap = new Map();
+      projectDetails.forEach(p => {
+        projectMap.set(p._id.toString(), {
+          name: p.name,
+          client_name: p.client_id?.name || 'No Client'
+        });
+      });
+
+      // Group by task (using description as task name since we don't have task_id)
       const taskMap = new Map<string, {
         task_id: string;
         task_name: string;
@@ -298,14 +392,17 @@ export class ProjectBillingController {
       }>();
 
       for (const entry of timeEntries) {
-        const taskKey = entry.task_id?._id?.toString() || 'no-task';
+        const projectId = entry.project_id?.toString() || 'no-project';
+        const taskName = entry.description || entry.custom_task_description || 'No Description';
+        const taskKey = `${projectId}_${taskName}`;
         
         if (!taskMap.has(taskKey)) {
+          const projectInfo = projectMap.get(projectId);
           taskMap.set(taskKey, {
             task_id: taskKey,
-            task_name: entry.task_id?.name || 'No Task',
-            project_id: entry.project_id?._id?.toString() || 'no-project',
-            project_name: entry.project_id?.name || 'No Project',
+            task_name: taskName,
+            project_id: projectId,
+            project_name: projectInfo?.name || 'No Project',
             total_hours: 0,
             billable_hours: 0,
             entries: []
@@ -386,7 +483,7 @@ export class ProjectBillingController {
 
             const taskResource: TaskResourceData = {
               user_id: userId,
-              user_name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+              user_name: user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
               hours: userTask.hours,
               billable_hours: userTask.billableHours,
               rate: rate,
@@ -422,38 +519,10 @@ export class ProjectBillingController {
       console.error('Error in getTaskBillingView:', error);
       console.error('Stack trace:', error.stack);
       
-      // Return mock data for now to test the frontend
-      res.json({
-        success: true,
-        data: {
-          tasks: [
-            {
-              task_id: 'test-task-1',
-              task_name: 'Sample Task 1',
-              project_id: 'test-project-1',
-              project_name: 'Sample Project',
-              total_hours: 10,
-              billable_hours: 8,
-              resources: [
-                {
-                  user_id: 'test-user-1',
-                  user_name: 'John Doe',
-                  hours: 10,
-                  billable_hours: 8,
-                  rate: 75,
-                  amount: 600
-                }
-              ]
-            }
-          ],
-          summary: {
-            total_tasks: 1,
-            total_hours: 10,
-            total_billable_hours: 8,
-            total_amount: 600
-          },
-          period: req.query
-        }
+      res.status(500).json({
+        success: false,
+        error: 'Failed to retrieve task billing data',
+        message: error.message
       });
     }
   }
@@ -476,69 +545,61 @@ export class ProjectBillingController {
       const {
         user_id,
         project_id,
-        task_id,
-        date,
-        billable_hours
+        start_date,
+        end_date,
+        billable_hours,
+        total_hours,
+        reason
       } = req.body;
 
-      const userId = req.user?._id;
-      
-      // Find the time entry
-      const query: any = {
+      // Calculate original billable hours from time entries
+      const start = new Date(start_date);
+      const end = new Date(end_date);
+
+      // Find timesheets for this user in the date range
+      const timesheets = await (Timesheet as any).find({
         user_id: mongoose.Types.ObjectId.createFromHexString(user_id),
-        date: new Date(date)
-      };
+        week_start_date: { $lte: end },
+        week_end_date: { $gte: start }
+      });
 
-      if (project_id) {
-        query.project_id = mongoose.Types.ObjectId.createFromHexString(project_id);
-      }
-
-      if (task_id) {
-        query.task_id = mongoose.Types.ObjectId.createFromHexString(task_id);
-      }
-
-      const timeEntry = await (TimeEntry as any).findOne(query);
-
-      if (!timeEntry) {
+      if (timesheets.length === 0) {
         res.status(404).json({
           success: false,
-          error: 'Time entry not found'
+          error: 'No timesheets found for the specified user and date range'
         });
         return;
       }
 
-      // Update billable status
-      const originalBillable = timeEntry.is_billable;
-      const originalHours = timeEntry.hours;
-      
-      // If billable_hours is 0, mark as non-billable
-      // If billable_hours equals total hours, mark as billable
-      // If partial, we need to split the entry (for now, just adjust the flag)
-      
-      if (billable_hours === 0) {
-        timeEntry.is_billable = false;
-      } else if (billable_hours === originalHours) {
-        timeEntry.is_billable = true;
-      } else {
-        // Partial billable - for now, mark as billable if more than 50%
-        timeEntry.is_billable = billable_hours > (originalHours / 2);
-      }
+      const timesheetIds = timesheets.map((ts: any) => ts._id);
 
-      await timeEntry.save();
-
-      // TODO: Log the change in audit log
-      console.log(`Billable hours updated for entry ${timeEntry._id}: ${originalBillable} -> ${timeEntry.is_billable} by user ${userId}`);
-
-      res.json({
-        success: true,
-        message: 'Billable hours updated successfully',
-        data: {
-          entry_id: timeEntry._id,
-          original_billable: originalBillable,
-          new_billable: timeEntry.is_billable,
-          hours: timeEntry.hours
-        }
+      // Find time entries for this project in those timesheets
+      const timeEntries = await (TimeEntry as any).find({
+        timesheet_id: { $in: timesheetIds },
+        project_id: mongoose.Types.ObjectId.createFromHexString(project_id),
+        date: { $gte: start, $lte: end }
       });
+
+      // Calculate original billable hours
+      const originalBillableHours = timeEntries.reduce((sum: number, entry: any) => {
+        return sum + (entry.is_billable ? entry.hours : 0);
+      }, 0);
+
+      // Create or update billing adjustment using the new method
+      const adjustmentReq = {
+        ...req,
+        body: {
+          user_id,
+          project_id,
+          start_date,
+          end_date,
+          adjusted_billable_hours: billable_hours,
+          original_billable_hours: originalBillableHours,
+          reason: reason || 'Manual adjustment from billing management'
+        }
+      };
+
+      await ProjectBillingController.createBillingAdjustment(adjustmentReq, res);
 
     } catch (error: any) {
       console.error('Error in updateBillableHours:', error);
@@ -584,6 +645,121 @@ export class ProjectBillingController {
       amount: data.billableHours * hourlyRate
     }));
   }
+
+  /**
+   * Helper: Get billing adjustment for user-project-period combination
+   */
+  private static async getBillingAdjustment(
+    userId: string,
+    projectId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<number | null> {
+    try {
+      const adjustment = await (BillingAdjustment as any).findOne({
+        user_id: mongoose.Types.ObjectId.createFromHexString(userId),
+        project_id: mongoose.Types.ObjectId.createFromHexString(projectId),
+        billing_period_start: { $lte: startDate },
+        billing_period_end: { $gte: endDate }
+      });
+
+      return adjustment ? adjustment.adjusted_billable_hours : null;
+    } catch (error) {
+      console.error('Error fetching billing adjustment:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Create or update billing adjustment
+   */
+  static async createBillingAdjustment(req: Request, res: Response): Promise<void> {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        res.status(400).json({
+          success: false,
+          error: 'Validation failed',
+          details: errors.array()
+        });
+        return;
+      }
+
+      const {
+        user_id,
+        project_id,
+        start_date,
+        end_date,
+        adjusted_billable_hours,
+        original_billable_hours,
+        reason
+      } = req.body;
+
+      const adjustedBy = (req.user as any)?._id;
+
+      // Check if adjustment already exists
+      const existingAdjustment = await (BillingAdjustment as any).findOne({
+        user_id: mongoose.Types.ObjectId.createFromHexString(user_id),
+        project_id: mongoose.Types.ObjectId.createFromHexString(project_id),
+        billing_period_start: new Date(start_date),
+        billing_period_end: new Date(end_date)
+      });
+
+      if (existingAdjustment) {
+        // Update existing adjustment
+        existingAdjustment.original_billable_hours = original_billable_hours;
+        existingAdjustment.adjusted_billable_hours = adjusted_billable_hours;
+        existingAdjustment.reason = reason;
+        existingAdjustment.adjusted_by = adjustedBy;
+        existingAdjustment.updated_at = new Date();
+
+        await existingAdjustment.save();
+
+        res.json({
+          success: true,
+          message: 'Billing adjustment updated successfully',
+          data: {
+            adjustment_id: existingAdjustment._id,
+            original_billable_hours,
+            adjusted_billable_hours,
+            difference: adjusted_billable_hours - original_billable_hours
+          }
+        });
+      } else {
+        // Create new adjustment
+        const newAdjustment = new (BillingAdjustment as any)({
+          user_id: mongoose.Types.ObjectId.createFromHexString(user_id),
+          project_id: mongoose.Types.ObjectId.createFromHexString(project_id),
+          billing_period_start: new Date(start_date),
+          billing_period_end: new Date(end_date),
+          original_billable_hours,
+          adjusted_billable_hours,
+          reason,
+          adjusted_by: adjustedBy
+        });
+
+        await newAdjustment.save();
+
+        res.json({
+          success: true,
+          message: 'Billing adjustment created successfully',
+          data: {
+            adjustment_id: newAdjustment._id,
+            original_billable_hours,
+            adjusted_billable_hours,
+            difference: adjusted_billable_hours - original_billable_hours
+          }
+        });
+      }
+
+    } catch (error: any) {
+      console.error('Error in createBillingAdjustment:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to create billing adjustment'
+      });
+    }
+  }
 }
 
 // Validation middlewares
@@ -595,17 +771,28 @@ export const getProjectBillingViewValidation = [
 ];
 
 export const getTaskBillingViewValidation = [
-  query('startDate').isISO8601().withMessage('Valid start date is required'),
-  query('endDate').isISO8601().withMessage('Valid end date is required'),
+  query('startDate').optional().isISO8601().withMessage('Start date must be a valid ISO date'),
+  query('endDate').optional().isISO8601().withMessage('End date must be a valid ISO date'),
   query('projectIds').optional().isString().withMessage('Project IDs must be a comma-separated string'),
   query('taskIds').optional().isString().withMessage('Task IDs must be a comma-separated string')
 ];
 
 export const updateBillableHoursValidation = [
   body('user_id').isMongoId().withMessage('Valid user ID is required'),
-  body('date').isISO8601().withMessage('Valid date is required'),
+  body('project_id').isMongoId().withMessage('Valid project ID is required'),
+  body('start_date').isISO8601().withMessage('Valid start date is required'),
+  body('end_date').isISO8601().withMessage('Valid end date is required'),
   body('billable_hours').isNumeric().withMessage('Billable hours must be a number'),
-  body('project_id').optional().isMongoId().withMessage('Valid project ID required'),
-  body('task_id').optional().isMongoId().withMessage('Valid task ID required'),
+  body('total_hours').optional().isNumeric().withMessage('Total hours must be a number'),
+  body('reason').optional().isString().withMessage('Reason must be a string')
+];
+
+export const createBillingAdjustmentValidation = [
+  body('user_id').isMongoId().withMessage('Valid user ID is required'),
+  body('project_id').isMongoId().withMessage('Valid project ID is required'),
+  body('start_date').isISO8601().withMessage('Valid start date is required'),
+  body('end_date').isISO8601().withMessage('Valid end date is required'),
+  body('adjusted_billable_hours').isNumeric().withMessage('Adjusted billable hours must be a number'),
+  body('original_billable_hours').isNumeric().withMessage('Original billable hours must be a number'),
   body('reason').optional().isString().withMessage('Reason must be a string')
 ];

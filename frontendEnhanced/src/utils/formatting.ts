@@ -19,7 +19,7 @@ export function formatDate(
 
   if (isNaN(dateObj.getTime())) return 'Invalid date';
 
-  const options: Intl.DateTimeFormatOptions = {
+  const optionsMap: Record<string, Intl.DateTimeFormatOptions> = {
     short: {
       year: 'numeric',
       month: 'short',
@@ -42,7 +42,9 @@ export function formatDate(
       hour: '2-digit',
       minute: '2-digit'
     }
-  }[format];
+  };
+
+  const options = optionsMap[format];
 
   return dateObj.toLocaleDateString('en-US', options);
 }

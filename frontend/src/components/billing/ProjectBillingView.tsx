@@ -151,8 +151,10 @@ export const ProjectBillingView: React.FC = () => {
         body: JSON.stringify({
           user_id: editingHours.userId,
           project_id: editingHours.projectId,
-          date: startDate, // Using period start as reference
+          start_date: startDate,
+          end_date: endDate,
           billable_hours: editingHours.newBillable,
+          total_hours: editingHours.originalBillable, // Pass original for reference
           reason: 'Manual adjustment from project billing view'
         })
       });
@@ -161,6 +163,7 @@ export const ProjectBillingView: React.FC = () => {
       if (result.success) {
         setEditingHours(null);
         await loadProjectBillingData(); // Reload data
+        alert(`Successfully updated ${result.data.entries_updated} time entries`);
       } else {
         alert(`Failed to update hours: ${result.error}`);
       }
