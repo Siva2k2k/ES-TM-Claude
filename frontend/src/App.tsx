@@ -49,6 +49,8 @@ import { SettingsModal } from './components/settings/SettingsModal';
 import { NotificationBell } from './components/notifications/NotificationBell';
 import { GlobalSearch } from './components/search/GlobalSearch';
 import { DeletedItemsView } from './components/admin/DeletedItemsView';
+import ResetPassword from './components/auth/ResetPassword';
+import { ForcePasswordChange } from './components/auth/ForcePasswordChange';
 
 interface SubItem {
   id: string;
@@ -64,7 +66,7 @@ interface NavigationItem {
 }
 
 const App: React.FC = () => {
-  const { currentUserRole, currentUser, isAuthenticated, isLoading, signOut } = useAuth();
+  const { currentUserRole, currentUser, isAuthenticated, isLoading, signOut, requirePasswordChange, setRequirePasswordChange } = useAuth();
   const [activeSection, setActiveSection] = useState('dashboard');
   const [activeSubSection, setActiveSubSection] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -73,6 +75,7 @@ const App: React.FC = () => {
   const [showTimesheetPopup, setShowTimesheetPopup] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [showResetPassword, setShowResetPassword] = useState(false);
 
   // Ensure dropdown stays open when there's an active sub-section
   React.useEffect(() => {
@@ -164,6 +167,26 @@ const App: React.FC = () => {
     return () => window.removeEventListener('search-navigate', handleSearchNavigate as EventListener);
   }, []);
 
+  // Handle URL-based routing for reset-password
+  React.useEffect(() => {
+    const checkUrlForResetPassword = () => {
+      const path = window.location.pathname;
+      const urlParams = new URLSearchParams(window.location.search);
+      const hasToken = urlParams.has('token');
+      
+      if (path === '/reset-password' && hasToken) {
+        setShowResetPassword(true);
+      }
+    };
+
+    // Check on mount
+    checkUrlForResetPassword();
+    
+    // Listen for popstate events (back/forward navigation)
+    window.addEventListener('popstate', checkUrlForResetPassword);
+    return () => window.removeEventListener('popstate', checkUrlForResetPassword);
+  }, []);
+
   // Handle click outside user dropdown
   React.useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -205,9 +228,35 @@ const App: React.FC = () => {
     );
   }
 
+  // Show reset password component if URL indicates password reset
+  if (showResetPassword) {
+    return (
+      <ResetPassword 
+        onComplete={() => {
+          setShowResetPassword(false);
+          // Clear the URL and redirect to home/login
+          window.history.replaceState({}, document.title, '/');
+        }} 
+      />
+    );
+  }
+
   // Show login form if not authenticated
   if (!isAuthenticated) {
     return <LoginForm />;
+  }
+
+  // Show force password change if required (for new users with temporary passwords)
+  if (requirePasswordChange) {
+    return (
+      <ForcePasswordChange
+        onPasswordChanged={() => {
+          setRequirePasswordChange(false);
+          // After password change, the user can continue to dashboard
+        }}
+        userEmail={currentUser?.email || ''}
+      />
+    );
   }
 
   const getNavigationItems = (): NavigationItem[] => {

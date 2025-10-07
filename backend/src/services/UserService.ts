@@ -1050,6 +1050,9 @@ export class UserService {
       // Generate secure reset token
       const resetToken = PasswordSecurity.generateResetToken();
       const resetExpiry = PasswordSecurity.generatePasswordExpiry(1); // 1 hour to reset
+      
+      // Temporary logging for development
+      console.log(`🔐 Password reset token for ${email}: ${resetToken}`);
 
       // Save reset token
       await (User.updateOne as any)(

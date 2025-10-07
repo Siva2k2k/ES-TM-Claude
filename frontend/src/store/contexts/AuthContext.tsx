@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
+import { createContext, useContext, useState, useEffect, ReactNode, useCallback, useMemo } from 'react';
 import { BackendAuthService } from '../../services/BackendAuthService';
 import type { UserRole, User } from '../../types';
 
@@ -9,7 +9,9 @@ interface AuthContextType {
   setCurrentUser: (user: User | null) => void;
   isAuthenticated: boolean;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  requirePasswordChange: boolean;
+  setRequirePasswordChange: (required: boolean) => void;
+  signIn: (email: string, password: string) => Promise<{ error?: string; requirePasswordChange?: boolean }>;
   signOut: () => Promise<void>;
 }
 
@@ -23,11 +25,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<UserRole>('employee');
   const [isLoading, setIsLoading] = useState(true);
+  const [requirePasswordChange, setRequirePasswordChange] = useState(false);
 
   const isAuthenticated = !!currentUser;
 
   // Sign in function
-  const signIn = async (email: string, password: string): Promise<{ error?: string }> => {
+  const signIn = useCallback(async (email: string, password: string): Promise<{ error?: string; requirePasswordChange?: boolean }> => {
     try {
       setIsLoading(true);
 
@@ -42,17 +45,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setCurrentUserRole(result.user.role);
       }
 
-      return {};
+      // Check if password change is required
+      const passwordChangeRequired = Boolean((result as { requirePasswordChange?: boolean }).requirePasswordChange);
+      setRequirePasswordChange(passwordChangeRequired);
+
+      return { requirePasswordChange: passwordChangeRequired };
     } catch (error) {
       console.error('Unexpected sign in error:', error);
       return { error: 'An unexpected error occurred' };
     } finally {
       setIsLoading(false);
     }
-  };
+  }, []);
 
   // Sign out function
-  const signOut = async (): Promise<void> => {
+  const signOut = useCallback(async (): Promise<void> => {
     try {
       console.log('🚪 === SIGN OUT PROCESS START ===');
       setIsLoading(true);
@@ -60,6 +67,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Clear local state immediately to ensure UI updates
       setCurrentUser(null);
       setCurrentUserRole('employee');
+      setRequirePasswordChange(false);
 
       // Sign out from backend (clears tokens)
       await BackendAuthService.logout();
@@ -71,9 +79,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       // Clear state and loading on completion/error
       setCurrentUser(null);
       setCurrentUserRole('employee');
+      setRequirePasswordChange(false);
       setIsLoading(false);
     }
-  };
+  }, []);
 
   // Load user profile
   const loadUserProfile = useCallback(async (): Promise<void> => {
@@ -139,16 +148,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
   }, [loadUserProfile]);
 
-  const value: AuthContextType = {
+  const value: AuthContextType = useMemo(() => ({
     currentUser,
     currentUserRole,
     setCurrentUserRole,
     setCurrentUser,
     isAuthenticated,
     isLoading,
+    requirePasswordChange,
+    setRequirePasswordChange,
     signIn,
     signOut,
-  };
+  }), [
+    currentUser,
+    currentUserRole,
+    isAuthenticated,
+    isLoading,
+    requirePasswordChange,
+    signIn,
+    signOut,
+    setCurrentUserRole,
+    setCurrentUser,
+    setRequirePasswordChange
+  ]);
 
   return (
     <AuthContext.Provider value={value}>
