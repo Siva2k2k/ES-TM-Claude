@@ -3,7 +3,7 @@
  * Type definitions for admin feature
  */
 
-import type { UserRole } from '../../../types/common.types';
+import type { UserRole } from '../../auth/types/auth.types';
 
 /**
  * User interface (extended from auth)

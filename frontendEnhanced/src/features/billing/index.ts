@@ -4,8 +4,12 @@
  * Enterprise-level billing with adjustments and rate management
  */
 
-// Components
-export * from './components';
+// Components (export specific to avoid ambiguity)
+export {
+  ProjectBillingView,
+  BillingDashboard,
+  BillingRateManagement
+} from './components';
 
 // Hooks
 export * from './hooks';

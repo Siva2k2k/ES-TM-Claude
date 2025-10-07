@@ -98,7 +98,7 @@ export const AuditLogs: React.FC<AuditLogsProps> = ({ className = '' }) => {
             Error Loading Logs
           </h2>
           <p className="text-text-secondary dark:text-dark-text-secondary mb-4">{error}</p>
-          <Button onClick={loadLogs} variant="primary">
+          <Button onClick={loadLogs} >
             Retry
           </Button>
         </div>

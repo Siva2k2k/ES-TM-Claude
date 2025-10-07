@@ -135,6 +135,13 @@ export class BackendApiClient {
     return this.request(endpoint, { method: 'DELETE' });
   }
 
+  async deleteWithBody<T>(endpoint: string, data?: any): Promise<T> {
+    return this.request(endpoint, {
+      method: 'DELETE',
+      body: data ? JSON.stringify(data) : undefined
+    });
+  }
+
   async patch<T>(endpoint: string, data?: any): Promise<T> {
     return this.request(endpoint, {
       method: 'PATCH',

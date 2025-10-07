@@ -307,7 +307,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
         {/* Action Buttons */}
         <div className="flex justify-end space-x-3">
-          <Button type="submit" variant="primary" disabled={loading || !isFormValid}>
+          <Button type="submit"  disabled={loading || !isFormValid}>
             <Save className="h-4 w-4 mr-2" />
             {loading ? 'Changing Password...' : 'Change Password'}
           </Button>

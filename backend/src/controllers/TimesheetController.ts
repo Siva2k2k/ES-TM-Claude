@@ -540,6 +540,83 @@ export class TimesheetController {
       data: result.timesheets
     });
   });
+
+  /**
+   * Get deleted timesheets (management and super admin only)
+   */
+  static getDeletedTimesheets = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const currentUser = req.user!;
+
+    // Use TimesheetService to get deleted timesheets
+    const result = await TimesheetService.getDeletedTimesheets(currentUser);
+
+    if (result.error) {
+      return res.status(403).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Deleted timesheets retrieved successfully',
+      data: result.timesheets || []
+    });
+  });
+
+  /**
+   * Restore soft deleted timesheet
+   */
+  static restoreTimesheet = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { timesheetId } = req.params;
+    const currentUser = req.user!;
+
+    // Use TimesheetService for secure timesheet restoration
+    const result = await TimesheetService.restoreTimesheet(timesheetId, currentUser);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || 'Failed to restore timesheet'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Timesheet restored successfully'
+    });
+  });
+
+  /**
+   * Hard delete timesheet permanently (super admin only)
+   */
+  static hardDeleteTimesheet = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { timesheetId } = req.params;
+    const currentUser = req.user!;
+
+    // Only super admin can hard delete
+    if (currentUser.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only super admin can permanently delete timesheets'
+      });
+    }
+
+    // Use TimesheetService for secure hard deletion
+    const result = await TimesheetService.hardDeleteTimesheet(timesheetId, currentUser);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || 'Failed to hard delete timesheet'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Timesheet permanently deleted'
+    });
+  });
 }
 
 export default TimesheetController;

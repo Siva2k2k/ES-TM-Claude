@@ -306,7 +306,7 @@ export const NotificationPreferences: React.FC<NotificationPreferencesProps> = (
         </Button>
         <Button
           onClick={handleSave}
-          variant="primary"
+          
           disabled={saving || !hasChanges}
         >
           {saving ? (

@@ -3,7 +3,8 @@
  * Type definitions for authentication feature
  */
 
-import { UserRole } from '../../../types/common.types';
+// User roles in the system
+export type UserRole = 'super_admin' | 'management' | 'manager' | 'team_lead' | 'employee';
 
 /**
  * User interface - matches backend User model

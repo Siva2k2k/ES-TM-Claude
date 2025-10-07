@@ -122,7 +122,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({ className = 
             Error Loading Clients
           </h2>
           <p className="text-text-secondary dark:text-dark-text-secondary mb-4">{error}</p>
-          <Button onClick={() => loadClients(true)} variant="primary">
+          <Button onClick={() => loadClients(true)} >
             Retry
           </Button>
         </div>
@@ -143,7 +143,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({ className = 
             Manage clients and their information
           </p>
         </div>
-        <Button onClick={() => setShowCreateForm(!showCreateForm)} variant="primary">
+        <Button onClick={() => setShowCreateForm(!showCreateForm)} >
           <Plus className="h-4 w-4 mr-2" />
           Add Client
         </Button>
@@ -199,7 +199,7 @@ export const ClientManagement: React.FC<ClientManagementProps> = ({ className = 
               <Button type="button" variant="outline" onClick={() => setShowCreateForm(false)}>
                 Cancel
               </Button>
-              <Button type="submit" variant="primary" disabled={creating}>
+              <Button type="submit"  disabled={creating}>
                 {creating ? 'Creating...' : 'Create Client'}
               </Button>
             </div>

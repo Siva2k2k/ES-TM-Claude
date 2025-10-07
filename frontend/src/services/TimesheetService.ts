@@ -421,6 +421,61 @@ export class TimesheetService {
   }
 
   /**
+   * Get deleted timesheets (management and super admin only)
+   */
+  static async getDeletedTimesheets(): Promise<{ timesheets: Timesheet[]; error?: string }> {
+    try {
+      const response: any = await backendApi.get('/timesheets/deleted');
+      if (response.success && response.data) {
+        return { timesheets: response.data as Timesheet[] };
+      } else {
+        return { timesheets: [], error: response.message || 'Failed to fetch deleted timesheets' };
+      }
+    } catch (error: unknown) {
+      console.error('Error in getDeletedTimesheets:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch deleted timesheets';
+      return { timesheets: [], error: errorMessage };
+    }
+  }
+
+  /**
+   * Restore soft deleted timesheet (management and super admin only)
+   */
+  static async restoreTimesheet(timesheetId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response: any = await backendApi.post(`/timesheets/${timesheetId}/restore`);
+      return {
+        success: response.success,
+        error: response.success ? undefined : (response.message || 'Failed to restore timesheet')
+      };
+    } catch (error: unknown) {
+      console.error('Error in restoreTimesheet:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to restore timesheet';
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Hard delete timesheet permanently (super admin only)
+   */
+  static async hardDeleteTimesheet(timesheetId: string, reason?: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      // Use deleteWithBody to send DELETE with body data
+      const response: any = await backendApi.deleteWithBody(`/timesheets/${timesheetId}/hard`, {
+        reason: reason || 'Permanent deletion requested'
+      });
+      return {
+        success: response.success,
+        error: response.success ? undefined : (response.message || 'Failed to permanently delete timesheet')
+      };
+    } catch (error: unknown) {
+      console.error('Error in hardDeleteTimesheet:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to permanently delete timesheet';
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
    * Check if timesheet can be modified
    */
   static canModifyTimesheet(timesheet: Timesheet): boolean {

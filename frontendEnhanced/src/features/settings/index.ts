@@ -3,8 +3,11 @@
  * Main entry point for the settings feature module
  */
 
-// Components
-export * from './components';
+// Components (export specific to avoid ambiguity)
+export {
+  ProfileSettings,
+  SecuritySettings
+} from './components';
 
 // Hooks
 export { useSettings } from './hooks/useSettings';

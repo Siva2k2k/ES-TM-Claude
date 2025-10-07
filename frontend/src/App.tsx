@@ -42,11 +42,13 @@ import {
   Activity,
   UserCheck,
   Settings,
-  User
+  User,
+  Trash2
 } from 'lucide-react';
 import { SettingsModal } from './components/settings/SettingsModal';
 import { NotificationBell } from './components/notifications/NotificationBell';
 import { GlobalSearch } from './components/search/GlobalSearch';
+import { DeletedItemsView } from './components/admin/DeletedItemsView';
 
 interface SubItem {
   id: string;
@@ -242,7 +244,8 @@ const App: React.FC = () => {
         { id: 'audit', label: 'Audit Logs', icon: Activity, subItems: [
           { id: 'audit-logs', label: 'View Logs' },
           { id: 'audit-cleanup', label: 'Data Cleanup' }
-        ]}
+        ]},
+        { id: 'deleted-items', label: 'Deleted Items', icon: Trash2, subItems: [] }
       );
     }
 
@@ -258,7 +261,8 @@ const App: React.FC = () => {
           { id: 'billing-projects', label: '🎯 Project Billing' },
           { id: 'billing-tasks', label: '🎯 Task Billing' },
           { id: 'billing-others', label: 'Others' }
-        ]}
+        ]},
+        { id: 'deleted-items', label: 'Deleted Items', icon: Trash2, subItems: [] }
       );
     }
 
@@ -478,6 +482,8 @@ const App: React.FC = () => {
         return <EnhancedBillingManagement />;
       case 'audit':
         return <AuditLogs />;
+      case 'deleted-items':
+        return <DeletedItemsView />;
       case 'reports':
         return <ReportsHub />;
       case 'notifications':

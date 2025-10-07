@@ -266,7 +266,7 @@ export const RegisterForm: React.FC<RegisterFormProps> = ({
             {/* Submit Button */}
             <Button
               type="submit"
-              variant="primary"
+              
               size="lg"
               disabled={isSubmitting}
               className="w-full mt-6"

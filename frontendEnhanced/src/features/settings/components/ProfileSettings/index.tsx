@@ -299,7 +299,7 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
           </Button>
           <Button
             type="submit"
-            variant="primary"
+            
             disabled={loading || !hasChanges}
           >
             <Save className="h-4 w-4 mr-2" />

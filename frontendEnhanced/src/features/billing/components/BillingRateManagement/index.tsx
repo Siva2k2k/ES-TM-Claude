@@ -188,7 +188,7 @@ export const BillingRateManagement: React.FC = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <Badge variant="secondary" size="sm">
+                      <Badge size="sm">
                         {rate.role}
                       </Badge>
                     </td>

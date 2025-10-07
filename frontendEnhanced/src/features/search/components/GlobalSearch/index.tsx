@@ -88,10 +88,10 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ className, onNavigat
       // Arrow navigation
       if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev + 1) % totalItems);
+        setSelectedIndex((prev: number) => (prev + 1) % totalItems);
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        setSelectedIndex((prev) => (prev - 1 + totalItems) % totalItems);
+        setSelectedIndex((prev: number) => (prev - 1 + totalItems) % totalItems);
       } else if (e.key === 'Enter' && items[selectedIndex]) {
         e.preventDefault();
         handleResultSelect(items[selectedIndex]);

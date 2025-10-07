@@ -185,7 +185,7 @@ export const TaskList: React.FC<TaskListProps> = ({
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-medium flex items-center justify-between">
                   {status.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
-                  <Badge variant="secondary" size="sm">
+                  <Badge size="sm">
                     {groupedTasks[status].length}
                   </Badge>
                 </CardTitle>

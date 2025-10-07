@@ -150,7 +150,7 @@ export const LoginForm: React.FC<LoginFormProps> = ({
             {/* Submit Button */}
             <Button
               type="submit"
-              variant="primary"
+              
               size="lg"
               disabled={isSubmitting}
               className="w-full"

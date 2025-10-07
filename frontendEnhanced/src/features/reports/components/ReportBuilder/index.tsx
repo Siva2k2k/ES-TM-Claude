@@ -129,7 +129,7 @@ export const ReportBuilder: React.FC<ReportBuilderProps> = ({
         <Button
           onClick={handleGenerate}
           disabled={isGenerating}
-          variant="primary"
+          
           className="w-full"
         >
           {isGenerating ? (

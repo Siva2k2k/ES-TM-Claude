@@ -16,7 +16,7 @@ interface UseGlobalSearchReturn {
   isOpen: boolean;
   setIsOpen: (open: boolean) => void;
   selectedIndex: number;
-  setSelectedIndex: (index: number) => void;
+  setSelectedIndex: React.Dispatch<React.SetStateAction<number>>;
   handleResultSelect: (result: SearchResult | QuickAction) => void;
 }
 

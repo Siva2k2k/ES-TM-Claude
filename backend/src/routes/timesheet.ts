@@ -214,4 +214,36 @@ router.get('/for-approval', [
   validate
 ], TimesheetController.getTimesheetsForApproval);
 
+/**
+ * @route GET /api/v1/timesheets/deleted
+ * @desc Get deleted timesheets (management and super admin only)
+ * @access Private
+ */
+router.get('/deleted', [
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('offset').optional().isInt({ min: 0 }).withMessage('Offset must be non-negative'),
+  validate
+], TimesheetController.getDeletedTimesheets);
+
+/**
+ * @route POST /api/v1/timesheets/:timesheetId/restore
+ * @desc Restore soft deleted timesheet (management and super admin only)
+ * @access Private
+ */
+router.post('/:timesheetId/restore', [
+  param('timesheetId').isMongoId().withMessage('Invalid timesheet ID'),
+  validate
+], TimesheetController.restoreTimesheet);
+
+/**
+ * @route DELETE /api/v1/timesheets/:timesheetId/hard
+ * @desc Hard delete timesheet permanently (super admin only)
+ * @access Private
+ */
+router.delete('/:timesheetId/hard', [
+  param('timesheetId').isMongoId().withMessage('Invalid timesheet ID'),
+  body('reason').optional().isString().withMessage('Reason must be a string'),
+  validate
+], TimesheetController.hardDeleteTimesheet);
+
 export default router;

@@ -151,7 +151,7 @@ export const ProjectBillingCard: React.FC<ProjectBillingCardProps> = ({ project 
                       </div>
                     </td>
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <Badge variant="secondary" size="sm">
+                      <Badge size="sm">
                         {resource.role}
                       </Badge>
                     </td>

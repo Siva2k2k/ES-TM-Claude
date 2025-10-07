@@ -88,7 +88,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
             Error Loading Users
           </h2>
           <p className="text-text-secondary dark:text-dark-text-secondary mb-4">{error}</p>
-          <Button onClick={loadUsers} variant="primary">
+          <Button onClick={loadUsers} >
             Retry
           </Button>
         </div>
@@ -230,7 +230,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({
                     {!user.is_approved_by_super_admin && (
                       <Button
                         size="sm"
-                        variant="primary"
+                        
                         onClick={() => handleApproveUser(user.id)}
                         disabled={actionLoading === user.id}
                       >

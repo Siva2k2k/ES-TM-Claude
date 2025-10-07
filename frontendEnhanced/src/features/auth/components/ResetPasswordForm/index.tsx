@@ -171,7 +171,7 @@ export const ResetPasswordForm: React.FC<ResetPasswordFormProps> = ({
             {/* Submit Button */}
             <Button
               type="submit"
-              variant="primary"
+              
               size="lg"
               disabled={isSubmitting}
               className="w-full"
