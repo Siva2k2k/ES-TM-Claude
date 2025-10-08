@@ -91,7 +91,7 @@ const navigationItems: NavItem[] = [
 ];
 
 export const Sidebar: React.FC<SidebarProps> = ({ open, mobileOpen, onClose }) => {
-  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set(['timesheets']));
+  const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set([]));
   const [activeItem, setActiveItem] = useState('dashboard');
 
   const toggleExpanded = (itemId: string) => {
@@ -214,7 +214,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ open, mobileOpen, onClose }) =
           'fixed left-0 top-16 bottom-0 z-40 md:hidden w-64',
           'bg-white dark:bg-gray-800',
           'border-r border-gray-200 dark:border-gray-700',
-          'transform transition-transform duration-300 ease-in-out',
+          'transform transition-transform duration-300 ease-in-out',  
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >

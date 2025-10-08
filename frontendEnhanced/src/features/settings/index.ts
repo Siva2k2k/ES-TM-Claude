@@ -6,7 +6,11 @@
 // Components (export specific to avoid ambiguity)
 export {
   ProfileSettings,
-  SecuritySettings
+  SecuritySettings,
+  PreferencesSettings,
+  AdminSettings,
+  ReportTemplateSettings,
+  SettingsModal
 } from './components';
 
 // Hooks

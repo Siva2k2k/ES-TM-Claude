@@ -1,28 +1,23 @@
 import { useState } from 'react';
 import * as React from 'react';
-import { toast, ToastContainer } from 'react-toastify';
+import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from './store/contexts/AuthContext';
 import LoginForm from './components/forms/LoginForm';
-import { ManagementDashboard } from './pages/NewManagementDashboard';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import TimesheetStatusView from './components/TimesheetStatusView';
 import TeamReview from './components/TeamReview';
 import { EmployeeTimesheet } from './components/EmployeeTimesheet';
 import { UserManagement } from './components/UserManagement';
 import { ProjectManagement } from './components/ProjectManagement';
-import { BillingManagement } from './components/BillingManagement';
 import { EnhancedBillingManagement } from './components/EnhancedBillingManagement';
 import { EnhancedBillingDashboard } from './components/billing/EnhancedBillingDashboard';
 import { BillingRateManagement } from './components/billing/BillingRateManagement';
 import { EnhancedInvoiceWorkflow } from './components/billing/EnhancedInvoiceWorkflow';
-import BillingManagementNew from './components/billing/BillingManagement';
 import ProjectBillingView from './components/billing/ProjectBillingView';
 import TaskBillingView from './components/billing/TaskBillingView';
 import BillingOthersView from './components/billing/BillingOthersView';
 import { AuditLogs } from './components/AuditLogs';
-import { Reports } from './components/Reports';
-import { EnhancedReports } from './components/EnhancedReports';
 import ReportsHub from './components/ReportsHub';
 import { ClientManagement } from './components/ClientManagement';
 import { RoleSpecificDashboard } from './components/RoleSpecificDashboard';
@@ -446,9 +441,9 @@ const App: React.FC = () => {
           // Calendar view for all users
           return <EmployeeTimesheet viewMode="calendar" />;
         case 'projects-overview':
-          return <ProjectManagement defaultTab="overview" />;
+          return <ProjectManagement />;
         case 'projects-tasks':
-          return <ProjectManagement defaultTab="tasks" />;
+          return <ProjectManagement />;
         case 'timesheet-list':
           // List view for individual users
           return <EmployeeTimesheet viewMode="list" />;
@@ -549,12 +544,6 @@ const App: React.FC = () => {
         return <RoleSpecificDashboard />;
     }
   };
-
-  const notifications = [
-    { id: 1, title: 'Timesheet Approved', message: 'Your timesheet for week of Feb 5 has been approved', time: '2 hours ago', type: 'success' },
-    { id: 2, title: 'New Task Assigned', message: 'Payment Gateway Setup task has been assigned to you', time: '4 hours ago', type: 'info' },
-    { id: 3, title: 'Project Deadline', message: 'E-commerce Platform milestone due in 2 days', time: '1 day ago', type: 'warning' }
-  ];
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-gray-900 dark:to-gray-800">
