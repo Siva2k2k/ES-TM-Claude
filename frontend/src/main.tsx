@@ -5,6 +5,8 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import App from './App.tsx';
 import './index.css';
 
+console.log(localStorage.getItem('accessToken'))
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ThemeProvider>

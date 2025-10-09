@@ -4,6 +4,18 @@ import { UserService } from '../services/UserService';
 import PermissionService from '../services/PermissionService';
 import type { UserRole } from '../types';
 
+// Project role types for role elevation
+export type ProjectRole = 'secondary_manager' | 'lead' | 'employee';
+
+// Role project assignment eligibility
+export const ROLE_PROJECT_ELIGIBILITY: Record<UserRole, ProjectRole[] | null> = {
+  super_admin: null,     // No project roles needed - system access overrides
+  management: null,      // No project roles needed - system access overrides  
+  manager: ['secondary_manager', 'lead', 'employee'], // Can take any project role
+  lead: ['secondary_manager', 'lead', 'employee'],    // Can be elevated or demoted
+  employee: ['lead', 'employee']                      // Can be elevated to lead only
+};
+
 interface UseRoleManagerReturn {
   currentRole: UserRole;
   isTransitioning: boolean;
@@ -12,6 +24,8 @@ interface UseRoleManagerReturn {
   getRolePermissions: (role: UserRole) => string[];
   resetToDefaultSection: () => void;
   hasPermission: (permission: string) => boolean;
+  
+  // System-level permissions
   canManageUsers: () => boolean;
   canApproveUsers: () => boolean;
   canManageProjects: () => boolean;
@@ -19,6 +33,22 @@ interface UseRoleManagerReturn {
   canAccessBilling: () => boolean;
   canAccessAuditLogs: () => boolean;
   canExportReports: () => boolean;
+  
+  // Project-specific permissions
+  canManageProjectMembers: (projectId?: string) => boolean;
+  canAssignTasks: (projectId?: string) => boolean;
+  canApproveProjectTimesheets: (projectId?: string) => boolean;
+  canViewTeamTimesheets: () => boolean;
+  canGuideTeamMembers: () => boolean;
+  
+  // Role elevation utilities
+  canBeElevatedInProject: (targetProjectRole: ProjectRole) => boolean;
+  getAvailableProjectRoles: () => ProjectRole[];
+  getEffectivePermissions: (projectId?: string, projectRole?: ProjectRole) => {
+    systemLevel: string[];
+    projectLevel: string[];
+    effective: string[];
+  };
 }
 
 export type { UseRoleManagerReturn };
@@ -142,6 +172,136 @@ export const useRoleManager = (): UseRoleManagerReturn => {
   }, [currentUserRole]);
 
   /**
+   * Check if current role can manage project members (with project context)
+   */
+  const canManageProjectMembers = useCallback((projectId?: string): boolean => {
+    // Super admin, management, and manager always can
+    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
+      return true;
+    }
+    
+    // For project-specific roles, need to check project role
+    // This would typically fetch user's role in the specific project
+    // For now, return false for lead/employee unless elevated
+    return false; // Will be enhanced when project context is available
+  }, [currentUserRole]);
+
+  /**
+   * Check if current role can assign tasks (with project context)
+   */
+  const canAssignTasks = useCallback((projectId?: string): boolean => {
+    // System roles that can always assign tasks
+    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
+      return true;
+    }
+    
+    // Lead can assign tasks to employees
+    if (currentUserRole === 'lead') {
+      return true;
+    }
+    
+    return false;
+  }, [currentUserRole]);
+
+  /**
+   * Check if current role can approve timesheets in projects
+   */
+  const canApproveProjectTimesheets = useCallback((projectId?: string): boolean => {
+    // System roles that can approve timesheets
+    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
+      return true;
+    }
+    
+    // Project-specific: only if elevated to secondary_manager
+    // This would check user's project role for the specific project
+    return false; // Will be enhanced with project context
+  }, [currentUserRole]);
+
+  /**
+   * Check if current role can view team timesheets (Lead permission)
+   */
+  const canViewTeamTimesheets = useCallback((): boolean => {
+    // Manager+ can always view
+    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
+      return true;
+    }
+    
+    // Lead can view employee timesheets (read-only)
+    return currentUserRole === 'lead';
+  }, [currentUserRole]);
+
+  /**
+   * Check if current role can guide team members (Lead permission)
+   */
+  const canGuideTeamMembers = useCallback((): boolean => {
+    // Manager+ can always guide
+    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
+      return true;
+    }
+    
+    // Lead can guide employees
+    return currentUserRole === 'lead';
+  }, [currentUserRole]);
+
+  /**
+   * Check if current user can be elevated to a specific project role
+   */
+  const canBeElevatedInProject = useCallback((targetProjectRole: ProjectRole): boolean => {
+    const eligibleRoles = ROLE_PROJECT_ELIGIBILITY[currentUserRole];
+    
+    // Super admin and management don't need project roles
+    if (eligibleRoles === null) {
+      return false;
+    }
+    
+    return eligibleRoles.includes(targetProjectRole);
+  }, [currentUserRole]);
+
+  /**
+   * Get available project roles for current system role
+   */
+  const getAvailableProjectRoles = useCallback((): ProjectRole[] => {
+    const eligibleRoles = ROLE_PROJECT_ELIGIBILITY[currentUserRole];
+    return eligibleRoles || [];
+  }, [currentUserRole]);
+
+  /**
+   * Get effective permissions combining system and project roles
+   */
+  const getEffectivePermissions = useCallback((projectId?: string, projectRole?: ProjectRole) => {
+    const systemPermissions = PermissionService.getRolePermissions(currentUserRole);
+    
+    let projectPermissions: string[] = [];
+    
+    // Project role enhancements
+    if (projectRole) {
+      switch (projectRole) {
+        case 'secondary_manager':
+          projectPermissions = ['manage_project_members', 'approve_project_timesheets', 'assign_tasks'];
+          break;
+        case 'lead':
+          projectPermissions = ['assign_tasks', 'guide_team', 'view_project_tasks'];
+          break;
+        case 'employee':
+          projectPermissions = ['submit_timesheets', 'complete_tasks'];
+          break;
+      }
+    }
+    
+    // System roles override project roles for high-level permissions
+    const effective = [...systemPermissions];
+    if (['lead', 'employee'].includes(currentUserRole)) {
+      effective.push(...projectPermissions);
+    }
+    
+    return {
+      systemLevel: systemPermissions,
+      projectLevel: projectPermissions,
+      effective: [...new Set(effective)] // Remove duplicates
+    };
+  }, [currentUserRole]);
+
+  /**
    * Reset navigation to default section for current role
    */
   const resetToDefaultSection = useCallback(() => {
@@ -158,12 +318,26 @@ export const useRoleManager = (): UseRoleManagerReturn => {
     getRolePermissions,
     resetToDefaultSection,
     hasPermission,
+    
+    // System-level permissions
     canManageUsers,
     canApproveUsers,
     canManageProjects,
     canManageTimesheets,
     canAccessBilling,
     canAccessAuditLogs,
-    canExportReports
+    canExportReports,
+    
+    // Project-specific permissions
+    canManageProjectMembers,
+    canAssignTasks,
+    canApproveProjectTimesheets,
+    canViewTeamTimesheets,
+    canGuideTeamMembers,
+    
+    // Role elevation utilities
+    canBeElevatedInProject,
+    getAvailableProjectRoles,
+    getEffectivePermissions
   };
 };

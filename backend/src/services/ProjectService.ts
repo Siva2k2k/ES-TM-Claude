@@ -1181,15 +1181,18 @@ export class ProjectService {
   // ========================================================================
 
   /**
-   * Project-specific permission interface
+   * Project-specific permission interface with enhanced role support
    */
   static async getProjectPermissions(userId: string, projectId: string): Promise<{
     projectRole: string | null;
+    systemRole: string;
     hasManagerAccess: boolean;
     canAddMembers: boolean;
     canApproveTimesheets: boolean;
     canViewAllTasks: boolean;
     canAssignTasks: boolean;
+    isElevated: boolean;
+    effectivePermissions: string[];
   }> {
     try {
       // Get user's system role first
@@ -1198,6 +1201,112 @@ export class ProjectService {
 
       if (!user) {
         return {
+          projectRole: null,
+          systemRole: 'employee',
+          hasManagerAccess: false,
+          canAddMembers: false,
+          canApproveTimesheets: false,
+          canViewAllTasks: false,
+          canAssignTasks: false,
+          isElevated: false,
+          effectivePermissions: []
+        };
+      }
+
+      const systemRole = user.role;
+      
+      // Import enhanced authorization
+      const { getUserEffectivePermissions } = await import('@/utils/enhancedAuthorization');
+
+      // Super admin and management have all permissions everywhere
+      if (['super_admin', 'management'].includes(systemRole)) {
+        const permissions = getUserEffectivePermissions(systemRole);
+        return {
+          projectRole: 'management',
+          systemRole,
+          hasManagerAccess: true,
+          canAddMembers: true,
+          canApproveTimesheets: true,
+          canViewAllTasks: true,
+          canAssignTasks: true,
+          isElevated: false,
+          effectivePermissions: permissions.effectivePermissions
+        };
+      }
+
+      // Check if user is primary manager of the project
+      const project = await (Project.findOne as any)({
+        _id: projectId,
+        deleted_at: { $exists: false }
+      });
+
+      if (project && project.primary_manager_id.toString() === userId) {
+        const permissions = getUserEffectivePermissions(systemRole, 'primary_manager', projectId);
+        return {
+          projectRole: 'primary_manager',
+          systemRole,
+          hasManagerAccess: true,
+          canAddMembers: true,
+          canApproveTimesheets: true,
+          canViewAllTasks: true,
+          canAssignTasks: true,
+          isElevated: false,
+          effectivePermissions: permissions.effectivePermissions
+        };
+      }
+
+      // Get project membership to check for role elevation
+      const ProjectMember = (await import('@/models/Project')).ProjectMember;
+      const membership = await (ProjectMember.findOne as any)({
+        project_id: projectId,
+        user_id: userId,
+        removed_at: { $exists: false },
+        deleted_at: { $exists: false }
+      });
+
+      if (!membership) {
+        const permissions = getUserEffectivePermissions(systemRole);
+        return {
+          projectRole: null,
+          systemRole,
+          hasManagerAccess: false,
+          canAddMembers: false,
+          canApproveTimesheets: false,
+          canViewAllTasks: false,
+          canAssignTasks: false,
+          isElevated: false,
+          effectivePermissions: permissions.effectivePermissions
+        };
+      }
+
+      // Determine project role - check for elevation
+      let projectRole = membership.project_role;
+      const isSecondaryManager = membership.is_secondary_manager;
+      const isElevated = (systemRole === 'lead' && isSecondaryManager) || 
+                        (systemRole === 'employee' && projectRole === 'lead');
+
+      if (isSecondaryManager) {
+        projectRole = 'secondary_manager';
+      }
+
+      // Get effective permissions using enhanced authorization
+      const permissions = getUserEffectivePermissions(systemRole, projectRole, projectId);
+
+      return {
+        projectRole,
+        systemRole,
+        hasManagerAccess: permissions.canManageProjectMembers,
+        canAddMembers: permissions.canManageProjectMembers,
+        canApproveTimesheets: permissions.canApproveTimesheets,
+        canViewAllTasks: permissions.canViewTeamData || permissions.canAssignTasks,
+        canAssignTasks: permissions.canAssignTasks,
+        isElevated,
+        effectivePermissions: permissions.effectivePermissions
+      };
+
+    } catch (error) {
+      console.error('Error getting project permissions:', error);
+      return {
           projectRole: null,
           hasManagerAccess: false,
           canAddMembers: false,
@@ -1273,11 +1382,14 @@ export class ProjectService {
       console.error('Error getting project permissions:', error);
       return {
         projectRole: null,
+        systemRole: 'employee',
         hasManagerAccess: false,
         canAddMembers: false,
         canApproveTimesheets: false,
         canViewAllTasks: false,
-        canAssignTasks: false
+        canAssignTasks: false,
+        isElevated: false,
+        effectivePermissions: []
       };
     }
   }

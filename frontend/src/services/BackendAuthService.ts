@@ -303,6 +303,7 @@ export class BackendAuthService {
     // In a real implementation, decode JWT and check exp claim
     // For now, always attempt refresh if we have a refresh token
     return !!localStorage.getItem('refreshToken');
+    
   }
 
   /**
