@@ -1,77 +1,134 @@
 /**
  * Backend API Service for Frontend Integration
  * Provides a simple interface for making API calls to the backend
+ * Now uses Axios with interceptors for better error handling and request/response transformation
  */
 
-const API_BASE_URL = '/api/v1'; // Always use proxy in development and production
+import axiosInstance, { handleApiError } from '../config/axios.config';
+import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 
 class BackendAPI {
-  private getAuthHeaders(): Record<string, string> {
-    const token = localStorage.getItem('accessToken') || localStorage.getItem('authToken');
-    return {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-    };
-  }
-
-  private async request<T>(
-    endpoint: string,
-    options: RequestInit = {}
-  ): Promise<T> {
-    const url = `${API_BASE_URL}${endpoint}`;
-    
-    const config: RequestInit = {
-      ...options,
-      headers: {
-        ...this.getAuthHeaders(),
-        ...options.headers,
-      },
-    };
-
+  /**
+   * Generic GET request
+   */
+  async get<T>(endpoint: string, config?: AxiosRequestConfig): Promise<T> {
     try {
-      const response = await fetch(url, config);
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || `HTTP ${response.status}`);
-      }
-
-      return data;
+      const response: AxiosResponse<T> = await axiosInstance.get(endpoint, config);
+      return response.data;
     } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error('An unexpected error occurred');
+      const { error: errorMessage } = handleApiError(error);
+      throw new Error(errorMessage);
     }
   }
 
-  async get<T>(endpoint: string): Promise<T> {
-    return this.request<T>(endpoint, { method: 'GET' });
+  /**
+   * Generic POST request
+   */
+  async post<T>(
+    endpoint: string,
+    data?: Record<string, unknown>,
+    config?: AxiosRequestConfig
+  ): Promise<T> {
+    try {
+      const response: AxiosResponse<T> = await axiosInstance.post(endpoint, data, config);
+      return response.data;
+    } catch (error) {
+      const { error: errorMessage } = handleApiError(error);
+      throw new Error(errorMessage);
+    }
   }
 
-  async post<T>(endpoint: string, data?: Record<string, unknown>): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'POST',
-      body: data ? JSON.stringify(data) : undefined,
-    });
+  /**
+   * Generic PUT request
+   */
+  async put<T>(
+    endpoint: string,
+    data?: Record<string, unknown>,
+    config?: AxiosRequestConfig
+  ): Promise<T> {
+    try {
+      const response: AxiosResponse<T> = await axiosInstance.put(endpoint, data, config);
+      return response.data;
+    } catch (error) {
+      const { error: errorMessage } = handleApiError(error);
+      throw new Error(errorMessage);
+    }
   }
 
-  async put<T>(endpoint: string, data?: Record<string, unknown>): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'PUT',
-      body: data ? JSON.stringify(data) : undefined,
-    });
+  /**
+   * Generic PATCH request
+   */
+  async patch<T>(
+    endpoint: string,
+    data?: Record<string, unknown>,
+    config?: AxiosRequestConfig
+  ): Promise<T> {
+    try {
+      const response: AxiosResponse<T> = await axiosInstance.patch(endpoint, data, config);
+      return response.data;
+    } catch (error) {
+      const { error: errorMessage } = handleApiError(error);
+      throw new Error(errorMessage);
+    }
   }
 
-  async patch<T>(endpoint: string, data?: Record<string, unknown>): Promise<T> {
-    return this.request<T>(endpoint, {
-      method: 'PATCH',
-      body: data ? JSON.stringify(data) : undefined,
-    });
+  /**
+   * Generic DELETE request
+   */
+  async delete<T>(endpoint: string, config?: AxiosRequestConfig): Promise<T> {
+    try {
+      const response: AxiosResponse<T> = await axiosInstance.delete(endpoint, config);
+      return response.data;
+    } catch (error) {
+      const { error: errorMessage } = handleApiError(error);
+      throw new Error(errorMessage);
+    }
   }
 
-  async delete<T>(endpoint: string): Promise<T> {
-    return this.request<T>(endpoint, { method: 'DELETE' });
+  /**
+   * Upload file(s) with multipart/form-data
+   */
+  async upload<T>(
+    endpoint: string,
+    formData: FormData,
+    onUploadProgress?: (progressEvent: any) => void
+  ): Promise<T> {
+    try {
+      const response: AxiosResponse<T> = await axiosInstance.post(endpoint, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        onUploadProgress,
+      });
+      return response.data;
+    } catch (error) {
+      const { error: errorMessage } = handleApiError(error);
+      throw new Error(errorMessage);
+    }
+  }
+
+  /**
+   * Download file
+   */
+  async download(endpoint: string, filename: string): Promise<void> {
+    try {
+      const response = await axiosInstance.get(endpoint, {
+        responseType: 'blob',
+      });
+
+      // Create blob link to download
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      const { error: errorMessage } = handleApiError(error);
+      throw new Error(errorMessage);
+    }
   }
 }
 

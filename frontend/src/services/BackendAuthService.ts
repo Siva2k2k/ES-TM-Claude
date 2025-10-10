@@ -1,4 +1,6 @@
 import type { User, UserRole } from '../types';
+import axiosInstance, { handleApiError } from '../config/axios.config';
+import type { AxiosResponse } from 'axios';
 
 export interface AuthResponse {
   success: boolean;
@@ -38,43 +40,36 @@ export interface ChangePasswordRequest {
   newPassword: string;
 }
 
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ResetPasswordRequest {
+  token: string;
+  password: string;
+}
+
 /**
  * Backend authentication service - replaces Supabase auth
+ * Now uses Axios with interceptors for consistent error handling
  */
 export class BackendAuthService {
-  private static readonly baseURL = '/api/v1'; // Always use proxy in development and production
   private static readonly API_PREFIX = '/auth';
-
-  private static getAuthHeaders(): { [key: string]: string } {
-    const token = localStorage.getItem('accessToken');
-    return token ? { 'Authorization': `Bearer ${token}` } : {};
-  }
 
   /**
    * Register a new user
    */
   static async register(data: RegisterRequest): Promise<AuthResponse> {
     try {
-      const response = await fetch(`${this.baseURL}${this.API_PREFIX}/register`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
+      const response: AxiosResponse<AuthResponse> = await axiosInstance.post(
+        `${this.API_PREFIX}/register`,
+        data
+      );
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        return {
-          success: false,
-          message: result.error?.message || 'Registration failed',
-          error: result.error?.message || 'Registration failed'
-        };
-      }
+      const result = response.data;
 
       // Store tokens if registration successful
-      if (result.tokens) {
+      if (result.success && result.tokens) {
         localStorage.setItem('accessToken', result.tokens.accessToken);
         localStorage.setItem('refreshToken', result.tokens.refreshToken);
       }
@@ -82,10 +77,11 @@ export class BackendAuthService {
       return result;
     } catch (error) {
       console.error('Registration error:', error);
+      const { error: errorMessage } = handleApiError(error);
       return {
         success: false,
-        message: 'Network error during registration',
-        error: 'Network error during registration'
+        message: errorMessage,
+        error: errorMessage,
       };
     }
   }
@@ -95,26 +91,15 @@ export class BackendAuthService {
    */
   static async login(data: LoginRequest): Promise<AuthResponse> {
     try {
-      const response = await fetch(`${this.baseURL}${this.API_PREFIX}/login`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
+      const response: AxiosResponse<AuthResponse> = await axiosInstance.post(
+        `${this.API_PREFIX}/login`,
+        data
+      );
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        return {
-          success: false,
-          message: result.error?.message || 'Login failed',
-          error: result.error?.message || 'Login failed'
-        };
-      }
+      const result = response.data;
 
       // Store tokens if login successful
-      if (result.tokens) {
+      if (result.success && result.tokens) {
         localStorage.setItem('accessToken', result.tokens.accessToken);
         localStorage.setItem('refreshToken', result.tokens.refreshToken);
       }
@@ -122,10 +107,11 @@ export class BackendAuthService {
       return result;
     } catch (error) {
       console.error('Login error:', error);
+      const { error: errorMessage } = handleApiError(error);
       return {
         success: false,
-        message: 'Network error during login',
-        error: 'Network error during login'
+        message: errorMessage,
+        error: errorMessage,
       };
     }
   }
@@ -135,20 +121,14 @@ export class BackendAuthService {
    */
   static async logout(): Promise<void> {
     try {
-      // Call backend logout endpoint (which may blacklist tokens in the future)
-      await fetch(`${this.baseURL}${this.API_PREFIX}/logout`, {
-        method: 'POST',
-        headers: {
-          ...this.getAuthHeaders(),
-          'Content-Type': 'application/json',
-        },
-      });
+      // Call backend logout endpoint (which may blacklist tokens)
+      await axiosInstance.post(`${this.API_PREFIX}/logout`);
     } catch (error) {
       console.error('Logout error:', error);
+      // Continue with logout even if API call fails
     } finally {
       // Always clear local storage
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      this.clearTokens();
     }
   }
 
@@ -157,25 +137,22 @@ export class BackendAuthService {
    */
   static async getProfile(): Promise<{ user?: User; error?: string }> {
     try {
-      const response = await fetch(`${this.baseURL}${this.API_PREFIX}/profile`, {
-        headers: this.getAuthHeaders(),
-      });
+      const response: AxiosResponse<{ user: User }> = await axiosInstance.get(
+        `${this.API_PREFIX}/profile`
+      );
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        return { error: result.error?.message || 'Failed to get profile' };
-      }
-
-      return { user: result.user as User };
+      return { user: response.data.user };
     } catch (error) {
       console.error('Profile error:', error);
-      return { error: 'Network error getting profile' };
+      const { error: errorMessage } = handleApiError(error);
+      return { error: errorMessage };
     }
   }
 
   /**
    * Refresh access token
+   * Note: Token refresh is handled automatically by axios interceptor
+   * This method is here for manual refresh if needed
    */
   static async refreshToken(): Promise<{ success: boolean; error?: string }> {
     try {
@@ -184,22 +161,10 @@ export class BackendAuthService {
         return { success: false, error: 'No refresh token available' };
       }
 
-      const response = await fetch(`${this.baseURL}${this.API_PREFIX}/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ refreshToken }),
-      });
+      const response: AxiosResponse<{ tokens: { accessToken: string; refreshToken: string } }> =
+        await axiosInstance.post(`${this.API_PREFIX}/refresh`, { refreshToken });
 
-      const result = await response.json();
-
-      if (!response.ok) {
-        // Refresh token is invalid, clear storage
-        localStorage.removeItem('accessToken');
-        localStorage.removeItem('refreshToken');
-        return { success: false, error: result.error?.message || 'Token refresh failed' };
-      }
+      const result = response.data;
 
       // Update tokens
       if (result.tokens) {
@@ -210,56 +175,76 @@ export class BackendAuthService {
       return { success: true };
     } catch (error) {
       console.error('Token refresh error:', error);
-      return { success: false, error: 'Network error during token refresh' };
+      const { error: errorMessage } = handleApiError(error);
+
+      // Clear tokens on refresh failure
+      this.clearTokens();
+
+      return { success: false, error: errorMessage };
     }
   }
 
   /**
-   * Change password
+   * Change password (for logged-in users)
    */
-  static async changePassword(data: ChangePasswordRequest): Promise<{ success: boolean; error?: string }> {
+  static async changePassword(
+    data: ChangePasswordRequest
+  ): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await fetch(`${this.baseURL}${this.API_PREFIX}/change-password`, {
-        method: 'POST',
-        headers: {
-          ...this.getAuthHeaders(),
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok) {
-        console.error('Password change error details:', { status: response.status, result });
-        
-        // Enhanced error handling to extract the exact backend message
-        let errorMessage = 'Password change failed';
-        
-        // Handle different error response formats from backend
-        if (result.message) {
-          // Direct message from backend (most common case)
-          errorMessage = result.message;
-        } else if (result.error) {
-          if (typeof result.error === 'string') {
-            errorMessage = result.error;
-          } else if (result.error.message) {
-            errorMessage = result.error.message;
-          }
-        } else if (result.errors && Array.isArray(result.errors) && result.errors.length > 0) {
-          // Handle validation error arrays
-          errorMessage = result.errors.map((err: { message?: string } | string) => 
-            typeof err === 'string' ? err : (err.message || 'Validation error')
-          ).join(', ');
-        }
-        
-        return { success: false, error: errorMessage };
-      }
-
+      await axiosInstance.post(`${this.API_PREFIX}/change-password`, data);
       return { success: true };
     } catch (error) {
       console.error('Change password error:', error);
-      return { success: false, error: 'Network error during password change' };
+      const { error: errorMessage } = handleApiError(error);
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Request password reset (forgot password)
+   */
+  static async forgotPassword(
+    data: ForgotPasswordRequest
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      const response: AxiosResponse<{ success: boolean; message: string }> =
+        await axiosInstance.post(`${this.API_PREFIX}/forgot-password`, data);
+
+      return {
+        success: response.data.success,
+        message: response.data.message,
+      };
+    } catch (error) {
+      console.error('Forgot password error:', error);
+      const { error: errorMessage } = handleApiError(error);
+      return {
+        success: false,
+        error: errorMessage,
+      };
+    }
+  }
+
+  /**
+   * Reset password with token
+   */
+  static async resetPassword(
+    data: ResetPasswordRequest
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    try {
+      const response: AxiosResponse<{ success: boolean; message: string }> =
+        await axiosInstance.post(`${this.API_PREFIX}/reset-password`, data);
+
+      return {
+        success: response.data.success,
+        message: response.data.message,
+      };
+    } catch (error) {
+      console.error('Reset password error:', error);
+      const { error: errorMessage } = handleApiError(error);
+      return {
+        success: false,
+        error: errorMessage,
+      };
     }
   }
 
@@ -269,18 +254,18 @@ export class BackendAuthService {
   static isAuthenticated(): boolean {
     const token = localStorage.getItem('accessToken');
     if (!token) return false;
-    
+
     try {
       // Simple JWT expiration check
       const payload = JSON.parse(atob(token.split('.')[1]));
       const currentTime = Math.floor(Date.now() / 1000);
-      
+
       // If token is expired, clear it and return false
       if (payload.exp && payload.exp < currentTime) {
         this.clearTokens();
         return false;
       }
-      
+
       return true;
     } catch {
       // If token is malformed, clear it
@@ -297,13 +282,24 @@ export class BackendAuthService {
   }
 
   /**
-   * Check if token needs refresh (simple check - in production would decode JWT)
+   * Check if token needs refresh (checks JWT expiration)
    */
   static shouldRefreshToken(): boolean {
-    // In a real implementation, decode JWT and check exp claim
-    // For now, always attempt refresh if we have a refresh token
-    return !!localStorage.getItem('refreshToken');
-    
+    const token = localStorage.getItem('accessToken');
+    const refreshToken = localStorage.getItem('refreshToken');
+
+    if (!token || !refreshToken) return false;
+
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const currentTime = Math.floor(Date.now() / 1000);
+
+      // Refresh if token expires within 5 minutes
+      const fiveMinutes = 5 * 60;
+      return payload.exp && payload.exp - currentTime < fiveMinutes;
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -312,5 +308,6 @@ export class BackendAuthService {
   static clearTokens(): void {
     localStorage.removeItem('accessToken');
     localStorage.removeItem('refreshToken');
+    localStorage.removeItem('currentUser');
   }
 }

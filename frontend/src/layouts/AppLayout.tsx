@@ -1,83 +1,41 @@
-import * as React from 'react';
+import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
-import { cn } from '../utils/cn';
-import { useLocalStorage } from '../hooks/useLocalStorage';
-import { useMediaQuery } from '../hooks/useMediaQuery';
 
 /**
- * AppLayout Component
- * Main application layout with header, sidebar, and content area
- * Handles responsive behavior and sidebar collapse state
+ * AppLayout - Main application layout with Header, Sidebar, and Content area
+ * Mobile-first responsive design
  */
-export const AppLayout: React.FC = () => {
-  const [sidebarCollapsed, setSidebarCollapsed] = useLocalStorage('sidebar-collapsed', false);
-  const isMobile = useMediaQuery('(max-width: 768px)');
-  const [mobileMenuOpen, setMobileMenuOpen] = React.useState(false);
 
-  // Auto-collapse sidebar on mobile
-  React.useEffect(() => {
-    if (isMobile && !sidebarCollapsed) {
-      setSidebarCollapsed(true);
-    }
-  }, [isMobile]);
-
-  const handleMenuToggle = () => {
-    if (isMobile) {
-      setMobileMenuOpen(!mobileMenuOpen);
-    } else {
-      setSidebarCollapsed(!sidebarCollapsed);
-    }
-  };
-
-  const handleCloseMobileMenu = () => {
-    if (isMobile) {
-      setMobileMenuOpen(false);
-    }
-  };
+export function AppLayout() {
+  const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = React.useState(false);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-screen bg-slate-50 dark:bg-gray-900">
       {/* Header */}
-      <Header onMenuToggle={handleMenuToggle} />
+      <Header
+        onMenuClick={() => setSidebarOpen(true)}
+        onSidebarToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+        sidebarCollapsed={sidebarCollapsed}
+      />
 
-      <div className="flex h-[calc(100vh-4rem)]">
-        {/* Mobile Overlay */}
-        {isMobile && mobileMenuOpen && (
-          <div
-            className="fixed inset-0 bg-black bg-opacity-50 z-30"
-            onClick={handleCloseMobileMenu}
-          />
-        )}
+      {/* Sidebar */}
+      <Sidebar
+        isOpen={sidebarOpen}
+        isCollapsed={sidebarCollapsed}
+        onClose={() => setSidebarOpen(false)}
+      />
 
-        {/* Sidebar */}
-        <div
-          className={cn(
-            'transition-all duration-300',
-            isMobile
-              ? cn(
-                  'fixed inset-y-0 left-0 z-40 mt-16',
-                  mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
-                )
-              : 'relative'
-          )}
-        >
-          <Sidebar
-            collapsed={sidebarCollapsed && !isMobile}
-            onToggle={handleMenuToggle}
-          />
+      {/* Main content area */}
+      <main className="lg:pl-0 min-h-[calc(100vh-4rem)]">
+        <div className="p-4 lg:p-6 max-w-7xl mx-auto">
+          <Outlet />
         </div>
-
-        {/* Main Content */}
-        <main className="flex-1 overflow-auto">
-          <div className="container mx-auto p-4 md:p-6 lg:p-8">
-            <Outlet />
-          </div>
-        </main>
-      </div>
+      </main>
     </div>
   );
-};
+}
 
 export default AppLayout;

@@ -1,42 +1,46 @@
-import * as React from 'react';
-import { Outlet, Link } from 'react-router-dom';
+import React from 'react';
 import { Shield } from 'lucide-react';
 
 /**
- * AuthLayout Component
- * Layout for authentication pages (login, register, forgot password, etc.)
- * Provides a centered card with branding
+ * AuthLayout - Simple centered layout for authentication pages
+ * Mobile-first responsive design
  */
-export const AuthLayout: React.FC = () => {
+
+interface AuthLayoutProps {
+  children: React.ReactNode;
+}
+
+export function AuthLayout({ children }: AuthLayoutProps) {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-purple-50 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-2 mb-2">
-            <div className="relative">
-              <Shield className="h-12 w-12 text-blue-600" />
-              <div className="absolute -top-1 -right-1 w-4 h-4 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full animate-pulse" />
-            </div>
-          </Link>
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex flex-col">
+      {/* Optional header with logo */}
+      <div className="p-4 sm:p-6">
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <Shield className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full" />
+          </div>
+          <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 dark:from-blue-400 dark:to-purple-400 bg-clip-text text-transparent">
             TimeTracker Pro
-          </h1>
-          <p className="text-sm text-slate-600 mt-1">Enterprise Timesheet Management</p>
+          </span>
         </div>
+      </div>
 
-        {/* Auth Card */}
-        <div className="bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden">
-          <Outlet />
+      {/* Main content - centered */}
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          {children}
         </div>
+      </div>
 
-        {/* Footer */}
-        <p className="text-center text-sm text-slate-600 mt-6">
-          © {new Date().getFullYear()} TimeTracker Pro. All rights reserved.
+      {/* Optional footer */}
+      <div className="p-4 text-center">
+        <p className="text-sm text-slate-600 dark:text-gray-400">
+          &copy; {new Date().getFullYear()} TimeTracker Pro. All rights reserved.
         </p>
       </div>
     </div>
   );
-};
+}
 
 export default AuthLayout;
