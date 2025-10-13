@@ -605,7 +605,8 @@ export class ProjectService {
     projectId: string,
     userId: string,
     projectRole: string = 'employee',
-    isPrimaryManager = false
+    isPrimaryManager = false,
+    isSecondaryManager = false
   ): Promise<{ success: boolean; error?: string }> {
     try {
       const payload = {
@@ -615,7 +616,9 @@ export class ProjectService {
         projectRole,
         project_role: projectRole,
         isPrimaryManager,
-        is_primary_manager: isPrimaryManager
+        is_primary_manager: isPrimaryManager,
+        isSecondaryManager,
+        is_secondary_manager: isSecondaryManager
       };
 
       console.log("Payload being sent:", payload);
@@ -642,9 +645,10 @@ export class ProjectService {
     projectId: string,
     userId: string,
     projectRole: string = 'employee',
-    isPrimaryManager = false
+    isPrimaryManager = false,
+    isSecondaryManager = false
   ) {
-    return this.addProjectMember(projectId, userId, projectRole, isPrimaryManager);
+    return this.addProjectMember(projectId, userId, projectRole, isPrimaryManager, isSecondaryManager);
   }
 
   /**

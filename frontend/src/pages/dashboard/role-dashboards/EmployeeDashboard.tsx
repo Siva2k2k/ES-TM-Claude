@@ -1,8 +1,17 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Building2, Target, CheckCircle, Clock, Plus, FileText } from 'lucide-react';
+import { Building2, Target, CheckCircle, Clock, Plus, FileText, TrendingUp } from 'lucide-react';
 import type { EmployeeDashboardData } from '../../../services/DashboardService';
-import { StatsCard, LineChartCard, PieChartCard, RecentActivity, QuickActions } from '../components';
+import {
+  StatsCard,
+  KPIWidget,
+  LineChartCard,
+  PieChartCard,
+  AreaChartCard,
+  GaugeChart,
+  QuickActions,
+  RecentActivity,
+} from '../components';
 
 interface EmployeeDashboardProps {
   data: EmployeeDashboardData;
@@ -10,22 +19,24 @@ interface EmployeeDashboardProps {
 
 /**
  * EmployeeDashboard Component
- * Enhanced employee dashboard with charts and visualizations
+ * HIERARCHY: Foundation level - Personal productivity & time tracking
+ * Individual work focus, timesheet management, task completion
  */
 export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) => {
   const navigate = useNavigate();
 
-  // Mock chart data (will be replaced with real data from API)
+  // ========== DATA PREPARATION ==========
   const weeklyHoursTrend = data.weekly_hours_trend || [
     { name: 'Week 1', hours: 38, billable: 32 },
     { name: 'Week 2', hours: 42, billable: 36 },
     { name: 'Week 3', hours: 40, billable: 35 },
     { name: 'Week 4', hours: 40.5, billable: 35 },
+    { name: 'Week 5', hours: 41, billable: 37 },
   ];
 
-  const projectTimeDistribution = data.project_time_distribution || data.project_assignments.map(p => ({
+  const projectTimeDistribution = data.project_time_distribution || data.project_assignments.map((p) => ({
     name: p.project_name,
-    value: p.hours_logged
+    value: p.hours_logged,
   }));
 
   const taskStatusData = data.task_status || [
@@ -33,32 +44,39 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
     { name: 'In Progress', value: data.personal_overview.assigned_tasks },
   ];
 
-  // Quick actions for employee
+  const billableRatio = data.personal_overview.weekly_hours > 0
+    ? (data.timesheet_status.billable_hours / data.personal_overview.weekly_hours) * 100
+    : 0;
+
+  const productivityScore = data.personal_overview.assigned_tasks > 0
+    ? (data.personal_overview.completed_tasks / data.personal_overview.assigned_tasks) * 100
+    : 0;
+
   const quickActions = [
     {
       title: 'Submit Timesheet',
-      description: 'Submit your weekly timesheet',
+      description: 'Submit weekly hours',
       icon: Clock,
       onClick: () => navigate('/dashboard/timesheets/create'),
       color: 'blue' as const,
     },
     {
       title: 'View Projects',
-      description: 'See your project assignments',
+      description: 'See assignments',
       icon: Building2,
       onClick: () => navigate('/dashboard/projects'),
       color: 'purple' as const,
     },
     {
       title: 'View Tasks',
-      description: 'Check your assigned tasks',
+      description: 'Check your tasks',
       icon: CheckCircle,
       onClick: () => navigate('/dashboard/projects/tasks'),
       color: 'green' as const,
     },
     {
       title: 'View Reports',
-      description: 'Access your reports',
+      description: 'Access reports',
       icon: FileText,
       onClick: () => navigate('/dashboard/reports'),
       color: 'orange' as const,
@@ -67,8 +85,42 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
 
   return (
     <div className="space-y-6">
-      {/* Personal Overview - Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* HIERARCHY LEVEL 1: Personal Performance KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <GaugeChart
+          title="Productivity Score"
+          value={productivityScore}
+          max={100}
+          unit="%"
+          thresholds={{ low: 60, medium: 80, high: 100 }}
+          colors={{ low: '#EF4444', medium: '#F59E0B', high: '#10B981' }}
+          height={180}
+        />
+
+        <KPIWidget
+          title="Weekly Hours"
+          value={data.personal_overview.weekly_hours}
+          format="hours"
+          icon={Clock}
+          color="blue"
+          target={40}
+          comparison={{ period: 'WoW', previousValue: data.personal_overview.weekly_hours - 2, change: 2, changePercentage: 5 }}
+          sparklineData={weeklyHoursTrend.map((w) => w.hours)}
+        />
+
+        <KPIWidget
+          title="Billable Ratio"
+          value={billableRatio}
+          format="percentage"
+          icon={TrendingUp}
+          color="green"
+          target={85}
+          subtitle={`${data.timesheet_status.billable_hours}h billable`}
+        />
+      </div>
+
+      {/* HIERARCHY LEVEL 2: Personal Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <StatsCard
           title="Current Projects"
           value={data.personal_overview.current_projects}
@@ -102,17 +154,13 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
       {/* Quick Actions */}
       <QuickActions actions={quickActions} />
 
-      {/* Current Timesheet Status */}
+      {/* HIERARCHY LEVEL 3: Timesheet Status */}
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 p-6 border border-transparent dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-          Current Timesheet Status
-        </h3>
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Current Timesheet Status</h3>
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="text-center p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
             <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Week</div>
-            <div className="font-semibold text-gray-900 dark:text-gray-100">
-              {data.timesheet_status.current_week}
-            </div>
+            <div className="font-semibold text-gray-900 dark:text-gray-100">{data.timesheet_status.current_week}</div>
           </div>
           <div className="text-center p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
             <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Status</div>
@@ -130,15 +178,11 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
           </div>
           <div className="text-center p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
             <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Total Hours</div>
-            <div className="font-semibold text-gray-900 dark:text-gray-100">
-              {data.timesheet_status.total_hours.toFixed(1)}
-            </div>
+            <div className="font-semibold text-gray-900 dark:text-gray-100">{data.timesheet_status.total_hours.toFixed(1)}</div>
           </div>
           <div className="text-center p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
             <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Billable Hours</div>
-            <div className="font-semibold text-green-600 dark:text-green-400">
-              {data.timesheet_status.billable_hours.toFixed(1)}
-            </div>
+            <div className="font-semibold text-green-600 dark:text-green-400">{data.timesheet_status.billable_hours.toFixed(1)}</div>
           </div>
           <div className="text-center p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
             <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Action</div>
@@ -156,9 +200,9 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
         </div>
       </div>
 
-      {/* Charts Row 1: Weekly Hours Trend & Task Status */}
+      {/* HIERARCHY LEVEL 4: Time Analytics */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <LineChartCard
+        <AreaChartCard
           title="Weekly Hours Trend"
           data={weeklyHoursTrend}
           dataKeys={[
@@ -168,16 +212,10 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
           height={300}
         />
 
-        <PieChartCard
-          title="Task Status Distribution"
-          data={taskStatusData}
-          dataKey="value"
-          nameKey="name"
-          height={300}
-        />
+        <PieChartCard title="Task Status Distribution" data={taskStatusData} dataKey="value" nameKey="name" height={300} />
       </div>
 
-      {/* Charts Row 2: Project Time Distribution */}
+      {/* HIERARCHY LEVEL 5: Project Time Distribution */}
       {projectTimeDistribution.length > 0 && (
         <PieChartCard
           title="Project Time Distribution"
@@ -188,20 +226,16 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
         />
       )}
 
-      {/* Project Assignments & Recent Activity */}
+      {/* HIERARCHY LEVEL 6: Project Assignments & Recent Activity */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Project Assignments */}
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 border border-transparent dark:border-gray-700">
           <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-              Project Assignments
-            </h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Project Assignments</h3>
           </div>
           <div className="p-6 space-y-4">
             {data.project_assignments.length === 0 ? (
-              <p className="text-center text-gray-500 dark:text-gray-400 py-8">
-                No project assignments
-              </p>
+              <p className="text-center text-gray-500 dark:text-gray-400 py-8">No project assignments</p>
             ) : (
               data.project_assignments.map((assignment, index) => (
                 <div
@@ -209,9 +243,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
                   className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 hover:bg-gray-50 dark:hover:bg-gray-900 transition-colors"
                 >
                   <div className="flex justify-between items-start mb-2">
-                    <h4 className="font-medium text-gray-900 dark:text-gray-100">
-                      {assignment.project_name}
-                    </h4>
+                    <h4 className="font-medium text-gray-900 dark:text-gray-100">{assignment.project_name}</h4>
                     <div className="flex items-center space-x-2">
                       <span className="px-2 py-1 text-xs font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded-full">
                         {assignment.role}

@@ -24,10 +24,10 @@ import { DashboardPage } from './pages/dashboard';
 import NotificationsPage from './pages/NotificationsPage';
 
 // User Management
-import { UserManagement } from './components/UserManagement';
+import { UserManagementPage } from './pages/users';
 
 // Project Management
-import { ProjectManagement } from './components/ProjectManagement';
+import { ProjectListPage, ProjectMembersPage } from './pages/projects';
 
 // Timesheet Management
 import { EmployeeTimesheet } from './components/EmployeeTimesheet';
@@ -96,34 +96,19 @@ const App: React.FC = () => {
           {/* User Management - Admin/Management/Manager Only */}
           <Route path="users" element={
             <ProtectedRoute requiredRoles={['super_admin', 'management', 'manager']}>
-              <UserManagement />
-            </ProtectedRoute>
-          } />
-          <Route path="users/create" element={
-            <ProtectedRoute requiredRoles={['super_admin', 'management', 'manager']}>
-              <UserManagement defaultTab="all" />
-            </ProtectedRoute>
-          } />
-          <Route path="users/pending" element={
-            <ProtectedRoute requiredRoles={['super_admin', 'management', 'manager']}>
-              <UserManagement defaultTab="pending" />
+              <UserManagementPage />
             </ProtectedRoute>
           } />
 
           {/* Project Management */}
           <Route path="projects" element={
             <ProtectedRoute>
-              <ProjectManagement />
+              <ProjectListPage />
             </ProtectedRoute>
           } />
-          <Route path="projects/overview" element={
+          <Route path="projects/:projectId/members" element={
             <ProtectedRoute>
-              <ProjectManagement />
-            </ProtectedRoute>
-          } />
-          <Route path="projects/tasks" element={
-            <ProtectedRoute>
-              <ProjectManagement />
+              <ProjectMembersPage />
             </ProtectedRoute>
           } />
 

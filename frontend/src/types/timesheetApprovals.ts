@@ -1,0 +1,273 @@
+/**
+ * Phase 7: Timesheet Approval Types
+ * Project-wise approval tracking with multi-manager support
+ */
+
+import type { TimeEntry, UserRole, User } from './index';
+
+/**
+ * Project role types (NO secondary_manager - removed in Phase 6)
+ */
+export type ProjectRole = 'lead' | 'employee';
+
+/**
+ * Timesheet approval statuses
+ */
+export type ApprovalStatus = 'approved' | 'rejected' | 'pending' | 'not_required';
+
+/**
+ * Timesheet workflow statuses
+ */
+export type TimesheetStatus =
+  | 'draft'           // Employee creating timesheet
+  | 'submitted'       // Submitted, awaiting approval
+  | 'lead_approved'   // Lead approved (if applicable)
+  | 'manager_approved'// Manager approved (frozen state)
+  | 'frozen'          // Management verified (same as manager_approved)
+  | 'billed'          // Management marked as billed
+  | 'rejected';       // Rejected by any approver
+
+/**
+ * Project-specific approval tracking
+ * Tracks approval status per project for multi-manager scenarios
+ */
+export interface TimesheetProjectApproval {
+  project_id: string;
+  project_name: string;
+
+  // Lead approval (if project has a lead)
+  lead_id?: string;
+  lead_name?: string;
+  lead_status: ApprovalStatus;
+  lead_approved_at?: Date;
+  lead_rejection_reason?: string;
+
+  // Manager approval (required for all projects)
+  manager_id: string;
+  manager_name: string;
+  manager_status: ApprovalStatus;
+  manager_approved_at?: Date;
+  manager_rejection_reason?: string;
+
+  // Project-specific time tracking
+  entries_count: number;
+  total_hours: number;
+}
+
+/**
+ * Timesheet with project-wise approval tracking
+ * Used for multi-manager approval workflows
+ */
+export interface TimesheetWithProjectApprovals {
+  timesheet_id: string;
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  user_role: UserRole;
+  week_start: string;
+  week_end: string;
+
+  // Overall status (changes when ALL projects approve)
+  status: TimesheetStatus;
+
+  // Total hours across all projects
+  total_hours: number;
+
+  // Project-wise approval breakdown
+  project_approvals: TimesheetProjectApproval[];
+
+  // Management verification
+  verified_by?: string;
+  verified_at?: Date;
+  billed_by?: string;
+  billed_at?: Date;
+
+  // Timestamps
+  submitted_at: Date;
+  created_at: Date;
+  updated_at: Date;
+}
+
+/**
+ * Member's timesheet summary within a project context
+ */
+export interface ProjectMemberTimesheet {
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  user_role: UserRole;
+  project_role: ProjectRole;
+
+  // Current week timesheet (if exists)
+  current_week_timesheet?: {
+    timesheet_id: string;
+    week_start: string;
+    week_end: string;
+    status: TimesheetStatus;
+
+    // Project-filtered data
+    total_hours_for_project: number;
+    entries_count: number;
+    entries: TimeEntry[]; // Only entries for THIS project
+
+    // Approval status for THIS project
+    lead_status: ApprovalStatus;
+    manager_status: ApprovalStatus;
+    rejection_reason?: string;
+  };
+
+  // Statistics
+  pending_timesheets_count: number;
+  approved_timesheets_count: number;
+  rejected_timesheets_count: number;
+}
+
+/**
+ * Project-wise timesheet grouping for Manager/Management view
+ * Hierarchical structure: Projects → Members → Timesheets
+ */
+export interface ProjectTimesheetGroup {
+  project_id: string;
+  project_name: string;
+  project_status: string;
+
+  // Project manager (who sees this group)
+  manager_id: string;
+  manager_name: string;
+
+  // Project lead (if exists)
+  lead_id?: string;
+  lead_name?: string;
+
+  // Members working on this project
+  members: ProjectMemberTimesheet[];
+
+  // Aggregated statistics
+  total_members: number;
+  pending_approvals_count: number;
+  approved_this_week: number;
+  rejected_this_week: number;
+}
+
+/**
+ * Approval history entry for timeline display
+ */
+export interface ApprovalHistoryEntry {
+  id: string;
+  timesheet_id: string;
+  project_id: string;
+  project_name: string;
+
+  // Approver details
+  approver_id: string;
+  approver_name: string;
+  approver_role: UserRole;
+
+  // Action details
+  action: 'approved' | 'rejected' | 'verified' | 'billed';
+  status_before: TimesheetStatus;
+  status_after: TimesheetStatus;
+
+  // Optional reason (for rejections)
+  reason?: string;
+
+  // Timestamp
+  created_at: Date;
+}
+
+/**
+ * Timesheet with full approval history
+ * Used for employee's timesheet detail view
+ */
+export interface TimesheetWithHistory {
+  timesheet: TimesheetWithProjectApprovals;
+  entries: TimeEntry[];
+  approval_history: ApprovalHistoryEntry[];
+}
+
+/**
+ * Bulk approval request payload
+ * Used by Management for bulk verify operations
+ */
+export interface BulkApprovalRequest {
+  timesheet_ids: string[];
+  project_id?: string; // Optional: verify all in a specific project
+  action: 'verify' | 'bill';
+  verification_notes?: string;
+}
+
+/**
+ * Bulk approval response
+ */
+export interface BulkApprovalResponse {
+  success: boolean;
+  processed_count: number;
+  failed_count: number;
+  errors?: Array<{
+    timesheet_id: string;
+    error: string;
+  }>;
+}
+
+/**
+ * Approval action request (single timesheet, single project)
+ */
+export interface ApprovalActionRequest {
+  timesheet_id: string;
+  project_id: string;
+  action: 'approve' | 'reject';
+  reason?: string; // Required for rejection
+}
+
+/**
+ * Approval action response
+ */
+export interface ApprovalActionResponse {
+  success: boolean;
+  message: string;
+
+  // Updated approval status
+  project_approval: TimesheetProjectApproval;
+
+  // Whether all required approvals are now complete
+  all_approved: boolean;
+
+  // New overall timesheet status
+  new_status: TimesheetStatus;
+}
+
+/**
+ * Approval requirements for a timesheet
+ * Tracks which approvals are needed and which are done
+ */
+export interface TimesheetApprovalRequirement {
+  project_id: string;
+  project_name: string;
+
+  // Lead requirement
+  requires_lead_approval: boolean;
+  lead_id?: string;
+  lead_name?: string;
+  lead_status: ApprovalStatus;
+
+  // Manager requirement (always required)
+  manager_id: string;
+  manager_name: string;
+  manager_status: ApprovalStatus;
+
+  // Completion flags
+  is_lead_complete: boolean;
+  is_manager_complete: boolean;
+}
+
+/**
+ * Filter options for team review page
+ */
+export interface TeamReviewFilters {
+  status?: TimesheetStatus | 'all';
+  project_id?: string | 'all';
+  member_role?: UserRole | 'all';
+  week_start?: string;
+  week_end?: string;
+  search?: string;
+}

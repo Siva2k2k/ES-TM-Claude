@@ -2,18 +2,27 @@ import { useState, useCallback } from 'react';
 import { useAuth } from '../store/contexts/AuthContext';
 import { UserService } from '../services/UserService';
 import PermissionService from '../services/PermissionService';
-import type { UserRole } from '../types';
+import type { UserRole, Timesheet, User } from '../types';
 
-// Project role types for role elevation
-export type ProjectRole = 'secondary_manager' | 'lead' | 'employee';
+// Project role types (NO secondary_manager - removed in Phase 6)
+export type ProjectRole = 'lead' | 'employee';
 
-// Role project assignment eligibility
+// Role hierarchy levels
+export const ROLE_HIERARCHY_LEVELS: Record<UserRole, number> = {
+  employee: 1,
+  lead: 2,
+  manager: 3,
+  management: 4,
+  super_admin: 5,
+};
+
+// Role project assignment eligibility (UPDATED - no secondary_manager)
 export const ROLE_PROJECT_ELIGIBILITY: Record<UserRole, ProjectRole[] | null> = {
-  super_admin: null,     // No project roles needed - system access overrides
-  management: null,      // No project roles needed - system access overrides  
-  manager: ['secondary_manager', 'lead', 'employee'], // Can take any project role
-  lead: ['secondary_manager', 'lead', 'employee'],    // Can be elevated or demoted
-  employee: ['lead', 'employee']                      // Can be elevated to lead only
+  super_admin: null,      // No project roles needed - system access overrides
+  management: null,       // No project roles needed - system access overrides
+  manager: ['lead', 'employee'], // Can take project roles for organizational purposes
+  lead: ['lead', 'employee'],    // Can be lead or employee in projects
+  employee: ['employee']          // Can only be employee (can be promoted to lead)
 };
 
 interface UseRoleManagerReturn {
@@ -24,7 +33,7 @@ interface UseRoleManagerReturn {
   getRolePermissions: (role: UserRole) => string[];
   resetToDefaultSection: () => void;
   hasPermission: (permission: string) => boolean;
-  
+
   // System-level permissions
   canManageUsers: () => boolean;
   canApproveUsers: () => boolean;
@@ -33,14 +42,27 @@ interface UseRoleManagerReturn {
   canAccessBilling: () => boolean;
   canAccessAuditLogs: () => boolean;
   canExportReports: () => boolean;
-  
+
+  // Hierarchical permissions (NEW)
+  getRoleLevel: (role: UserRole) => number;
+  canApproveRole: (submitterRole: UserRole) => boolean;
+  isHigherRoleThan: (otherRole: UserRole) => boolean;
+
+  // Timesheet approval permissions (NEW - Phase 7)
+  canApproveTimesheets: () => boolean;
+  canApproveEmployeeTimesheets: () => boolean;
+  canApproveLeadTimesheets: () => boolean;
+  canApproveManagerTimesheets: () => boolean;
+  canVerifyTimesheets: () => boolean;
+  canMarkAsBilled: () => boolean;
+
   // Project-specific permissions
   canManageProjectMembers: (projectId?: string) => boolean;
   canAssignTasks: (projectId?: string) => boolean;
   canApproveProjectTimesheets: (projectId?: string) => boolean;
   canViewTeamTimesheets: () => boolean;
   canGuideTeamMembers: () => boolean;
-  
+
   // Role elevation utilities
   canBeElevatedInProject: (targetProjectRole: ProjectRole) => boolean;
   getAvailableProjectRoles: () => ProjectRole[];
@@ -55,10 +77,84 @@ export type { UseRoleManagerReturn };
 
 /**
  * Custom hook for managing user role switching and permissions
+ * ENHANCED for Phase 7 with hierarchical approval logic
  */
 export const useRoleManager = (): UseRoleManagerReturn => {
   const { currentUserRole, setCurrentUserRole, setCurrentUser } = useAuth();
   const [isTransitioning, setIsTransitioning] = useState(false);
+
+  /**
+   * Get hierarchical level for a role (1-5)
+   */
+  const getRoleLevel = useCallback((role: UserRole): number => {
+    return ROLE_HIERARCHY_LEVELS[role] || 0;
+  }, []);
+
+  /**
+   * Check if current role can approve a submitter's role
+   */
+  const canApproveRole = useCallback((submitterRole: UserRole): boolean => {
+    const currentLevel = getRoleLevel(currentUserRole);
+    const submitterLevel = getRoleLevel(submitterRole);
+
+    // Can approve if at least one level higher
+    return currentLevel > submitterLevel;
+  }, [currentUserRole, getRoleLevel]);
+
+  /**
+   * Check if current role is higher than another role
+   */
+  const isHigherRoleThan = useCallback((otherRole: UserRole): boolean => {
+    return getRoleLevel(currentUserRole) > getRoleLevel(otherRole);
+  }, [currentUserRole, getRoleLevel]);
+
+  /**
+   * Check if current role can approve timesheets (general)
+   */
+  const canApproveTimesheets = useCallback((): boolean => {
+    // Lead and above can approve timesheets
+    return getRoleLevel(currentUserRole) >= 2; // lead+ (Lead CAN approve team)
+  }, [currentUserRole, getRoleLevel]);
+
+  /**
+   * Check if current role can approve employee timesheets
+   */
+  const canApproveEmployeeTimesheets = useCallback((): boolean => {
+    // Lead, Manager, Management, Super Admin
+    return getRoleLevel(currentUserRole) >= 2; // lead+ (Lead CAN approve team)
+  }, [currentUserRole, getRoleLevel]);
+
+  /**
+   * Check if current role can approve lead timesheets
+   */
+  const canApproveLeadTimesheets = useCallback((): boolean => {
+    // Manager, Management, Super Admin
+    return getRoleLevel(currentUserRole) >= 3;
+  }, [currentUserRole, getRoleLevel]);
+
+  /**
+   * Check if current role can approve manager timesheets
+   */
+  const canApproveManagerTimesheets = useCallback((): boolean => {
+    // Management, Super Admin
+    return getRoleLevel(currentUserRole) >= 4;
+  }, [currentUserRole, getRoleLevel]);
+
+  /**
+   * Check if current role can verify frozen timesheets
+   */
+  const canVerifyTimesheets = useCallback((): boolean => {
+    // Management, Super Admin
+    return getRoleLevel(currentUserRole) >= 4;
+  }, [currentUserRole, getRoleLevel]);
+
+  /**
+   * Check if current role can mark timesheets as billed
+   */
+  const canMarkAsBilled = useCallback((): boolean => {
+    // Management, Super Admin
+    return getRoleLevel(currentUserRole) >= 4;
+  }, [currentUserRole, getRoleLevel]);
 
   /**
    * Switch to a new role with proper state management
@@ -175,85 +271,55 @@ export const useRoleManager = (): UseRoleManagerReturn => {
    * Check if current role can manage project members (with project context)
    */
   const canManageProjectMembers = useCallback((projectId?: string): boolean => {
-    // Super admin, management, and manager always can
-    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
-      return true;
-    }
-    
-    // For project-specific roles, need to check project role
-    // This would typically fetch user's role in the specific project
-    // For now, return false for lead/employee unless elevated
-    return false; // Will be enhanced when project context is available
-  }, [currentUserRole]);
+    // Manager and above can manage project members
+    return getRoleLevel(currentUserRole) >= 3;
+  }, [currentUserRole, getRoleLevel]);
 
   /**
    * Check if current role can assign tasks (with project context)
    */
   const canAssignTasks = useCallback((projectId?: string): boolean => {
-    // System roles that can always assign tasks
-    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
-      return true;
-    }
-    
-    // Lead can assign tasks to employees
-    if (currentUserRole === 'lead') {
-      return true;
-    }
-    
-    return false;
-  }, [currentUserRole]);
+    // Lead and above can assign tasks
+    return getRoleLevel(currentUserRole) >= 2;
+  }, [currentUserRole, getRoleLevel]);
 
   /**
    * Check if current role can approve timesheets in projects
+   * ENHANCED: Leads can approve employee timesheets in their projects
    */
   const canApproveProjectTimesheets = useCallback((projectId?: string): boolean => {
-    // System roles that can approve timesheets
-    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
-      return true;
-    }
-    
-    // Project-specific: only if elevated to secondary_manager
-    // This would check user's project role for the specific project
-    return false; // Will be enhanced with project context
-  }, [currentUserRole]);
+    // Lead and above can approve project timesheets
+    return getRoleLevel(currentUserRole) >= 2;
+  }, [currentUserRole, getRoleLevel]);
 
   /**
-   * Check if current role can view team timesheets (Lead permission)
+   * Check if current role can view team timesheets
+   * ENHANCED: Leads can view employee timesheets in their projects
    */
   const canViewTeamTimesheets = useCallback((): boolean => {
-    // Manager+ can always view
-    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
-      return true;
-    }
-    
-    // Lead can view employee timesheets (read-only)
-    return currentUserRole === 'lead';
-  }, [currentUserRole]);
+    // Lead and above can view team timesheets
+    return getRoleLevel(currentUserRole) >= 2;
+  }, [currentUserRole, getRoleLevel]);
 
   /**
-   * Check if current role can guide team members (Lead permission)
+   * Check if current role can guide team members
    */
   const canGuideTeamMembers = useCallback((): boolean => {
-    // Manager+ can always guide
-    if (['super_admin', 'management', 'manager'].includes(currentUserRole)) {
-      return true;
-    }
-    
-    // Lead can guide employees
-    return currentUserRole === 'lead';
-  }, [currentUserRole]);
+    // Lead and above can guide team members
+    return getRoleLevel(currentUserRole) >= 2;
+  }, [currentUserRole, getRoleLevel]);
 
   /**
    * Check if current user can be elevated to a specific project role
    */
   const canBeElevatedInProject = useCallback((targetProjectRole: ProjectRole): boolean => {
     const eligibleRoles = ROLE_PROJECT_ELIGIBILITY[currentUserRole];
-    
+
     // Super admin and management don't need project roles
     if (eligibleRoles === null) {
       return false;
     }
-    
+
     return eligibleRoles.includes(targetProjectRole);
   }, [currentUserRole]);
 
@@ -270,30 +336,33 @@ export const useRoleManager = (): UseRoleManagerReturn => {
    */
   const getEffectivePermissions = useCallback((projectId?: string, projectRole?: ProjectRole) => {
     const systemPermissions = PermissionService.getRolePermissions(currentUserRole);
-    
+
     let projectPermissions: string[] = [];
-    
-    // Project role enhancements
+
+    // Project role enhancements (NO secondary_manager)
     if (projectRole) {
       switch (projectRole) {
-        case 'secondary_manager':
-          projectPermissions = ['manage_project_members', 'approve_project_timesheets', 'assign_tasks'];
-          break;
         case 'lead':
-          projectPermissions = ['assign_tasks', 'guide_team', 'view_project_tasks'];
+          projectPermissions = [
+            'assign_tasks',
+            'guide_team',
+            'view_project_tasks',
+            'approve_employee_timesheets', // NEW in Phase 7
+            'view_team_timesheets'
+          ];
           break;
         case 'employee':
           projectPermissions = ['submit_timesheets', 'complete_tasks'];
           break;
       }
     }
-    
+
     // System roles override project roles for high-level permissions
     const effective = [...systemPermissions];
     if (['lead', 'employee'].includes(currentUserRole)) {
       effective.push(...projectPermissions);
     }
-    
+
     return {
       systemLevel: systemPermissions,
       projectLevel: projectPermissions,
@@ -318,7 +387,7 @@ export const useRoleManager = (): UseRoleManagerReturn => {
     getRolePermissions,
     resetToDefaultSection,
     hasPermission,
-    
+
     // System-level permissions
     canManageUsers,
     canApproveUsers,
@@ -327,14 +396,27 @@ export const useRoleManager = (): UseRoleManagerReturn => {
     canAccessBilling,
     canAccessAuditLogs,
     canExportReports,
-    
+
+    // Hierarchical permissions (NEW)
+    getRoleLevel,
+    canApproveRole,
+    isHigherRoleThan,
+
+    // Timesheet approval permissions (NEW - Phase 7)
+    canApproveTimesheets,
+    canApproveEmployeeTimesheets,
+    canApproveLeadTimesheets,
+    canApproveManagerTimesheets,
+    canVerifyTimesheets,
+    canMarkAsBilled,
+
     // Project-specific permissions
     canManageProjectMembers,
     canAssignTasks,
     canApproveProjectTimesheets,
     canViewTeamTimesheets,
     canGuideTeamMembers,
-    
+
     // Role elevation utilities
     canBeElevatedInProject,
     getAvailableProjectRoles,
