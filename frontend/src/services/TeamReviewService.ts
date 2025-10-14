@@ -12,10 +12,14 @@ import type {
   BulkApprovalRequest,
   BulkApprovalResponse,
   TimesheetWithHistory,
-  TeamReviewFilters
+  TeamReviewFilters,
+  ProjectWeekFilters,
+  ProjectWeekResponse,
+  BulkProjectWeekApprovalRequest,
+  BulkProjectWeekApprovalResponse
 } from '../types/timesheetApprovals';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 /**
  * Get authorization headers with access token
@@ -271,6 +275,90 @@ export class TeamReviewService {
       return response.data;
     } catch (error) {
       return handleApiError(error, 'Failed to load approval statistics');
+    }
+  }
+
+  // ============================================================================
+  // V2 Methods: Project-Week Based Approval
+  // ============================================================================
+
+  /**
+   * Get project-week groups with pagination and filters (V2)
+   * Returns paginated list of project-weeks for approval
+   */
+  static async getProjectWeekGroups(
+    filters?: ProjectWeekFilters
+  ): Promise<ProjectWeekResponse> {
+    try {
+      const response = await axios.get<ProjectWeekResponse>(
+        `${API_BASE_URL}/timesheets/project-weeks`,
+        {
+          headers: getAuthHeaders(),
+          params: filters
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      return handleApiError(error, 'Failed to load project-week groups');
+    }
+  }
+
+  /**
+   * Approve all timesheets for a project-week
+   * Bulk approval at project-week level
+   */
+  static async approveProjectWeek(
+    projectId: string,
+    weekStart: string,
+    weekEnd: string
+  ): Promise<BulkProjectWeekApprovalResponse> {
+    try {
+      const response = await axios.post<BulkProjectWeekApprovalResponse>(
+        `${API_BASE_URL}/timesheets/project-week/approve`,
+        {
+          project_id: projectId,
+          week_start: weekStart,
+          week_end: weekEnd
+        },
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      return handleApiError(error, 'Failed to approve project-week');
+    }
+  }
+
+  /**
+   * Reject all timesheets for a project-week
+   * Bulk rejection at project-week level
+   */
+  static async rejectProjectWeek(
+    projectId: string,
+    weekStart: string,
+    weekEnd: string,
+    reason: string
+  ): Promise<BulkProjectWeekApprovalResponse> {
+    try {
+      const response = await axios.post<BulkProjectWeekApprovalResponse>(
+        `${API_BASE_URL}/timesheets/project-week/reject`,
+        {
+          project_id: projectId,
+          week_start: weekStart,
+          week_end: weekEnd,
+          reason
+        },
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      return handleApiError(error, 'Failed to reject project-week');
     }
   }
 }

@@ -75,8 +75,8 @@ const ProfilePage: React.FC = () => {
       if (!formData.currentPassword) {
         newErrors.currentPassword = 'Current password is required';
       }
-      if (formData.newPassword && formData.newPassword.length < 6) {
-        newErrors.newPassword = 'New password must be at least 6 characters';
+      if (formData.newPassword && formData.newPassword.length < 8) {
+        newErrors.newPassword = 'New password must be at least 8 characters';
       }
       if (formData.newPassword !== formData.confirmPassword) {
         newErrors.confirmPassword = 'Passwords do not match';

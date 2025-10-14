@@ -5,11 +5,12 @@ export interface IBillingSnapshot extends Document {
   user_id: mongoose.Types.ObjectId;
   week_start_date: string;
   week_end_date: string;
-  total_hours: number;
-  billable_hours: number;
+  total_hours: number; // Total worked hours
+  billable_hours: number; // After adjustments applied
+  adjustment_hours?: number; // Total adjustment delta (sum of all adjustments for this timesheet)
   hourly_rate: number;
-  total_amount: number;
-  billable_amount: number;
+  total_amount: number; // hourly_rate × total_hours
+  billable_amount: number; // hourly_rate × billable_hours
   snapshot_data?: Record<string, unknown>;
 
   // Delete tracking fields
@@ -56,6 +57,12 @@ const BillingSnapshotSchema: Schema = new Schema(
       type: Number,
       required: true,
       min: 0
+    },
+    adjustment_hours: {
+      type: Number,
+      required: false,
+      default: 0
+      // Stores total adjustment delta for this timesheet
     },
     hourly_rate: {
       type: Number,
@@ -115,9 +122,9 @@ const BillingSnapshotSchema: Schema = new Schema(
 );
 
 // Indexes for performance
-BillingSnapshotSchema.index({ user_id: 1, week_start_date: 1 });
-BillingSnapshotSchema.index({ week_start_date: 1, week_end_date: 1 });
-BillingSnapshotSchema.index({ deleted_at: 1 }, { sparse: true });
+// Note: user_id, week_start_date, and deleted_at already have indexes via field definitions
+BillingSnapshotSchema.index({ user_id: 1, week_start_date: 1 }); // Compound index for queries
+BillingSnapshotSchema.index({ week_start_date: 1, week_end_date: 1 }); // Date range queries
 
 // Soft delete query helpers
 BillingSnapshotSchema.pre(/^find/, function(this: any) {

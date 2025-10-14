@@ -174,11 +174,34 @@ export const handleApiError = (error: unknown): { error: string } => {
     const axiosError = error as AxiosError<ApiResponse>;
 
     // Extract error message from response
-    const errorMessage =
+    const raw =
       axiosError.response?.data?.error ||
       axiosError.response?.data?.message ||
       axiosError.message ||
       'An unexpected error occurred';
+
+    // Coerce non-string error payloads to a readable string
+    let errorMessage: string;
+    if (typeof raw === 'string') {
+      errorMessage = raw;
+    } else if (raw && typeof raw === 'object') {
+      // Prefer nested message property if present
+      // e.g., { message: 'Invalid email or password', stack: '...' }
+      // Fallback to JSON string if needed
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const anyRaw = raw as any;
+      if (anyRaw.message && typeof anyRaw.message === 'string') {
+        errorMessage = anyRaw.message;
+      } else {
+        try {
+          errorMessage = JSON.stringify(raw);
+        } catch {
+          errorMessage = String(raw);
+        }
+      }
+    } else {
+      errorMessage = String(raw);
+    }
 
     return { error: errorMessage };
   }

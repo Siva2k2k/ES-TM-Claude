@@ -44,7 +44,8 @@ export function LoginPage() {
 
       if (result.error) {
         console.error('🔐 LoginPage - Sign in failed:', result.error);
-        setServerError(result.error);
+          // Ensure the error is a string before setting it in state to avoid React object render errors
+          setServerError(typeof result.error === 'string' ? result.error : String(result.error));
       } else {
         console.log('🔐 LoginPage - Sign in successful');
         
@@ -157,19 +158,7 @@ export function LoginPage() {
             ) : (
               'Sign In'
             )}
-          </Button>
-
-          {/* Demo Credentials */}
-          <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <p className="text-xs font-medium text-blue-900 dark:text-blue-300 mb-2">
-              Demo Credentials:
-            </p>
-            <div className="space-y-1 text-xs text-blue-700 dark:text-blue-400">
-              <p>• Admin: admin@company.com / admin123</p>
-              <p>• Manager: manager@company.com / manager123</p>
-              <p>• Employee: employee@company.com / employee123</p>
-            </div>
-          </div>
+          </Button>          
         </form>
       </AuthCard>
     </div>

@@ -1241,7 +1241,7 @@ export class ProjectService {
       });
 
       if (project && project.primary_manager_id.toString() === userId) {
-        const permissions = getUserEffectivePermissions(systemRole, 'primary_manager', projectId);
+        const permissions = getUserEffectivePermissions(systemRole, 'secondary_manager', projectId);
         return {
           projectRole: 'primary_manager',
           systemRole,
@@ -1302,80 +1302,6 @@ export class ProjectService {
         canAssignTasks: permissions.canAssignTasks,
         isElevated,
         effectivePermissions: permissions.effectivePermissions
-      };
-
-    } catch (error) {
-      console.error('Error getting project permissions:', error);
-      return {
-          projectRole: null,
-          hasManagerAccess: false,
-          canAddMembers: false,
-          canApproveTimesheets: false,
-          canViewAllTasks: false,
-          canAssignTasks: false
-        };
-      }
-
-      // Super admin and management have all permissions everywhere
-      if (['super_admin', 'management'].includes(user.role)) {
-        return {
-          projectRole: 'management',
-          hasManagerAccess: true,
-          canAddMembers: true,
-          canApproveTimesheets: true,
-          canViewAllTasks: true,
-          canAssignTasks: true
-        };
-      }
-
-      // Check if user is primary manager of the project
-      const project = await (Project.findOne as any)({
-        _id: projectId,
-        deleted_at: { $exists: false }
-      });
-
-      if (project && project.primary_manager_id.toString() === userId) {
-        return {
-          projectRole: 'manager',
-          hasManagerAccess: true,
-          canAddMembers: true,
-          canApproveTimesheets: true,
-          canViewAllTasks: true,
-          canAssignTasks: true
-        };
-      }
-
-      // Get project membership
-      const membership = await (ProjectMember.findOne as any)({
-        project_id: projectId,
-        user_id: userId,
-        removed_at: { $exists: false },
-        deleted_at: { $exists: false }
-      });
-
-      if (!membership) {
-        return {
-          projectRole: null,
-          hasManagerAccess: false,
-          canAddMembers: false,
-          canApproveTimesheets: false,
-          canViewAllTasks: false,
-          canAssignTasks: false
-        };
-      }
-
-      // Determine permissions based on project role and manager access flags
-      const hasManagerAccess = membership.is_primary_manager || membership.is_secondary_manager || membership.project_role === 'manager';
-      const isLead = membership.project_role === 'lead';
-      const isEmployee = membership.project_role === 'employee';
-
-      return {
-        projectRole: membership.project_role,
-        hasManagerAccess,
-        canAddMembers: hasManagerAccess,
-        canApproveTimesheets: hasManagerAccess,
-        canViewAllTasks: hasManagerAccess || isLead,
-        canAssignTasks: hasManagerAccess || isLead
       };
 
     } catch (error) {

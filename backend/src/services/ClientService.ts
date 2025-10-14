@@ -2,7 +2,7 @@
 import Client, { IClient } from '@/models/Client';
 import { Project, ProjectMember } from '@/models/Project';
 import { UserRole } from '@/models/User';
-import { ValidationError, AuthorizationError } from '@/utils/errors';
+import { ValidationError, AuthorizationError, ConflictError } from '@/utils/errors';
 import { AuditLogService } from '@/services/AuditLogService';
 
 interface AuthUser {
@@ -51,6 +51,11 @@ export class ClientService {
       errors.push('Client name must be at least 2 characters long');
     }
 
+    // Name should not be numeric only
+    if (data.name && /^\d+$/.test(data.name.trim())) {
+      errors.push('Client name cannot be only numbers');
+    }
+
     if (data.name && data.name.trim().length > 100) {
       errors.push('Client name cannot exceed 100 characters');
     }
@@ -84,14 +89,15 @@ export class ClientService {
         throw new ValidationError(validation.errors.join(', '));
       }
 
-      // Check for duplicate client names
+      // Check for duplicate client names (case-insensitive)
       const existingClient = await Client.findOne({
         name: { $regex: new RegExp(`^${clientData.name?.trim()}$`, 'i') },
         deleted_at: null
       });
 
       if (existingClient) {
-        return { error: 'A client with this name already exists' };
+        // return HTTP 409 conflict semantic via error message
+        throw new ConflictError('A client with this name already exists');
       }
 
       const client = new Client({

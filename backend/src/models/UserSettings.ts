@@ -104,7 +104,7 @@ const UserSettingsSchema: Schema = new Schema({
 });
 
 // Indexes for performance
-UserSettingsSchema.index({ user_id: 1 });
+// Note: user_id already has unique index via unique: true and index: true in field definition
 UserSettingsSchema.index({ 'notifications.email_enabled': 1 });
 UserSettingsSchema.index({ theme: 1 });
 

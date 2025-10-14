@@ -107,12 +107,7 @@ router.put('/:userId/status', requireSuperAdmin, setUserStatusValidation, UserCo
  */
 router.put('/:userId/billing', requireSuperAdmin, setUserBillingValidation, UserController.setUserBilling);
 
-/**
- * @route PUT /api/v1/users/:userId/credentials
- * @desc Set user login credentials (Super Admin only)
- * @access Private (Super Admin)
- */
-// router.put('/:userId/credentials', requireSuperAdmin, setUserCredentialsValidation, UserController.setUserCredentials);
+
 
 /**
  * @route GET /api/v1/users/:managerId/team-members

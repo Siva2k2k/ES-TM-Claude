@@ -1,8 +1,8 @@
 import 'module-alias/register';
 import dotenv from 'dotenv';
-import bcrypt from 'bcryptjs';
 import { connectDB } from '../config/database';
 import { User, Client, Project, Task } from '../models';
+import { PasswordSecurity } from '../utils/passwordSecurity';
 import logger from '../config/logger';
 
 dotenv.config();
@@ -23,7 +23,7 @@ const seedData = async (): Promise<void> => {
     logger.info('🧹 Cleared existing data');
 
     // Create users
-    const hashedPassword = await bcrypt.hash('admin123', 12);
+    const hashedPassword = await PasswordSecurity.hashPassword('admin123');
     
     const users = await (User.create as any)([
       {

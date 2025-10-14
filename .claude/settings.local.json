@@ -17,7 +17,12 @@
       "Bash(grep:*)",
       "Bash(rm:*)",
       "Read(//d/Web_dev/**)",
-      "Bash(awk:*)"
+      "Bash(awk:*)",
+      "Bash(npm run build:backend:*)",
+      "Bash(npx ts-node -r tsconfig-paths/register -e \"import(''./src/controllers/TeamReviewController'').then(m => { console.log(''Methods:'', Object.getOwnPropertyNames(m.TeamReviewController).filter(n => n.startsWith(''get''))); }).catch(e => console.error(''Error:'', e.message));\")",
+      "Bash(npm run dev:backend:*)",
+      "Bash(timeout:*)",
+      "Bash(taskkill:*)"
     ],
     "deny": [],
     "ask": []

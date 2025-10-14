@@ -68,6 +68,32 @@ router.post('/forgot-password', passwordResetValidation, AuthController.initiate
  */
 router.post('/reset-password', completePasswordResetValidation, AuthController.completePasswordReset);
 
+// Validate reset token (check expiry) - Public
+import User from '@/models/User';
+router.get('/reset-password/validate', async (req, res, next) => {
+  try {
+    const token = req.query.token as string;
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Token is required' });
+    }
+
+    const user = await (User.findOne as any)({
+      password_reset_token: token,
+      password_reset_expires: { $gt: new Date() },
+      deleted_at: { $exists: false },
+      is_active: true
+    }).select('+password_reset_token');
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired token' });
+    }
+
+    return res.json({ success: true, message: 'Token is valid' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 /**
  * @route PUT /api/v1/auth/profile
  * @desc Update user profile

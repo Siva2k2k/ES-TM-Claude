@@ -460,6 +460,67 @@ export class TimesheetService {
         updated_at: new Date()
       }).exec();
 
+      // **Phase 7 Fix**: Create TimesheetProjectApproval records for each project
+      // Get all time entries for this timesheet to identify projects
+      const entries = await (TimeEntry.find as any)({
+        timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+        deleted_at: null
+      }).lean().exec();
+
+      // Group entries by project
+      const projectIds = [...new Set(entries.map((e: any) => e.project_id?.toString()).filter(Boolean))];
+
+      if (projectIds.length > 0) {
+        const { Project, ProjectMember } = require('@/models/Project');
+        const { TimesheetProjectApproval } = require('@/models/TimesheetProjectApproval');
+
+        for (const projectId of projectIds) {
+          // Check if approval record already exists
+          const existingApproval = await TimesheetProjectApproval.findOne({
+            timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+            project_id: new mongoose.Types.ObjectId(projectId)
+          }).exec();
+
+          if (existingApproval) {
+            console.log(`Approval record already exists for timesheet ${timesheetId} project ${projectId}`);
+            continue;
+          }
+
+          // Get project to find manager
+          const project = await Project.findById(projectId).lean().exec();
+          if (!project) {
+            console.warn(`Project not found: ${projectId}`);
+            continue;
+          }
+
+          // Find lead for this project
+          const leadMember = await ProjectMember.findOne({
+            project_id: new mongoose.Types.ObjectId(projectId),
+            project_role: 'lead',
+            deleted_at: null,
+            removed_at: null
+          }).lean().exec();
+
+          // Calculate hours and entries for this project
+          const projectEntries = entries.filter((e: any) => e.project_id?.toString() === projectId);
+          const totalHours = projectEntries.reduce((sum: number, e: any) => sum + (e.hours || 0), 0);
+
+          // Create approval record
+          await TimesheetProjectApproval.create({
+            timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+            project_id: new mongoose.Types.ObjectId(projectId),
+            lead_id: leadMember ? leadMember.user_id : null,
+            lead_status: leadMember ? 'pending' : 'not_required',
+            manager_id: project.primary_manager_id,
+            manager_status: 'pending',
+            entries_count: projectEntries.length,
+            total_hours: totalHours
+          });
+
+          console.log(`Created approval record: timesheet ${timesheetId}, project ${projectId}`);
+        }
+      }
+
       // Audit log: Timesheet submitted
       await AuditLogService.logEvent(
         'timesheets',

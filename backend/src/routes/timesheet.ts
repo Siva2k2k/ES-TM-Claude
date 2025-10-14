@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import { TimesheetController } from '@/controllers/TimesheetController';
+import { TeamReviewController } from '@/controllers/TeamReviewController';
 import { body, param, query } from 'express-validator';
 import { validate } from '@/middleware/validation';
 import { requireAuth } from '@/middleware/auth';
+import mongoose from 'mongoose';
 
 const router = Router();
 
@@ -47,6 +49,69 @@ router.post('/', [
   body('weekStartDate').isISO8601().withMessage('Valid week start date is required'),
   validate
 ], TimesheetController.createTimesheet);
+
+/**
+ * @route GET /api/v1/timesheets/:userId/:weekStartDate
+ * @desc Get timesheet by user and week
+ * @access Private
+ */
+/**
+ * @route GET /api/v1/timesheets/projects/groups
+ * @desc Get project-wise timesheet groups for Manager/Management (LEGACY/V1)
+ * @access Private (Lead/Manager/Management/Super Admin)
+ */
+router.get('/projects/groups', [
+  query('status').optional().isIn(['pending', 'approved', 'rejected', 'frozen', 'all']).withMessage('Invalid status filter'),
+  query('project_id').optional().custom(value => value === 'all' || mongoose.Types.ObjectId.isValid(value)).withMessage('Invalid project ID'),
+  query('member_role').optional().isIn(['employee', 'lead', 'manager', 'management', 'super_admin', 'all']).withMessage('Invalid member role'),
+  query('week_start').optional().isISO8601().withMessage('Invalid week start date'),
+  query('week_end').optional().isISO8601().withMessage('Invalid week end date'),
+  query('search').optional().isString().withMessage('Search must be a string'),
+  validate
+], TeamReviewController.getProjectTimesheetGroupsLegacy);
+
+/**
+ * @route GET /api/v1/timesheets/project-weeks
+ * @desc Get project-week groups with pagination and filters (V2)
+ * @access Private (Lead/Manager/Management/Super Admin)
+ */
+router.get('/project-weeks', [
+  query('project_id').optional().isString().withMessage('Invalid project ID'),
+  query('week_start').optional().isISO8601().withMessage('Invalid week start date'),
+  query('week_end').optional().isISO8601().withMessage('Invalid week end date'),
+  query('status').optional().isIn(['pending', 'approved', 'rejected', 'all']).withMessage('Invalid status filter'),
+  query('sort_by').optional().isIn(['week_date', 'project_name', 'pending_count']).withMessage('Invalid sort field'),
+  query('sort_order').optional().isIn(['asc', 'desc']).withMessage('Invalid sort order'),
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('search').optional().isString().withMessage('Search must be a string'),
+  validate
+], TeamReviewController.getProjectWeekGroups);
+
+/**
+ * @route POST /api/v1/timesheets/project-week/approve
+ * @desc Approve all timesheets for a project-week
+ * @access Private (Lead/Manager/Management/Super Admin)
+ */
+router.post('/project-week/approve', [
+  body('project_id').isMongoId().withMessage('Valid project ID is required'),
+  body('week_start').isISO8601().withMessage('Valid week start date is required'),
+  body('week_end').isISO8601().withMessage('Valid week end date is required'),
+  validate
+], TeamReviewController.approveProjectWeek);
+
+/**
+ * @route POST /api/v1/timesheets/project-week/reject
+ * @desc Reject all timesheets for a project-week
+ * @access Private (Lead/Manager/Management/Super Admin)
+ */
+router.post('/project-week/reject', [
+  body('project_id').isMongoId().withMessage('Valid project ID is required'),
+  body('week_start').isISO8601().withMessage('Valid week start date is required'),
+  body('week_end').isISO8601().withMessage('Valid week end date is required'),
+  body('reason').isString().isLength({ min: 10 }).withMessage('Rejection reason must be at least 10 characters'),
+  validate
+], TeamReviewController.rejectProjectWeek);
 
 /**
  * @route GET /api/v1/timesheets/:userId/:weekStartDate
@@ -245,5 +310,62 @@ router.delete('/:timesheetId/hard', [
   body('reason').optional().isString().withMessage('Reason must be a string'),
   validate
 ], TimesheetController.hardDeleteTimesheet);
+
+/**
+ * @route POST /api/v1/timesheets/:timesheetId/approve
+ * @desc Approve timesheet for a specific project (multi-manager support)
+ * @access Private (Lead/Manager/Management/Super Admin)
+ */
+router.post('/:timesheetId/approve', [
+  param('timesheetId').isMongoId().withMessage('Invalid timesheet ID'),
+  body('project_id').isMongoId().withMessage('Valid project ID is required'),
+  validate
+], TeamReviewController.approveTimesheet);
+
+/**
+ * @route POST /api/v1/timesheets/:timesheetId/reject
+ * @desc Reject timesheet for a specific project (resets all approvals)
+ * @access Private (Lead/Manager/Management/Super Admin)
+ */
+router.post('/:timesheetId/reject', [
+  param('timesheetId').isMongoId().withMessage('Invalid timesheet ID'),
+  body('project_id').isMongoId().withMessage('Valid project ID is required'),
+  body('reason').isString().isLength({ min: 10 }).withMessage('Rejection reason must be at least 10 characters'),
+  validate
+], TeamReviewController.rejectTimesheet);
+
+/**
+ * @route POST /api/v1/timesheets/bulk/verify
+ * @desc Bulk verify timesheets (Management only)
+ * @access Private (Management/Super Admin)
+ */
+router.post('/bulk/verify', [
+  body('timesheet_ids').isArray().withMessage('Timesheet IDs must be an array'),
+  body('timesheet_ids.*').isMongoId().withMessage('Invalid timesheet ID'),
+  body('project_id').optional().isMongoId().withMessage('Invalid project ID'),
+  validate
+], TeamReviewController.bulkVerify);
+
+/**
+ * @route POST /api/v1/timesheets/bulk/bill
+ * @desc Bulk mark timesheets as billed (Management only)
+ * @access Private (Management/Super Admin)
+ */
+router.post('/bulk/bill', [
+  body('timesheet_ids').isArray().withMessage('Timesheet IDs must be an array'),
+  body('timesheet_ids.*').isMongoId().withMessage('Invalid timesheet ID'),
+  body('project_id').optional().isMongoId().withMessage('Invalid project ID'),
+  validate
+], TeamReviewController.bulkBill);
+
+/**
+ * @route GET /api/v1/timesheets/:timesheetId/history
+ * @desc Get timesheet with full approval history
+ * @access Private
+ */
+router.get('/:timesheetId/history', [
+  param('timesheetId').isMongoId().withMessage('Invalid timesheet ID'),
+  validate
+], TeamReviewController.getTimesheetHistory);
 
 export default router;

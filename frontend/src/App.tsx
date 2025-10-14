@@ -34,6 +34,9 @@ import { EmployeeTimesheet } from './components/EmployeeTimesheet';
 import TeamReview from './components/TeamReview';
 import TimesheetStatusView from './components/TimesheetStatusView';
 
+// Phase 7: Team Review (Project-wise approval)
+import { TeamReviewPageV2 as TeamReviewPage } from './pages/team-review/TeamReviewPageV2';
+
 // Billing Management
 import { EnhancedBillingManagement } from './components/EnhancedBillingManagement';
 import { EnhancedBillingDashboard } from './components/billing/EnhancedBillingDashboard';
@@ -196,6 +199,13 @@ const App: React.FC = () => {
               </ProtectedRoute>
             } />
           </Route>
+
+          {/* Phase 7: Team Review - Project-wise Approval (Lead/Manager/Management) */}
+          <Route path="team-review" element={
+            <ProtectedRoute requiredRoles={['lead', 'manager', 'management', 'super_admin']}>
+              <TeamReviewPage />
+            </ProtectedRoute>
+          } />
 
           {/* Billing Management - Admin/Management/Manager Only */}
           <Route path="billing">

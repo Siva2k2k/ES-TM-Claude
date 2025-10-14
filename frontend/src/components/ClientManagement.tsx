@@ -167,6 +167,12 @@ export const ClientManagement: React.FC = () => {
       }
     }
 
+    // Prevent numeric-only names on the client as an early check
+    if (/^\d+$/.test(clientForm.name.trim())) {
+      showWarning('Client name cannot be only numbers');
+      return;
+    }
+
     try {
       const result = await ClientService.createClient({
         ...clientForm,
@@ -176,7 +182,11 @@ export const ClientManagement: React.FC = () => {
       });
 
       if (result.error) {
-        showError(`Error creating client: ${result.error}`);
+        if ((result as any).status === 409) {
+          showError('A client with this name already exists');
+        } else {
+          showError(`Error creating client: ${result.error}`);
+        }
         return;
       }
 
@@ -216,6 +226,12 @@ export const ClientManagement: React.FC = () => {
         showWarning('Please enter a valid email address');
         return;
       }
+    }
+
+    // Prevent numeric-only names on the client as an early check
+    if (/^\d+$/.test(clientForm.name.trim())) {
+      showWarning('Client name cannot be only numbers');
+      return;
     }
 
     try {

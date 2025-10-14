@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Clock, 
-  Calendar, 
-  CheckCircle, 
-  XCircle, 
-  AlertTriangle, 
-  Eye, 
-  Filter, 
-  Search, 
-  Download, 
+import {
+  Clock,
+  Calendar,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Eye,
+  Filter,
+  Search,
+  Download,
   RefreshCw,
   FileText,
   ChevronRight,
@@ -24,11 +24,14 @@ import { useAuth } from '../store/contexts/AuthContext';
 import { useRoleManager } from '../hooks/useRoleManager';
 import { TimesheetService } from '../services/TimesheetService';
 import { ProjectService } from '../services/ProjectService';
+import { TeamReviewService } from '../services/TeamReviewService';
 import { showSuccess, showError, showWarning } from '../utils/toast';
+import { ApprovalHistoryPanel } from '../pages/team-review/components/ApprovalHistoryPanel';
 import type {
   TimesheetStatus,
   TimesheetWithDetails
 } from '../types';
+import type { ApprovalHistoryEntry } from '../types/timesheetApprovals';
 
 interface StatusSummary {
   status: TimesheetStatus;

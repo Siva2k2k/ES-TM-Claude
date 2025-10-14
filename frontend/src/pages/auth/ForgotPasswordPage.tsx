@@ -48,7 +48,8 @@ export function ForgotPasswordPage() {
 
       setSuccess(true);
     } catch (err) {
-      setServerError(err instanceof Error ? err.message : 'Failed to send reset email');
+      const message = err instanceof Error ? err.message : String(err);
+      setServerError(message || 'Failed to send reset email');
     }
   };
 

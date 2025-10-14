@@ -33,7 +33,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
   const validatePassword = (password: string) => {
     const requirements = {
-      length: password.length >= 12,
+      length: password.length >= 8,
       uppercase: /[A-Z]/.test(password),
       lowercase: /[a-z]/.test(password),
       number: /\d/.test(password),
@@ -86,7 +86,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
 
     const passwordValidation = validatePassword(formData.newPassword);
     if (passwordValidation.score < 5) {
-      setError('Password must be at least 12 characters and contain uppercase, lowercase, number, and special character');
+      setError('Password must be at least 8 characters and contain uppercase, lowercase, number, and special character');
       setLoading(false);
       return;
     }
@@ -307,7 +307,7 @@ export const SecuritySettings: React.FC<SecuritySettingsProps> = ({
                         <XCircle className="h-3 w-3 text-red-500 mr-2" />
                       )}
                       <span className={met ? 'text-gray-700' : 'text-gray-500'}>
-                        {key === 'length' && '12+ characters'}
+                        {key === 'length' && '8+ characters'}
                         {key === 'uppercase' && 'Uppercase letter'}
                         {key === 'lowercase' && 'Lowercase letter'}
                         {key === 'number' && 'Number'}

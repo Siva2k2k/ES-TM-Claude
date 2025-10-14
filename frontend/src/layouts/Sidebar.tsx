@@ -113,7 +113,7 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
         { id: 'users', label: 'User Management', icon: Users, path: '/dashboard/users' },
         { id: 'projects', label: 'Project Management', icon: Building2, path: '/dashboard/projects' },
         { id: 'clients', label: 'Client Management', icon: UserCheck, path: '/dashboard/clients' },
-        { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team' },
+        { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team-review' },
         { id: 'reports', label: 'Reports & Analytics', icon: TrendingUp, path: '/dashboard/reports' },
         {
           id: 'billing',
@@ -146,7 +146,7 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
             { id: 'timesheet-calendar', label: 'Calendar View', path: '/dashboard/timesheets/calendar' }
           ]
         },
-        { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team' },
+        { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team-review' },
         { id: 'reports', label: 'Reports & Analytics', icon: TrendingUp, path: '/dashboard/reports' }
       );
     }
@@ -165,7 +165,7 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
             { id: 'timesheet-calendar', label: 'Calendar View', path: '/dashboard/timesheets/calendar' }
           ]
         },
-        { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team' },
+        { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team-review' },
         { id: 'timesheet-status', label: 'My Status', icon: Activity, path: '/dashboard/timesheets/status' },
         { id: 'reports', label: 'My Reports', icon: TrendingUp, path: '/dashboard/reports' }
       );

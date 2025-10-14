@@ -161,14 +161,14 @@ const UserSchema: Schema = new Schema({
 });
 
 // Indexes
-UserSchema.index({ email: 1 });
+// Note: email already has unique index via unique: true in schema definition
 UserSchema.index({ role: 1 });
 UserSchema.index({ is_active: 1 });
 UserSchema.index({ manager_id: 1 });
-UserSchema.index({ deleted_at: 1 });
-UserSchema.index({ password_reset_token: 1 });
-UserSchema.index({ password_expires_at: 1 });
-UserSchema.index({ account_locked_until: 1 });
+UserSchema.index({ deleted_at: 1 }, { sparse: true }); // Sparse index for soft delete queries
+UserSchema.index({ password_reset_token: 1 }, { sparse: true }); // Sparse index, rarely used
+UserSchema.index({ password_expires_at: 1 }, { sparse: true }); // Sparse index for expired passwords
+UserSchema.index({ account_locked_until: 1 }, { sparse: true }); // Sparse index for locked accounts
 
 // Virtual for ID as string
 UserSchema.virtual('id').get(function() {

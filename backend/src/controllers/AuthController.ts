@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import User, { UserRole } from '@/models/User';
-import { PasswordUtils } from '@/utils/password';
 import { JWTUtils, TokenPair } from '@/utils/jwt';
 import {
   ValidationError,
@@ -47,13 +46,16 @@ export class AuthController {
     }
 
     // Validate password strength
-    const passwordValidation = PasswordUtils.validatePasswordStrength(password);
+    const passwordValidation = PasswordSecurity.validatePassword(password, {
+      email: email.toLowerCase(),
+      fullName: full_name
+    });
     if (!passwordValidation.isValid) {
       throw new ValidationError(passwordValidation.errors.join(', '));
     }
 
     // Hash password
-    const passwordHash = await PasswordUtils.hashPassword(password);
+    const passwordHash = await PasswordSecurity.hashPassword(password);
 
     // Create user
     const user = new User({
@@ -279,6 +281,32 @@ export class AuthController {
   });
 
   /**
+   * Validate reset token
+   * GET /api/v1/auth/reset-password/validate?token=...
+   */
+  static validateResetToken = handleAsyncError(async (req: Request, res: Response) => {
+    const token = req.query.token as string;
+
+    if (!token) {
+      return res.status(400).json({ success: false, message: 'Token is required' });
+    }
+
+    // Find user with token and ensure not expired
+    const user = await (User.findOne as any)({
+      password_reset_token: token,
+      password_reset_expires: { $gt: new Date() },
+      deleted_at: { $exists: false },
+      is_active: true
+    }).select('+password_reset_token');
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired token' });
+    }
+
+    return res.json({ success: true, message: 'Token is valid' });
+  });
+
+  /**
    * Logout (invalidate tokens - in a real implementation, you'd maintain a blacklist)
    */
   static logout = handleAsyncError(async (req: Request, res: Response) => {
@@ -443,8 +471,8 @@ export const changePasswordValidation = [
     .notEmpty()
     .withMessage('Current password is required'),
   body('newPassword')
-    .isLength({ min: 6, max: 128 })
-    .withMessage('New password must be between 6 and 128 characters')
+    .isLength({ min: 8, max: 128 })
+    .withMessage('New password must be between 8 and 128 characters')
     // Temporarily simplified for testing
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
     .withMessage('New password must contain at least one uppercase letter, one lowercase letter, and one number')
@@ -463,8 +491,8 @@ export const completePasswordResetValidation = [
     .isLength({ min: 64, max: 64 })
     .withMessage('Valid reset token is required'),
   body('newPassword')
-    .isLength({ min: 12, max: 128 })
-    .withMessage('New password must be between 12 and 128 characters')
+    .isLength({ min: 8, max: 128 })
+    .withMessage('New password must be between 8 and 128 characters')
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{}|;:,.<>?])/)
     .withMessage('New password must contain at least one uppercase letter, one lowercase letter, one number, and one special character')
 ];

@@ -33,7 +33,7 @@ export const ChangePasswordModal: React.FC<ChangePasswordModalProps> = ({
 
   const calculatePasswordStrength = (password: string): PasswordStrength => {
     const requirements = [
-      { label: 'At least 12 characters', met: password.length >= 12 },
+      { label: 'At least 8 characters', met: password.length >= 8 },
       { label: 'Contains uppercase letter', met: /[A-Z]/.test(password) },
       { label: 'Contains lowercase letter', met: /[a-z]/.test(password) },
       { label: 'Contains number', met: /\d/.test(password) },

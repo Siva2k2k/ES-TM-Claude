@@ -20,7 +20,7 @@ export interface PasswordRequirements {
 export class PasswordSecurity {
   // Default strong password requirements
   private static defaultRequirements: PasswordRequirements = {
-    minLength: 12,
+    minLength: 8,
     requireUppercase: true,
     requireLowercase: true,
     requireNumbers: true,

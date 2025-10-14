@@ -591,6 +591,30 @@ export class UserController {
       message: 'User credentials set successfully'
     });
   });
+
+  /**
+   * Bulk user actions (Super Admin only)
+   * POST /api/v1/users/bulk-action
+   */
+  static bulkUserAction = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const payload = req.body;
+    const result = await UserService.bulkUserAction(payload, req.user);
+
+    if (!result.success) {
+      return res.status(400).json({ success: false, error: result.error });
+    }
+
+    res.json({ success: true, results: result.results });
+  });
 }
 
 // Validation middleware
@@ -678,6 +702,18 @@ export const getUsersByRolesValidation = [
 export const setUserCredentialsValidation = [
   ...userIdValidation,
   body('password')
-    .isLength({ min: 6 })
-    .withMessage('Password must be at least 6 characters long')
+    .isLength({ min: 8 })
+    .withMessage('Password must be at least 8 characters long')
+];
+
+export const bulkUserActionValidation = [
+  body('user_ids')
+    .isArray({ min: 1 })
+    .withMessage('user_ids must be a non-empty array'),
+  body('user_ids.*')
+    .isMongoId()
+    .withMessage('Each user id must be a valid Mongo ID'),
+  body('action')
+    .isIn(['activate', 'deactivate', 'delete', 'export'])
+    .withMessage('Invalid bulk action')
 ];

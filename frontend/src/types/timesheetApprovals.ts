@@ -271,3 +271,122 @@ export interface TeamReviewFilters {
   week_end?: string;
   search?: string;
 }
+
+// ============================================================================
+// V2 Types: Project-Week Based Approval System
+// ============================================================================
+
+/**
+ * Time entry detail for project-week view
+ */
+export interface TimeEntryDetail {
+  entry_id: string;
+  date: string;
+  task_id?: string;
+  task_name: string;
+  hours: number;
+  description?: string;
+  is_billable: boolean;
+}
+
+/**
+ * User's timesheet data for a specific project-week
+ */
+export interface ProjectWeekUser {
+  user_id: string;
+  user_name: string;
+  user_email: string;
+  user_role: UserRole;
+  project_role: string;
+  timesheet_id: string;
+  timesheet_status: TimesheetStatus;
+  total_hours_for_project: number;
+  entries: TimeEntryDetail[];
+  approval_status: 'pending' | 'approved' | 'rejected';
+}
+
+/**
+ * Project-week group for approval view
+ * Represents one project for one specific week with all users
+ */
+export interface ProjectWeekGroup {
+  project_id: string;
+  project_name: string;
+  project_status: string;
+  week_start: string;
+  week_end: string;
+  week_label: string; // e.g., "Oct 6-12, 2025"
+  manager_id: string;
+  manager_name: string;
+  lead_id?: string;
+  lead_name?: string;
+  approval_status: 'pending' | 'approved' | 'rejected';
+  users: ProjectWeekUser[];
+  total_users: number;
+  total_hours: number;
+  total_entries: number;
+  rejected_reason?: string;
+  rejected_by?: string;
+  rejected_at?: string;
+  approved_by?: string;
+  approved_at?: string;
+}
+
+/**
+ * Filters for project-week view
+ */
+export interface ProjectWeekFilters {
+  project_id?: string | string[];
+  week_start?: string;
+  week_end?: string;
+  status?: 'pending' | 'approved' | 'rejected' | 'all';
+  sort_by?: 'week_date' | 'project_name' | 'pending_count';
+  sort_order?: 'asc' | 'desc';
+  page?: number;
+  limit?: number;
+  search?: string;
+}
+
+/**
+ * Pagination metadata
+ */
+export interface PaginationInfo {
+  total: number;
+  page: number;
+  limit: number;
+  total_pages: number;
+}
+
+/**
+ * Response for project-week groups API
+ */
+export interface ProjectWeekResponse {
+  project_weeks: ProjectWeekGroup[];
+  pagination: PaginationInfo;
+  filters_applied: ProjectWeekFilters;
+}
+
+/**
+ * Request for bulk project-week approval
+ */
+export interface BulkProjectWeekApprovalRequest {
+  project_id: string;
+  week_start: string;
+  week_end: string;
+  action: 'approve' | 'reject';
+  reason?: string;
+}
+
+/**
+ * Response for bulk project-week approval
+ */
+export interface BulkProjectWeekApprovalResponse {
+  success: boolean;
+  message: string;
+  affected_users: number;
+  affected_timesheets: number;
+  project_week: {
+    project_name: string;
+    week_label: string;
+  };
+}

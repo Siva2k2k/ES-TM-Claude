@@ -59,6 +59,28 @@ export function ResetPasswordPage() {
     }
   }, [searchParams]);
 
+  // Validate token with backend on mount (redirect to login if invalid)
+  React.useEffect(() => {
+    if (!token) return;
+
+    const validate = async () => {
+      try {
+        const resp = await fetch(`http://localhost:3001/api/v1/auth/reset-password/validate?token=${encodeURIComponent(token)}`);
+        const json = await resp.json();
+        if (!json.success) {
+          setServerError('This reset link is invalid or has expired. Redirecting to login...');
+          setTimeout(() => navigate('/login'), 2000);
+        }
+      } catch (err) {
+        console.error('Navigating to Login page', err);
+        setServerError('Failed to validate reset token. Redirecting to Login Page.');
+        setTimeout(() => navigate('/login'), 4000);
+      }
+    };
+
+    validate();
+  }, [token, navigate]);
+
   const onSubmit = async (data: ResetPasswordFormData) => {
     if (!token) {
       setServerError('Invalid reset token.');
@@ -88,10 +110,8 @@ export function ResetPasswordPage() {
           navigate('/login');
         }, 3000);
       } else {
-        const errorMessage =
-          typeof result.error === 'string'
-            ? result.error
-            : result.error?.message || result.message || 'Failed to reset password';
+        const raw = result.error ?? result.message ?? 'Failed to reset password';
+        const errorMessage = typeof raw === 'string' ? raw : String(raw?.message ?? JSON.stringify(raw));
         setServerError(errorMessage);
       }
     } catch (err) {

@@ -5,9 +5,12 @@ export { default as Project, ProjectMember, IProject, IProjectMember } from './P
 export { default as Task, ITask } from './Task';
 export { default as Timesheet, ITimesheet } from './Timesheet';
 export { default as TimeEntry, ITimeEntry } from './TimeEntry';
+export { default as BillingAdjustment, IBillingAdjustment } from './BillingAdjustment';
+export { BillingSnapshot, IBillingSnapshot } from './BillingSnapshot';
 
 // Export types
 export type { UserRole } from './User';
 export type { ProjectStatus } from './Project';
 export type { TimesheetStatus } from './Timesheet';
 export type { EntryType } from './TimeEntry';
+export type { AdjustmentScope } from './BillingAdjustment';

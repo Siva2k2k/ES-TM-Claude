@@ -83,7 +83,15 @@ export class UserService {
       }
 
       const user = new User(userDoc);
-      await user.save();
+      try {
+        await user.save();
+      } catch (saveErr: any) {
+        // Handle duplicate email race condition gracefully
+        if (saveErr && (saveErr.code === 11000 || (saveErr.keyValue && saveErr.keyValue.email))) {
+          throw new ConflictError('User with this email already exists');
+        }
+        throw saveErr;
+      }
 
       // Send welcome email with credentials
       try {
@@ -915,9 +923,10 @@ export class UserService {
       if (currentUser.role !== 'super_admin') {
         throw new AuthorizationError('Only super admins can set user credentials');
       }
-
-      if (!password || password.length < 6) {
-        throw new ValidationError('Password must be at least 6 characters long');
+  // Validate against PasswordSecurity rules (minLength = 8)
+      const pwValidation = PasswordSecurity.validatePassword(password);
+      if (!pwValidation.isValid) {
+        throw new ValidationError(`Password validation failed: ${pwValidation.errors.join(', ')}`);
       }
 
       // Hash the password
@@ -943,6 +952,66 @@ export class UserService {
         return { success: false, error: error.message };
       }
       return { success: false, error: 'Failed to set user credentials' };
+    }
+  }
+
+  /**
+   * Bulk user actions (activate, deactivate, delete, export) - Super Admin only
+   */
+  static async bulkUserAction(actionPayload: { user_ids: string[]; action: 'activate' | 'deactivate' | 'delete' | 'export'; reason?: string }, currentUser: AuthUser): Promise<{ success: boolean; results?: any; error?: string }> {
+    try {
+      if (currentUser.role !== 'super_admin') {
+        throw new AuthorizationError('Only super admins can perform bulk user actions');
+      }
+
+      const { user_ids, action, reason } = actionPayload;
+      if (!Array.isArray(user_ids) || user_ids.length === 0) {
+        throw new ValidationError('No user IDs provided');
+      }
+
+      // Basic validation of IDs
+      const invalidIds = user_ids.filter(id => !(id && id.match(/^[a-f\d]{24}$/i)));
+      if (invalidIds.length > 0) {
+        throw new ValidationError(`Invalid user IDs: ${invalidIds.join(', ')}`);
+      }
+
+      const results: any = { processed: 0, skipped: 0, details: [] };
+
+      if (action === 'activate' || action === 'deactivate') {
+        const isActive = action === 'activate';
+        const res = await (User.updateMany as any)(
+          { _id: { $in: user_ids }, deleted_at: { $exists: false } },
+          { is_active: isActive, updated_at: new Date() }
+        );
+        results.processed = res.modifiedCount || res.nModified || 0;
+      } else if (action === 'delete') {
+        // Soft delete each user after dependency check
+        const processedDetails: string[] = [];
+        for (const id of user_ids) {
+          const deps = await this.canDeleteUser(id);
+          if (deps.length > 0) {
+            results.skipped += 1;
+            results.details.push({ id, skipped: true, reason: `Has dependencies: ${deps.join(', ')}` });
+            continue;
+          }
+          await (User.updateOne as any)({ _id: id }, { deleted_at: new Date(), deleted_by: currentUser.id, deleted_reason: reason || 'Bulk delete', updated_at: new Date() });
+          results.processed += 1;
+          results.details.push({ id, skipped: false });
+        }
+      } else if (action === 'export') {
+        // Return basic user data for export
+        const users = await (User.find as any)({ _id: { $in: user_ids }, deleted_at: { $exists: false } }).select('-password_hash -temporary_password -password_reset_token');
+        results.export = users;
+        results.processed = users.length;
+      }
+
+      return { success: true, results };
+    } catch (error) {
+      console.error('Error in bulkUserAction:', error);
+      if (error instanceof AuthorizationError || error instanceof ValidationError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to perform bulk user action' };
     }
   }
 

@@ -18,7 +18,7 @@ export class ClientService {
   /**
    * Create a new client
    */
-  static async createClient(clientData: Partial<Client>): Promise<{ client?: Client; error?: string }> {
+  static async createClient(clientData: Partial<Client>): Promise<{ client?: Client; error?: string; status?: number }> {
     try {
       const payload = {
         name: clientData.name!,
@@ -40,9 +40,12 @@ export class ClientService {
 
       console.log('Client created:', response.data);
       return { client: response.data };
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in createClient:', error);
-      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to create client';
+      if (error instanceof BackendApiError) {
+        return { error: error.message, status: error.status };
+      }
+      const errorMessage = error instanceof Error ? error.message : 'Failed to create client';
       return { error: errorMessage };
     }
   }

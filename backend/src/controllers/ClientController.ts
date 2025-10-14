@@ -1,5 +1,6 @@
 import { Request, Response } from 'express';
 import { ClientService } from '@/services/ClientService';
+import { ValidationError, ConflictError } from '@/utils/errors';
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -20,10 +21,11 @@ export class ClientController {
         res.status(401).json({ success: false, message: 'Authentication required' });
         return;
       }
-    
+
       const result = await ClientService.createClient(req.body, req.user as any);
 
       if (result.error) {
+        // Service may return error message for non-exception validation
         res.status(400).json({ success: false, message: result.error });
         return;
       }
@@ -33,8 +35,16 @@ export class ClientController {
         data: result.client,
         message: 'Client created successfully'
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in createClient:', error);
+      if (error instanceof ValidationError) {
+        res.status(400).json({ success: false, message: error.message });
+        return;
+      }
+      if (error instanceof ConflictError) {
+        res.status(409).json({ success: false, message: error.message });
+        return;
+      }
       res.status(500).json({
         success: false,
         message: 'Internal server error'

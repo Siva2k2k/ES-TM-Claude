@@ -10,11 +10,7 @@ import { emailSchema } from './auth.schema';
 export const userRoles = ['super_admin', 'management', 'manager', 'lead', 'employee'] as const;
 export type UserRole = typeof userRoles[number];
 
-// Phone number schema (optional, basic validation)
-export const phoneSchema = z.string()
-  .regex(/^[\+]?[(]?[0-9]{3}[)]?[-\s\.]?[0-9]{3}[-\s\.]?[0-9]{4,6}$/, 'Invalid phone number format')
-  .optional()
-  .or(z.literal(''));
+// phone and department removed: not needed for backend storage
 
 // Base user schema for creation
 export const createUserSchema = z.object({
@@ -26,11 +22,7 @@ export const createUserSchema = z.object({
   role: z.enum(userRoles, {
     errorMap: () => ({ message: 'Please select a valid role' })
   }),
-  phone: phoneSchema,
-  department: z.string()
-    .max(100, 'Department name too long')
-    .optional()
-    .or(z.literal('')),
+  // phone and department intentionally omitted
   is_active: z.boolean().default(true),
   send_welcome_email: z.boolean().default(true)
 });
@@ -45,11 +37,7 @@ export const updateUserSchema = z.object({
     .optional(),
   email: emailSchema.optional(),
   role: z.enum(userRoles).optional(),
-  phone: phoneSchema,
-  department: z.string()
-    .max(100, 'Department name too long')
-    .optional()
-    .or(z.literal('')),
+  // phone and department intentionally omitted
   is_active: z.boolean().optional()
 });
 
@@ -67,7 +55,6 @@ export const bulkUserActionSchema = z.object({
 export const userFilterSchema = z.object({
   role: z.enum(userRoles).optional(),
   is_active: z.boolean().optional(),
-  department: z.string().optional(),
   search: z.string().max(200).optional(),
   page: z.number().min(1).default(1),
   limit: z.number().min(1).max(100).default(20),
@@ -81,11 +68,7 @@ export const updateProfileSchema = z.object({
     .min(2, 'Name must be at least 2 characters')
     .max(100, 'Name must be less than 100 characters')
     .trim(),
-  phone: phoneSchema,
-  department: z.string()
-    .max(100, 'Department name too long')
-    .optional()
-    .or(z.literal(''))
+  // phone and department intentionally omitted
 });
 
 // Type exports

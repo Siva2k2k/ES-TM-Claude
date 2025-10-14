@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { Lock, Eye, EyeOff, AlertCircle, CheckCircle, Loader2, KeyRound } from 'lucide-react';
 import { changePasswordSchema, type ChangePasswordInput } from '../../schemas/auth.schema';
 import { AuthCard, PasswordStrengthIndicator } from './components';
+import { useAuth } from '../../store/contexts/AuthContext';
 import { Input } from '../../components/ui/Input';
 import { Button } from '../../components/ui/Button';
 
@@ -14,8 +15,8 @@ import { Button } from '../../components/ui/Button';
  */
 
 interface ForcePasswordChangePageProps {
-  userEmail?: string;
-  onComplete?: () => void;
+  readonly userEmail?: string;
+  readonly onComplete?: () => void;
 }
 
 export function ForcePasswordChangePage({
@@ -23,6 +24,7 @@ export function ForcePasswordChangePage({
   onComplete,
 }: ForcePasswordChangePageProps) {
   const navigate = useNavigate();
+  const { setRequirePasswordChange } = useAuth();
   const [success, setSuccess] = React.useState(false);
   const [serverError, setServerError] = React.useState('');
   const [showPasswords, setShowPasswords] = React.useState({
@@ -65,6 +67,9 @@ export function ForcePasswordChangePage({
       if (result.success) {
         setSuccess(true);
 
+        // Clear the requirePasswordChange flag in auth context so App can render routes
+        setRequirePasswordChange(false);
+
         // Call onComplete callback if provided, otherwise navigate to dashboard
         setTimeout(() => {
           if (onComplete) {
@@ -74,29 +79,23 @@ export function ForcePasswordChangePage({
           }
         }, 2000);
       } else {
-        const errorMessage =
-          typeof result.error === 'string'
-            ? result.error
-            : result.error?.message || result.message || 'Failed to change password';
+        const raw = result.error ?? result.message ?? 'Failed to change password';
+        const errorMessage = typeof raw === 'string' ? raw : String(raw?.message ?? JSON.stringify(raw));
         setServerError(errorMessage);
       }
     } catch (err) {
       setServerError(err instanceof Error ? err.message : 'Failed to change password');
     }
   };
+  const title = success ? 'Password Changed Successfully' : 'Change Your Password';
+  let subtitle = '';
+  if (success) subtitle = 'Your password has been updated';
+  else if (userEmail) subtitle = `Welcome ${userEmail}! Please set a new password to continue.`;
+  else subtitle = 'For security reasons, you must change your temporary password.';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
-      <AuthCard
-        title={success ? 'Password Changed Successfully' : 'Change Your Password'}
-        subtitle={
-          success
-            ? 'Your password has been updated'
-            : userEmail
-            ? `Welcome ${userEmail}! Please set a new password to continue.`
-            : 'For security reasons, you must change your temporary password.'
-        }
-      >
+      <AuthCard title={title} subtitle={subtitle}>
         {success ? (
           /* Success State */
           <div className="space-y-6">
@@ -119,7 +118,7 @@ export function ForcePasswordChangePage({
               <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" />
             </div>
           </div>
-        ) : (
+  ) : (
           /* Form State */
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
             {/* Info Banner */}
