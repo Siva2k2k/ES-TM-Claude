@@ -73,8 +73,17 @@ export const ApprovalHistoryModal: React.FC<ApprovalHistoryModalProps> = ({
     
     try {
       const data = await TeamReviewService.getTimesheetWithHistory(timesheetId);
+      // The backend returns top-level keys: timesheet, project_approvals, approval_history
+      const ts = data.timesheet as any || {};
+      // Provide friendly aliases so the UI can read `week_start`/`week_end`
+      const timesheetOut = {
+        ...ts,
+        week_start: ts.week_start_date || ts.week_start,
+        week_end: ts.week_end_date || ts.week_end
+      };
+
       setHistoryData({
-        timesheet: data.timesheet as any,
+        timesheet: timesheetOut,
         project_approvals: data.timesheet?.project_approvals || [],
         approval_history: data.approval_history || []
       });
@@ -488,8 +497,10 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status }) => {
 };
 
 // Utility Functions
-const formatDate = (date: string | Date): string => {
+const formatDate = (date?: string | Date | null): string => {
+  if (!date) return '—';
   const d = typeof date === 'string' ? new Date(date) : date;
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '—';
   return d.toLocaleDateString('en-US', {
     month: 'short',
     day: 'numeric',
@@ -497,8 +508,10 @@ const formatDate = (date: string | Date): string => {
   });
 };
 
-const formatDateTime = (date: Date | string): string => {
+const formatDateTime = (date?: Date | string | null): string => {
+  if (!date) return '—';
   const d = typeof date === 'string' ? new Date(date) : date;
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',

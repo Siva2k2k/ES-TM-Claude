@@ -37,7 +37,7 @@ const ProjectSelector: React.FC = () => {
 };
 
 // Timesheet Management
-import { EmployeeTimesheet } from './components/EmployeeTimesheet';
+import { EmployeeTimesheetPage } from './pages/employee/EmployeeTimesheetPage';
 import TeamReview from './components/TeamReview';
 import TimesheetStatusView from './components/TimesheetStatusView';
 
@@ -134,44 +134,22 @@ const App: React.FC = () => {
             </ProtectedRoute>
           } />
 
-          {/* Timesheet Management */}
-          <Route path="timesheets">
-            <Route index element={
-              <ProtectedRoute>
-                <EmployeeTimesheet viewMode="list" />
-              </ProtectedRoute>
-            } />
-            <Route path="list" element={
-              <ProtectedRoute>
-                <EmployeeTimesheet viewMode="list" />
-              </ProtectedRoute>
-            } />
-            <Route path="create" element={
-              <ProtectedRoute>
-                <EmployeeTimesheet viewMode="create" />
-              </ProtectedRoute>
-            } />
-            <Route path="calendar" element={
-              <ProtectedRoute>
-                <EmployeeTimesheet viewMode="calendar" />
-              </ProtectedRoute>
-            } />
-            <Route path="status" element={
-              <ProtectedRoute>
-                <TimesheetStatusView />
-              </ProtectedRoute>
-            } />
-            <Route path="status/view" element={
-              <ProtectedRoute>
-                <TimesheetStatusView />
-              </ProtectedRoute>
-            } />
-            <Route path="status/reports" element={
-              <ProtectedRoute>
-                <TimesheetStatusView />
-              </ProtectedRoute>
-            } />
-          </Route>
+          {/* Timesheet Management - Restructured */}
+          <Route path="timesheets" element={
+            <ProtectedRoute>
+              <EmployeeTimesheetPage />
+            </ProtectedRoute>
+          } />
+          <Route path="timesheets/status" element={
+            <ProtectedRoute>
+              <TimesheetStatusView />
+            </ProtectedRoute>
+          } />
+          <Route path="timesheets/status/reports" element={
+            <ProtectedRoute>
+              <TimesheetStatusView />
+            </ProtectedRoute>
+          } />
 
           {/* Team Review - Manager/Lead Only */}
           <Route path="team">

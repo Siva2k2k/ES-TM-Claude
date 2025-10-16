@@ -16,6 +16,7 @@
  */
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../store/contexts/AuthContext';
 import { TimesheetApprovalService } from '../../services/TimesheetApprovalService';
 import ProjectService from '../../services/ProjectService';
@@ -37,10 +38,45 @@ import { Calendar, List, Plus } from 'lucide-react';
 
 type ViewMode = 'calendar' | 'list';
 
+// Raw shapes returned by ProjectService/Timesheet APIs (loose, optional fields)
+type RawProject = {
+  id?: string;
+  _id?: string;
+  name?: string;
+  project_name?: string;
+  is_active?: boolean;
+  color?: string;
+};
+
+type RawTask = {
+  id?: string;
+  _id?: string;
+  name?: string;
+  project_id?: string;
+};
+
+type RawEntry = Record<string, unknown>;
+
 export const EmployeeTimesheetPage: React.FC = () => {
   const { currentUser } = useAuth();
   const createModal = useModal();
   const editModal = useModal();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { isOpen: isCreateModalOpen, open: rawOpenCreateModal, close: rawCloseCreateModal } = createModal;
+
+  const openCreateModal = useCallback(() => {
+    rawOpenCreateModal();
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('modal', 'create');
+    setSearchParams(nextParams, { replace: true });
+  }, [rawOpenCreateModal, searchParams, setSearchParams]);
+
+  const closeCreateModal = useCallback(() => {
+    rawCloseCreateModal();
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('modal');
+    setSearchParams(nextParams, { replace: true });
+  }, [rawCloseCreateModal, searchParams, setSearchParams]);
 
   // State
   const [viewMode, setViewMode] = useState<ViewMode>('calendar');
@@ -48,17 +84,13 @@ export const EmployeeTimesheetPage: React.FC = () => {
   const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
   const [selectedTimesheet, setSelectedTimesheet] = useState<Timesheet | null>(null);
   const [editingProjectApprovals, setEditingProjectApprovals] = useState<any[] | null>(null);
-  const [editingEntries, setEditingEntries] = useState<any[] | null>(null);
-  const [projects, setProjects] = useState<Array<{ id: string; name: string; is_active: boolean; color?: string }>>([]);
-  const [tasks, setTasks] = useState<Array<{ id: string; name: string; project_id: string }>>([]);
+  // editingEntries was only used to set values but never read; keep only the selectedTimesheet.entries
+  const [projects, setProjects] = useState<Array<{ id?: string; name?: string; project_name?: string; is_active?: boolean; color?: string }>>([]);
+  const [tasks, setTasks] = useState<Array<{ id?: string; name?: string; project_id?: string }>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Fetch data
-  useEffect(() => {
-    loadData();
-  }, [currentUser?.id]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!currentUser?.id) return;
 
     setIsLoading(true);
@@ -70,15 +102,21 @@ export const EmployeeTimesheetPage: React.FC = () => {
       ]);
 
       setTimesheets(mapTimesheetsToListFormat(timesheetsData));
-      setProjects(projectsData);
-      setTasks(tasksData);
+      // ProjectService.getAllProjects() returns { projects: Project[] }.
+      // ProjectService.getAllTasks() returns { tasks: Task[] }.
+      setProjects(Array.isArray(projectsData) ? projectsData : (projectsData?.projects || []));
+      setTasks(Array.isArray(tasksData) ? tasksData : (tasksData?.tasks || []));
     } catch (error) {
       console.error('Error loading data:', error);
       showError('Failed to load timesheets');
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   // Map timesheet data to list format
   const mapTimesheetsToListFormat = (data: any[]): Timesheet[] => {
@@ -104,14 +142,19 @@ export const EmployeeTimesheetPage: React.FC = () => {
       .flatMap(ts => ts.entries || []);
   }, [timesheets, weekStartDate]);
 
+  // Open the edit modal for a timesheet (used by calendar entry clicks)
+  const handleTimesheetClick = (timesheet: Timesheet) => {
+    handleEdit(timesheet);
+  };
+
   // Handle form success
-  const handleCreateSuccess = async (timesheetId: string) => {
+  const handleCreateSuccess = async () => {
     showSuccess('Timesheet created successfully');
-    createModal.close();
+    closeCreateModal();
     await loadData();
   };
 
-  const handleEditSuccess = async (timesheetId: string) => {
+  const handleEditSuccess = async () => {
     showSuccess('Timesheet updated successfully');
     editModal.close();
     setSelectedTimesheet(null);
@@ -119,49 +162,122 @@ export const EmployeeTimesheetPage: React.FC = () => {
   };
 
   // Handle timesheet actions
-  const handleTimesheetClick = (timesheet: Timesheet) => {
-    setSelectedTimesheet(timesheet);
-    editModal.open();
-  };
-
-  const handleEdit = (timesheet: Timesheet) => {
-    setSelectedTimesheet(timesheet);
-    editModal.open();
-
-    // fetch full timesheet with approval history to determine per-project locks
-    (async () => {
-      try {
-        const detail = await TeamReviewService.getTimesheetWithHistory(timesheet.id);
-        setEditingProjectApprovals(detail.timesheet?.project_approvals || []);
-        setEditingEntries(detail.entries || timesheet.entries || []);
-      } catch (err) {
-        console.error('Failed to load timesheet history for edit', err);
-        setEditingProjectApprovals([]);
-        setEditingEntries(timesheet.entries || []);
-      }
-    })();
-  };
-
-  const handleDelete = async (timesheet: Timesheet) => {
-    if (!confirm('Are you sure you want to delete this timesheet?')) return;
-
+  const handleEdit = async (timesheet: Timesheet) => {
     try {
-      await TimesheetApprovalService.deleteTimesheet(timesheet.id);
-      showSuccess('Timesheet deleted successfully');
-      await loadData();
-    } catch (error) {
-      console.error('Error deleting timesheet:', error);
-      showError('Failed to delete timesheet');
+      const detail = await TeamReviewService.getTimesheetWithHistory(timesheet.id);
+
+      const fetchedWeekStart = (detail.timesheet as any)?.week_start || (detail.timesheet as any)?.week_start_date;
+      const fetchedWeekEnd = (detail.timesheet as any)?.week_end || (detail.timesheet as any)?.week_end_date;
+
+      const rawEntries = detail.entries || timesheet.entries || [];
+        const normalizedEntries = (Array.isArray(rawEntries) ? rawEntries : []).map((e: any) => {
+        // helper to resolve id from various populated shapes
+        const resolveId = (val: any) => {
+          if (!val) return undefined;
+          if (typeof val === 'string') return val;
+          if (val._id) return val._id.toString?.() || String(val._id);
+          if (val.id) return val.id.toString?.() || String(val.id);
+          return undefined;
+        };
+
+        let projId = resolveId(e.project_id) || resolveId(e.project) || undefined;
+        // fallback: match by project name if provided and we have projects loaded
+        if (!projId && (e.project_id?.name || e.project?.name) && Array.isArray(projects)) {
+          const name = e.project_id?.name || e.project?.name;
+          const found = projects.find((p: any) => (p.name === name || p.project_name === name));
+          projId = found ? (found.id || (found as any)._id?.toString?.()) : projId;
+        }
+
+        let tId = resolveId(e.task_id) || resolveId(e.task) || undefined;
+        // fallback: match task by name within loaded tasks
+        if (!tId && (e.task_id?.name || e.task?.name) && Array.isArray(tasks)) {
+          const tname = e.task_id?.name || e.task?.name;
+          const foundT = tasks.find((t: any) => (t.name === tname));
+          tId = foundT ? (foundT.id || (foundT as any)._id?.toString?.()) : tId;
+        }
+
+        return {
+          id: e.id || e._id || undefined,
+          timesheet_id: e.timesheet_id?.toString?.() || e.timesheet_id || timesheet.id,
+          project_id: projId,
+          task_id: tId,
+          date: (e.date || '').split?.('T')?.[0] || e.date || '',
+          hours: Number(e.hours) || 0,
+          description: e.description || e.note || '',
+          is_billable: typeof e.is_billable === 'boolean' ? e.is_billable : !!e.is_billable,
+          entry_type: e.entry_type || 'project_task',
+          created_at: e.created_at,
+          updated_at: e.updated_at
+        };
+      });
+
+      const merged: Timesheet = {
+        ...timesheet,
+        week_start_date: fetchedWeekStart || timesheet.week_start_date,
+        week_end_date: fetchedWeekEnd || timesheet.week_end_date,
+        entries: normalizedEntries,
+        project_approvals: (detail.timesheet as any)?.project_approvals || []
+      } as Timesheet;
+
+  // Set the selected timesheet and editing context, then open modal
+      setSelectedTimesheet(merged);
+  setEditingProjectApprovals((detail.timesheet as any)?.project_approvals || []);
+      editModal.open();
+    } catch (err) {
+      console.error('Failed to load timesheet history for edit', err);
+      // Fallback: open modal with basic timesheet entries
+      setSelectedTimesheet(timesheet);
+      setEditingProjectApprovals([]);
+      editModal.open();
     }
+  };
+
+
+  const handleDelete = async () => {
+    // Deleting timesheets is not implemented in the API/service layer currently.
+    showError('Deleting timesheets is not supported.');
+    return;
   };
 
   const handleWeekChange = (newWeekStart: string) => {
     setWeekStartDate(newWeekStart);
   };
 
+  // Sync selected tab with query parameter for deep linking
+  useEffect(() => {
+    const requestedView = searchParams.get('view');
+    if (requestedView === 'list' && viewMode !== 'list') {
+      setViewMode('list');
+    } else if (requestedView !== 'list' && viewMode !== 'calendar') {
+      setViewMode('calendar');
+    }
+  }, [searchParams, viewMode]);
+
+  useEffect(() => {
+    const modalParam = searchParams.get('modal');
+    if (modalParam === 'create' && !isCreateModalOpen) {
+      rawOpenCreateModal();
+    } else if (modalParam !== 'create' && isCreateModalOpen) {
+      rawCloseCreateModal();
+    }
+  }, [searchParams, isCreateModalOpen, rawOpenCreateModal, rawCloseCreateModal]);
+
+  const handleViewModeChange = (value: string) => {
+    const nextView: ViewMode = value === 'list' ? 'list' : 'calendar';
+    setViewMode(nextView);
+
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextView === 'calendar') {
+      nextParams.delete('view');
+    } else {
+      nextParams.set('view', nextView);
+    }
+    setSearchParams(nextParams, { replace: true });
+  };
+
   // Loading state
   if (isLoading) {
-    return <LoadingSpinner fullscreen text="Loading timesheets..." />;
+    return <LoadingSpinner fullScreen text="Loading timesheets..." />;
   }
 
   return (
@@ -170,20 +286,23 @@ export const EmployeeTimesheetPage: React.FC = () => {
       <PageHeader
         title="My Timesheets"
         description="Track your time and manage your weekly timesheets"
-        action={
-          <Button icon={Plus} onClick={createModal.open}>
+        actions={
+          <Button onClick={openCreateModal}>
+            <Plus className="-ml-1 mr-2 h-4 w-4" />
             New Timesheet
           </Button>
         }
       />
 
       {/* View Tabs */}
-      <Tabs value={viewMode} onValueChange={(value) => setViewMode(value as ViewMode)}>
+      <Tabs value={viewMode} onValueChange={handleViewModeChange}>
         <TabsList>
-          <TabsTrigger value="calendar" icon={Calendar}>
+          <TabsTrigger value="calendar">
+            <Calendar className="-ml-1 mr-2 h-4 w-4" />
             Calendar View
           </TabsTrigger>
-          <TabsTrigger value="list" icon={List}>
+          <TabsTrigger value="list">
+            <List className="-ml-1 mr-2 h-4 w-4" />
             List View
           </TabsTrigger>
         </TabsList>
@@ -193,18 +312,18 @@ export const EmployeeTimesheetPage: React.FC = () => {
           <TimesheetCalendar
             weekStartDate={weekStartDate}
             entries={getCalendarEntries()}
-            projects={projects}
+            projects={projects.map(p => ({ id: String((p as any).id || (p as any)._id || ''), name: p.name || p.project_name || '', color: p.color, is_active: !!p.is_active }))}
             onWeekChange={handleWeekChange}
             onEntryClick={(entry) => {
               // Find and open the timesheet containing this entry
               const timesheet = timesheets.find(ts =>
-                ts.entries?.some(e => e.id === entry.id)
+                ts.entries?.some((e: { id?: string; _id?: string }) => ((e.id || e._id || '') === ((entry as { id?: string; _id?: string }).id || (entry as { id?: string; _id?: string })._id || '')))
               );
               if (timesheet) handleTimesheetClick(timesheet);
             }}
-            onDayClick={(date) => {
+            onDayClick={() => {
               // Could open create modal with pre-selected date
-              createModal.open();
+              openCreateModal();
             }}
           />
         </TabsContent>
@@ -227,17 +346,17 @@ export const EmployeeTimesheetPage: React.FC = () => {
 
       {/* Create Timesheet Modal */}
       <Modal
-        isOpen={createModal.isOpen}
-        onClose={createModal.close}
+        isOpen={isCreateModalOpen}
+        onClose={closeCreateModal}
         title="Create New Timesheet"
         size="xl"
       >
         <TimesheetForm
           initialWeekStartDate={weekStartDate}
-          projects={projects}
-          tasks={tasks}
+          projects={projects.map(p => ({ id: String((p as any).id || (p as any)._id || ''), name: p.name || p.project_name || '', is_active: !!p.is_active, color: p.color }))}
+          tasks={tasks.map(t => ({ id: String((t as any).id || (t as any)._id || ''), name: t.name || '', project_id: String(t.project_id || '') }))}
           onSuccess={handleCreateSuccess}
-          onCancel={createModal.close}
+          onCancel={closeCreateModal}
         />
       </Modal>
 
@@ -254,8 +373,8 @@ export const EmployeeTimesheetPage: React.FC = () => {
               week_start_date: selectedTimesheet.week_start_date,
               entries: selectedTimesheet.entries || []
             }}
-            projects={projects}
-            tasks={tasks}
+            projects={projects.map(p => ({ id: String((p as any).id || (p as any)._id || ''), name: p.name || p.project_name || '', is_active: !!p.is_active }))}
+            tasks={tasks.map(t => ({ id: String((t as any).id || (t as any)._id || ''), name: t.name || '', project_id: String(t.project_id || '') }))}
             projectApprovals={editingProjectApprovals || []}
             onSuccess={handleEditSuccess}
             onCancel={editModal.close}

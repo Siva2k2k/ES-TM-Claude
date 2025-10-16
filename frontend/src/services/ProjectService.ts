@@ -879,6 +879,45 @@ export class ProjectService {
     }
   }
 
+  /**
+   * Get all tasks across all projects
+   * Convenience wrapper used by UI pages that need a flat task list
+   */
+  static async getAllTasks(): Promise<{ tasks: Task[]; error?: string }> {
+    try {
+      // Fetch all projects first
+      const projectsResult = await this.getAllProjects();
+      if (projectsResult.error) {
+        return { tasks: [], error: projectsResult.error };
+      }
+
+      const allTasks: Task[] = [];
+      const projects = projectsResult.projects || [];
+
+      for (const project of projects) {
+        const projRecord = project as unknown as Record<string, unknown>;
+  const projId = (projRecord['id'] as string) || (projRecord['_id'] as string) || undefined;
+        if (!projId) continue;
+
+        try {
+          const tasksResult = await this.getProjectTasks(projId);
+          if (!tasksResult.error && Array.isArray(tasksResult.tasks)) {
+            allTasks.push(...tasksResult.tasks);
+          }
+        } catch (err) {
+          // ignore per-project task fetch failures, continue with others
+          console.warn(`ProjectService.getAllTasks: failed to fetch tasks for project ${projId}`, err);
+        }
+      }
+
+      return { tasks: allTasks };
+    } catch (error) {
+      console.error('Error in getAllTasks:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch tasks';
+      return { tasks: [], error: errorMessage };
+    }
+  }
+
   static async getLeadTasks(userId: string): Promise<{ tasks: Task[]; error?: string }> {
     try {
       // For now, delegate to getUserTasks since the backend API structure may need adjustment

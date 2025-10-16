@@ -12,9 +12,18 @@ import { TimesheetApprovalService } from '../services/TimesheetApprovalService';
 import { useAuth } from '../store/contexts/AuthContext';
 import { useToast } from './useToast';
 
+type TimesheetSubmitStatus = 'saved' | 'submitted';
+
+export interface TimesheetSubmitResult {
+  id: string;
+  status: TimesheetSubmitStatus;
+}
+
 export interface UseTimesheetFormOptions {
   defaultValues?: Partial<TimesheetFormData>;
-  onSuccess?: (timesheet: any) => void;
+  mode?: 'create' | 'edit';
+  timesheetId?: string;
+  onSuccess?: (result: TimesheetSubmitResult) => void;
   onError?: (error: Error) => void;
 }
 
@@ -54,6 +63,7 @@ export function useTimesheetForm(
 ): UseTimesheetFormReturn {
   const { currentUser } = useAuth();
   const toast = useToast();
+  const mode = options.mode ?? 'create';
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [validationWarnings, setValidationWarnings] = useState<string[]>([]);
 
@@ -120,6 +130,11 @@ export function useTimesheetForm(
         return;
       }
 
+      if (mode === 'edit' && !options.timesheetId) {
+        toast.error('No timesheet selected for editing');
+        return;
+      }
+
       setIsSubmitting(true);
       setValidationWarnings([]);
 
@@ -127,57 +142,99 @@ export function useTimesheetForm(
         // Get form values
         const values = form.getValues();
 
-        // For drafts, skip validation
-        if (status === 'draft') {
-          const result = await TimesheetApprovalService.createTimesheet(
-            currentUser.id,
-            {
-              week_start_date: values.week_start_date,
-              entries: values.entries as any,
-            },
-            'draft'
+        if (status === 'submitted') {
+          const isValid = await form.trigger();
+
+          if (!isValid) {
+            const errors = form.formState.errors;
+            const errorMessages = Object.values(errors)
+              .map((error) => error?.message)
+              .filter(Boolean) as string[];
+
+            setValidationWarnings(errorMessages);
+            toast.error('Please fix validation errors');
+            return;
+          }
+        }
+
+        // Handle edit flow
+        if (mode === 'edit' && options.timesheetId) {
+          const updated = await TimesheetApprovalService.updateTimesheetEntries(
+            options.timesheetId,
+            values.entries as any
           );
 
-          if (result.error) {
-            throw new Error(result.error);
+          if (!updated) {
+            throw new Error('Failed to update timesheet entries');
           }
 
-          toast.success('Timesheet saved as draft');
-          options.onSuccess?.(result.timesheet);
+          if (status === 'submitted') {
+            const submitted = await TimesheetApprovalService.submitTimesheet(
+              options.timesheetId,
+              currentUser.id
+            );
+
+            if (!submitted) {
+              throw new Error('Failed to submit timesheet for approval');
+            }
+
+            toast.success('Timesheet submitted for approval');
+          } else {
+            toast.success('Timesheet updated successfully');
+          }
+
+          options.onSuccess?.({
+            id: options.timesheetId,
+            status: status === 'submitted' ? 'submitted' : 'saved',
+          });
           return;
         }
 
-        // For submission, validate the form
-        const isValid = await form.trigger();
-
-        if (!isValid) {
-          const errors = form.formState.errors;
-          const errorMessages = Object.values(errors)
-            .map((error) => error.message)
-            .filter(Boolean);
-
-          setValidationWarnings(errorMessages as string[]);
-          toast.error('Please fix validation errors');
-          return;
-        }
-
-        // Submit timesheet
-        const result = await TimesheetApprovalService.createTimesheet(
+        // Create new timesheet
+        const created = await TimesheetApprovalService.createTimesheet(
           currentUser.id,
-          {
-            week_start_date: values.week_start_date,
-            entries: values.entries as any,
-          },
-          'submitted'
+          values.week_start_date
         );
 
-        if (result.error) {
-          throw new Error(result.error);
+        if (!created) {
+          throw new Error('Timesheet already exists for this week or could not be created');
         }
 
-        toast.success('Timesheet submitted successfully');
-        options.onSuccess?.(result.timesheet);
-        form.reset();
+        const entriesToPersist = (values.entries || []) as any[];
+        if (entriesToPersist.length > 0) {
+          const addedEntries = await TimesheetApprovalService.addMultipleEntries(
+            created.id,
+            entriesToPersist
+          );
+
+          if (!addedEntries) {
+            throw new Error('Failed to save timesheet entries');
+          }
+        }
+
+        if (status === 'submitted') {
+          const submitted = await TimesheetApprovalService.submitTimesheet(
+            created.id,
+            currentUser.id
+          );
+
+          if (!submitted) {
+            throw new Error('Failed to submit timesheet for approval');
+          }
+
+          toast.success('Timesheet submitted successfully');
+        } else {
+          toast.success('Timesheet saved as draft');
+        }
+
+        options.onSuccess?.({
+          id: created.id,
+          status: status === 'submitted' ? 'submitted' : 'saved',
+        });
+        form.reset({
+          week_start_date: values.week_start_date,
+          entries: [],
+        });
       } catch (error) {
         const errorMessage =
           error instanceof Error ? error.message : 'Failed to submit timesheet';

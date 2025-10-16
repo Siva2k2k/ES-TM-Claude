@@ -14,10 +14,10 @@
  * Cognitive Complexity: 8 (Target: <15)
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Controller, type Control } from 'react-hook-form';
 import { Calendar, Plus, AlertTriangle, Save, Send, Lock } from 'lucide-react';
-import { useTimesheetForm } from '../../hooks/useTimesheetForm';
+import { useTimesheetForm, type TimesheetSubmitResult } from '../../hooks/useTimesheetForm';
 import { Button } from '../ui/Button';
 import { Input } from '../ui/Input';
 import { Select, type SelectOption } from '../ui/Select';
@@ -61,6 +61,10 @@ export interface TimesheetFormProps {
     week_start_date: string;
     entries: TimeEntry[];
   };
+  /** Current mode for the form */
+  mode?: 'create' | 'edit';
+  /** Timesheet identifier used in edit mode */
+  timesheetId?: string;
   /** Available projects for selection */
   projects?: Array<{ id: string; name: string; is_active: boolean }>;
   /** Available tasks for selection */
@@ -68,7 +72,7 @@ export interface TimesheetFormProps {
   /** Optional project approvals (used to lock entries per-project) */
   projectApprovals?: ProjectApproval[];
   /** Callback when form is successfully submitted */
-  onSuccess?: (timesheetId: string) => void;
+  onSuccess?: (result: TimesheetSubmitResult) => void;
   /** Callback when form is cancelled */
   onCancel?: () => void;
 }
@@ -78,6 +82,8 @@ const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 export const TimesheetForm: React.FC<TimesheetFormProps> = ({
   initialWeekStartDate,
   initialData,
+  mode = 'create',
+  timesheetId,
   projects = [],
   tasks = [],
   projectApprovals = [],
@@ -101,8 +107,40 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
       week_start_date: initialWeekStartDate || getCurrentWeekMonday(),
       entries: []
     },
+    mode,
+    timesheetId,
     onSuccess
   });
+
+  // If the parent passes `initialData` after mount (edit flow), reset the form
+  useEffect(() => {
+    if (initialData) {
+      try {
+        // Debug log to diagnose empty edit form issues
+        // eslint-disable-next-line no-console
+        console.debug('TimesheetForm: resetting form with initialData', {
+          week_start_date: initialData.week_start_date,
+          entriesCount: Array.isArray(initialData.entries) ? initialData.entries.length : 0
+        });
+
+        form.reset({
+          week_start_date: initialData.week_start_date || initialWeekStartDate || getCurrentWeekMonday(),
+          entries: Array.isArray(initialData.entries) ? initialData.entries : []
+        });
+
+        const firstProjectEntry = Array.isArray(initialData.entries)
+          ? initialData.entries.find(entry => !!entry.project_id)
+          : undefined;
+        setSelectedProject(firstProjectEntry?.project_id ?? '');
+      } catch (err) {
+        // non-fatal: avoid breaking the form if reset fails
+        // eslint-disable-next-line no-console
+        console.error('Failed to reset TimesheetForm with initialData', err);
+      }
+    } else if (mode === 'create') {
+      setSelectedProject('');
+    }
+  }, [initialData, initialWeekStartDate, form, mode]);
   // Build quick lookup map for project approvals
   const projectApprovalMap = useMemo<Record<string, ProjectApproval>>(() => {
     const map: Record<string, ProjectApproval> = {};
@@ -116,20 +154,21 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
   const entries = watch('entries') || [];
   const weekStartDate = watch('week_start_date');
 
-  // Filter active projects
-  const activeProjects: SelectOption[] = useMemo(() =>
-    projects
-      .filter(p => p.is_active)
-      .map(p => ({ value: p.id, label: p.name })),
-    [projects]
-  );
+  // Filter active projects (defensive: ensure projects is an array)
+  const activeProjects: SelectOption[] = useMemo(() => {
+    const list = Array.isArray(projects) ? projects : [];
+    return list
+      .filter(p => p && (p as any).is_active)
+      .map(p => ({ value: (p as any).id, label: (p as any).name }));
+  }, [projects]);
 
   // Filter tasks by selected project
   const availableTasks: SelectOption[] = useMemo(() => {
     if (!selectedProject) return [];
-    return tasks
-      .filter(t => t.project_id === selectedProject)
-      .map(t => ({ value: t.id, label: t.name }));
+    const list = Array.isArray(tasks) ? tasks : [];
+    return list
+      .filter(t => t && (t as any).project_id === selectedProject)
+      .map(t => ({ value: (t as any).id, label: (t as any).name }));
   }, [selectedProject, tasks]);
 
   // Get week dates for display
@@ -285,6 +324,7 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
               type="date"
               label="Week Starting"
               icon={Calendar}
+              disabled={mode === 'edit'}
               error={errors.week_start_date?.message}
             />
           )}

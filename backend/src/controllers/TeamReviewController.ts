@@ -220,7 +220,8 @@ export class TeamReviewController {
       }
 
       const timesheet = await Timesheet.findById(timesheetId)
-        .populate('user_id', 'name email role')
+        // User model stores display name in `full_name`
+        .populate('user_id', 'full_name email role')
         .lean() as any;
 
       if (!timesheet) {
@@ -241,29 +242,48 @@ export class TeamReviewController {
         timesheet_id: new mongoose.Types.ObjectId(timesheetId)
       })
         .populate('project_id', 'name')
-        .populate('lead_id', 'name')
-        .populate('manager_id', 'name')
+        // user model stores full name in `full_name`
+        .populate('lead_id', 'full_name')
+        .populate('manager_id', 'full_name')
         .lean() as any[];
+
+      // Debug: log first approval names to help diagnose missing manager/project names in UI
+      try {
+        if (projectApprovals && projectApprovals.length > 0) {
+          const sample = projectApprovals[0];
+          logger.debug('Sample projectApproval:', {
+            project_id: sample.project_id?.toString() || sample.project_id,
+            project_name: sample.project_id?.name,
+            manager_id: sample.manager_id?._id?.toString() || sample.manager_id,
+            manager_name: sample.manager_id?.full_name || sample.manager_id?.name
+          });
+        } else {
+          logger.debug('No project approvals found for timesheet', timesheetId);
+        }
+      } catch (logErr) {
+        // Don't fail the request due to logging
+        logger.debug('Error logging projectApprovals sample', logErr);
+      }
 
       const history = await (ApprovalHistory as any).find({
         timesheet_id: new mongoose.Types.ObjectId(timesheetId)
       })
         .populate('project_id', 'name')
-        .populate('approver_id', 'name email role')
+        .populate('approver_id', 'full_name email role')
         .sort({ created_at: -1 })
         .lean() as any[];
 
       // Map projectApprovals to the frontend-friendly shape
       const mappedProjectApprovals = projectApprovals.map(pa => ({
-        project_id: pa.project_id?.id || pa.project_id?._id?.toString(),
+        project_id: pa.project_id?._id?.toString() || pa.project_id?.toString(),
         project_name: pa.project_id?.name || '',
-        lead_id: pa.lead_id?.id || pa.lead_id?._id?.toString(),
-        lead_name: pa.lead_id?.name || undefined,
+        lead_id: pa.lead_id?._id?.toString() || pa.lead_id?.toString(),
+        lead_name: pa.lead_id?.full_name || pa.lead_id?.name || undefined,
         lead_status: pa.lead_status,
         lead_approved_at: pa.lead_approved_at,
         lead_rejection_reason: pa.lead_rejection_reason,
-        manager_id: pa.manager_id?.id || pa.manager_id?._id?.toString(),
-        manager_name: pa.manager_id?.name || undefined,
+        manager_id: pa.manager_id?._id?.toString() || pa.manager_id?.toString(),
+        manager_name: pa.manager_id?.full_name || pa.manager_id?.name || undefined,
         manager_status: pa.manager_status,
         manager_approved_at: pa.manager_approved_at,
         manager_rejection_reason: pa.manager_rejection_reason,
@@ -271,11 +291,27 @@ export class TeamReviewController {
         total_hours: pa.total_hours
       }));
 
+      // Map approval history into simple objects expected by frontend
+      const mappedHistory = history.map(h => ({
+        id: h._id?.toString(),
+        timesheet_id: h.timesheet_id?.toString(),
+        project_id: h.project_id?._id?.toString() || h.project_id?.toString(),
+        project_name: h.project_id?.name || '',
+        approver_id: h.approver_id?._id?.toString() || h.approver_id?.toString(),
+        approver_name: h.approver_id?.full_name || h.approver_id?.name || undefined,
+        approver_role: h.approver_role,
+        action: h.action,
+        status_before: h.status_before,
+        status_after: h.status_after,
+        reason: h.reason,
+        created_at: h.created_at
+      }));
+
       res.status(200).json({
         timesheet,
         entries,
         project_approvals: mappedProjectApprovals,
-        approval_history: history
+        approval_history: mappedHistory
       });
     } catch (error) {
       logger.error('Error fetching timesheet history:', error);

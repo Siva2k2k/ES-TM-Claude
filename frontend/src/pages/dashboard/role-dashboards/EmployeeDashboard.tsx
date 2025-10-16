@@ -57,7 +57,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
       title: 'Submit Timesheet',
       description: 'Submit weekly hours',
       icon: Clock,
-      onClick: () => navigate('/dashboard/timesheets/create'),
+      onClick: () => navigate('/dashboard/timesheets?modal=create'),
       color: 'blue' as const,
     },
     {
@@ -188,7 +188,7 @@ export const EmployeeDashboard: React.FC<EmployeeDashboardProps> = ({ data }) =>
             <div className="text-sm text-gray-600 dark:text-gray-400 mb-1">Action</div>
             {data.timesheet_status.can_submit ? (
               <button
-                onClick={() => navigate('/dashboard/timesheets/create')}
+                onClick={() => navigate('/dashboard/timesheets?modal=create')}
                 className="text-blue-600 dark:text-blue-400 font-medium hover:underline"
               >
                 Submit

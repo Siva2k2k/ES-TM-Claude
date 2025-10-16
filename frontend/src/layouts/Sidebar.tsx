@@ -133,8 +133,8 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
         { id: 'clients', label: 'Client Management', icon: UserCheck, path: '/dashboard/clients' },
         { id: 'timesheet', label: 'My Timesheet', icon: Clock, path: '/dashboard/timesheets',
           subItems: [
-            { id: 'timesheet-list', label: 'List View', path: '/dashboard/timesheets/list' },
-            { id: 'timesheet-calendar', label: 'Calendar View', path: '/dashboard/timesheets/calendar' }
+            { id: 'timesheet-list', label: 'List View', path: '/dashboard/timesheets?view=list' },
+            { id: 'timesheet-calendar', label: 'Calendar View', path: '/dashboard/timesheets?view=calendar' }
           ]
         },
         { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team-review' },
@@ -148,8 +148,8 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
         { id: 'projects', label: 'My Projects', icon: Building2, path: '/dashboard/projects' },
         { id: 'timesheet', label: 'My Timesheet', icon: Clock, path: '/dashboard/timesheets',
           subItems: [
-            { id: 'timesheet-list', label: 'List View', path: '/dashboard/timesheets/list' },
-            { id: 'timesheet-calendar', label: 'Calendar View', path: '/dashboard/timesheets/calendar' }
+            { id: 'timesheet-list', label: 'List View', path: '/dashboard/timesheets?view=list' },
+            { id: 'timesheet-calendar', label: 'Calendar View', path: '/dashboard/timesheets?view=calendar' }
           ]
         },
         { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team-review' },
@@ -164,8 +164,8 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
         { id: 'projects', label: 'My Projects', icon: Building2, path: '/dashboard/projects' },
         { id: 'timesheet', label: 'My Timesheet', icon: Clock, path: '/dashboard/timesheets',
           subItems: [
-            { id: 'timesheet-list', label: 'List View', path: '/dashboard/timesheets/list' },
-            { id: 'timesheet-calendar', label: 'Calendar View', path: '/dashboard/timesheets/calendar' }
+            { id: 'timesheet-list', label: 'List View', path: '/dashboard/timesheets?view=list' },
+            { id: 'timesheet-calendar', label: 'Calendar View', path: '/dashboard/timesheets?view=calendar' }
           ]
         },
         { id: 'timesheet-status', label: 'My Status', icon: Activity, path: '/dashboard/timesheets/status' },

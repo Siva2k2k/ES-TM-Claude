@@ -40,6 +40,18 @@ router.get('/user', [
 ], TimesheetController.getUserTimesheets);
 
 /**
+ * @route GET /api/v1/timesheets/:timesheetId/history
+ * @desc Get timesheet with full approval history
+ * @access Private
+ */
+router.get('/:timesheetId/history', [
+  param('timesheetId').isMongoId().withMessage('Invalid timesheet ID'),
+  validate
+], TeamReviewController.getTimesheetHistory);
+
+
+
+/**
  * @route POST /api/v1/timesheets
  * @desc Create new timesheet
  * @access Private
@@ -358,14 +370,6 @@ router.post('/bulk/bill', [
   validate
 ], TeamReviewController.bulkBill);
 
-/**
- * @route GET /api/v1/timesheets/:timesheetId/history
- * @desc Get timesheet with full approval history
- * @access Private
- */
-router.get('/:timesheetId/history', [
-  param('timesheetId').isMongoId().withMessage('Invalid timesheet ID'),
-  validate
-], TeamReviewController.getTimesheetHistory);
+ 
 
 export default router;
