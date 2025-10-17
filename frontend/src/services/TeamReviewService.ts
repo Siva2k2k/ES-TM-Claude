@@ -361,6 +361,47 @@ export class TeamReviewService {
       return handleApiError(error, 'Failed to reject project-week');
     }
   }
+
+  /**
+   * Bulk freeze all timesheets for a project-week (Management only)
+   * Freezes ALL manager_approved timesheets, skips users without timesheets
+   * Validation: Cannot freeze if ANY timesheet is still in submitted/pending state
+   */
+  static async freezeProjectWeek(
+    projectId: string,
+    weekStart: string,
+    weekEnd: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    frozen_count: number;
+    skipped_count: number;
+    failed: Array<{ user_id: string; user_name: string; reason: string }>;
+  }> {
+    try {
+      const response = await axios.post<{
+        success: boolean;
+        message: string;
+        frozen_count: number;
+        skipped_count: number;
+        failed: Array<{ user_id: string; user_name: string; reason: string }>;
+      }>(
+        `${API_BASE_URL}/timesheets/project-week/freeze`,
+        {
+          project_id: projectId,
+          week_start: weekStart,
+          week_end: weekEnd
+        },
+        {
+          headers: getAuthHeaders()
+        }
+      );
+
+      return response.data;
+    } catch (error) {
+      return handleApiError(error, 'Failed to freeze project-week');
+    }
+  }
 }
 
 export default TeamReviewService;

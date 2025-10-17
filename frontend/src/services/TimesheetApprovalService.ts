@@ -59,12 +59,25 @@ export class TimesheetApprovalService {
           permissions.canApprove = true;
           permissions.canReject = true;
           permissions.nextAction = 'Awaiting manager approval';
+        } else if (userRole === 'lead') {
+          permissions.canApprove = true;
+          permissions.canReject = true;
+          permissions.nextAction = 'Lead review in progress';
         }
         break;
 
       case 'manager_approved':
-        // Automatically transitions to management_pending
-        permissions.nextAction = 'Automatically forwarded to management';
+        if (userRole === 'manager') {
+          permissions.canApprove = true;
+          permissions.canReject = true;
+          permissions.nextAction = 'Finalize timesheet or return for fixes';
+        } else if (userRole === 'management') {
+          permissions.canApprove = true;
+          permissions.canReject = true;
+          permissions.nextAction = 'Awaiting final approval';
+        } else {
+          permissions.nextAction = 'Awaiting manager finalization';
+        }
         break;
 
       case 'management_pending':
@@ -256,9 +269,24 @@ export class TimesheetApprovalService {
           const billableHours = timesheet.billableHours || 0;
           const nonBillableHours = timesheet.nonBillableHours || ((timesheet.total_hours || 0) - billableHours);
 
-          const canApproveForManager = approverRole === 'manager' && timesheet.status === 'submitted';
-          const canApproveForManagement = approverRole === 'management' && (timesheet.status === 'management_pending' || timesheet.status === 'manager_approved');
-          const canReject = (approverRole === 'manager' && timesheet.status === 'submitted') || (approverRole === 'management' && (timesheet.status === 'management_pending' || timesheet.status === 'manager_approved'));
+          const ownerRole: UserRole | undefined = timesheet.user?.role || timesheet.owner_role;
+          const canApproveForLead =
+            approverRole === 'lead' &&
+            ownerRole === 'employee' &&
+            timesheet.status === 'submitted';
+
+          const canApproveForManager =
+            approverRole === 'manager' &&
+            (timesheet.status === 'submitted' || timesheet.status === 'manager_approved');
+
+          const canApproveForManagement =
+            approverRole === 'management' &&
+            (timesheet.status === 'management_pending' || timesheet.status === 'manager_approved');
+
+          const canReject =
+            (approverRole === 'lead' && ownerRole === 'employee' && timesheet.status === 'submitted') ||
+            (approverRole === 'manager' && (timesheet.status === 'submitted' || timesheet.status === 'manager_approved')) ||
+            (approverRole === 'management' && (timesheet.status === 'management_pending' || timesheet.status === 'manager_approved'));
 
           return {
             ...timesheet,
@@ -267,7 +295,7 @@ export class TimesheetApprovalService {
             nonBillableHours,
             can_edit: false,
             can_submit: false,
-            can_approve: canApproveForManager || canApproveForManagement,
+            can_approve: canApproveForLead || canApproveForManager || canApproveForManagement,
             can_reject: canReject,
             can_verify: approverRole === 'management' && timesheet.status === 'management_pending',
             next_action: this.getNextActionForRole(timesheet.status, approverRole)
@@ -290,13 +318,22 @@ export class TimesheetApprovalService {
    */
   private static getNextActionForRole(status: TimesheetStatus, role: UserRole): string {
     if (role === 'lead') {
-      return 'View only - no approval authority';
+      switch (status) {
+        case 'submitted':
+          return 'Review employee timesheet entries';
+        case 'manager_approved':
+          return 'Awaiting manager finalization';
+        default:
+          return 'No action required';
+      }
     }
     
     if (role === 'manager') {
       switch (status) {
         case 'submitted':
           return 'Ready for your approval';
+        case 'manager_approved':
+          return 'Finalize or return to employee';
         case 'manager_rejected':
           return 'Previously rejected - awaiting resubmission';
         default:
@@ -567,13 +604,25 @@ export class TimesheetApprovalService {
     timesheetId: string, 
     _managerId: string, 
     action: 'approve' | 'reject', 
-    reason?: string
+    options: {
+      reason?: string;
+      approverRole?: 'lead' | 'manager';
+      finalize?: boolean;
+      notify?: boolean;
+    } = {}
   ): Promise<boolean> {
     try {
+      const payload = {
+        notify: true,
+        finalize: false,
+        approverRole: 'manager' as 'lead' | 'manager',
+        ...options
+      };
+
       const result = await TimesheetService.managerApproveRejectTimesheet(
         timesheetId,
         action,
-        reason
+        payload
       );
       
       return result.success;
@@ -588,13 +637,25 @@ export class TimesheetApprovalService {
     timesheetId: string, 
     _managementId: string, 
     action: 'approve' | 'reject', 
-    reason?: string
+    options: {
+      reason?: string;
+      approverRole?: 'management' | 'manager';
+      finalize?: boolean;
+      notify?: boolean;
+    } = {}
   ): Promise<boolean> {
     try {
+      const payload = {
+        notify: true,
+        finalize: action === 'approve',
+        approverRole: 'management' as 'management' | 'manager',
+        ...options
+      };
+
       const result = await TimesheetService.managementApproveRejectTimesheet(
         timesheetId,
         action,
-        reason
+        payload
       );
       
       return result.success;

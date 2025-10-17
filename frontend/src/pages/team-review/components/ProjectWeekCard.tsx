@@ -4,7 +4,7 @@
  */
 
 import React, { useState } from 'react';
-import { ChevronDown, ChevronUp, CheckCircle, XCircle, Users, Clock, FileText } from 'lucide-react';
+import { ChevronDown, ChevronUp, CheckCircle, XCircle, Users, Clock, FileText, AlertTriangle } from 'lucide-react';
 import { UserTimesheetDetails } from './UserTimesheetDetails';
 import type { ProjectWeekGroup } from '../../../types/timesheetApprovals';
 
@@ -15,6 +15,7 @@ interface ProjectWeekCardProps {
   onApproveUser?: (userId: string, projectWeekId: string) => void;
   onRejectUser?: (userId: string, projectWeekId: string) => void;
   canApprove?: boolean;
+  approvalRole?: 'lead' | 'manager' | 'management';
   isLoading?: boolean;
 }
 
@@ -25,6 +26,7 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
   onApproveUser,
   onRejectUser,
   canApprove = false,
+  approvalRole = 'manager',
   isLoading = false
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
@@ -67,6 +69,28 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
 
   const pendingUsers = projectWeek.users.filter(u => u.approval_status === 'pending');
   const hasPendingApprovals = pendingUsers.length > 0;
+
+  const actionRole = approvalRole || 'manager';
+  const isManagementMode = actionRole === 'management';
+  const managerApprovedUsers = projectWeek.users.filter(u => u.timesheet_status === 'manager_approved');
+  const allManagerApproved = managerApprovedUsers.length === projectWeek.users.length && projectWeek.users.length > 0;
+  const hasManagerApproved = managerApprovedUsers.length > 0;
+
+  const shouldShowActions =
+    canApprove &&
+    projectWeek.approval_status === 'pending' &&
+    (isManagementMode ? hasManagerApproved : hasPendingApprovals);
+
+  const actionButtonDisabled = isLoading || (isManagementMode && !allManagerApproved);
+  const actionButtonLabel = isManagementMode ? 'Verify All' : 'Approve All';
+  const actionButtonTitle = isManagementMode
+    ? allManagerApproved
+      ? 'Verify and freeze all manager-approved timesheets'
+      : 'All timesheets must be manager approved before verification.'
+    : 'Approve all pending timesheets for this project-week.';
+  const rejectButtonTitle = isManagementMode
+    ? 'Reject timesheets back to managers'
+    : 'Reject all pending timesheets for this project-week.';
   // Show total_hours if provided, otherwise sum per-user totals as a fallback
   const displayHours = (typeof projectWeek.total_hours === 'number' && projectWeek.total_hours > 0)
     ? projectWeek.total_hours
@@ -99,24 +123,34 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
           </div>
 
           {/* Action Buttons (Only for pending) */}
-          {hasPendingApprovals && projectWeek.approval_status === 'pending' && (
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => onApprove(projectWeek)}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-h-[42px]"
-              >
-                <CheckCircle className="w-4 h-4" />
-                <span>Approve All</span>
-              </button>
-              <button
-                onClick={() => onReject(projectWeek)}
-                disabled={isLoading}
-                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-h-[42px]"
-              >
-                <XCircle className="w-4 h-4" />
-                <span>Reject All</span>
-              </button>
+          {shouldShowActions && (
+            <div className="flex flex-col items-end gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => onApprove(projectWeek)}
+                  disabled={actionButtonDisabled}
+                  title={actionButtonTitle}
+                  className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-h-[42px]"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                  <span>{actionButtonLabel}</span>
+                </button>
+                <button
+                  onClick={() => onReject(projectWeek)}
+                  disabled={isLoading}
+                  title={rejectButtonTitle}
+                  className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors min-h-[42px]"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>Reject All</span>
+                </button>
+              </div>
+              {isManagementMode && !allManagerApproved && (
+                <div className="flex items-center gap-2 text-xs text-yellow-700">
+                  <AlertTriangle className="w-4 h-4" />
+                  <span>All project members must be manager approved before final verification.</span>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -159,8 +193,15 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
               <span className="text-sm text-gray-600">Status</span>
             </div>
             <div className="text-lg font-semibold text-gray-900 capitalize">
-              {projectWeek.approval_status}
+              {isManagementMode
+                ? `${managerApprovedUsers.length}/${projectWeek.total_users} manager approved`
+                : projectWeek.approval_status}
             </div>
+            {isManagementMode && (
+              <div className="text-xs text-gray-500 mt-1">
+                {allManagerApproved ? 'Ready for final verification' : 'Waiting on manager approvals'}
+              </div>
+            )}
           </div>
         </div>
 

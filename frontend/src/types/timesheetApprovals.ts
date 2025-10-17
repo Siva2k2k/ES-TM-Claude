@@ -16,38 +16,46 @@ export type ProjectRole = 'lead' | 'employee';
 export type ApprovalStatus = 'approved' | 'rejected' | 'pending' | 'not_required';
 
 /**
- * Timesheet workflow statuses
+ * Timesheet workflow statuses (3-Tier Hierarchy)
  */
 export type TimesheetStatus =
-  | 'draft'           // Employee creating timesheet
-  | 'submitted'       // Submitted, awaiting approval
-  | 'lead_approved'   // Lead approved (if applicable)
-  | 'manager_approved'// Manager approved (frozen state)
-  | 'frozen'          // Management verified (same as manager_approved)
-  | 'billed'          // Management marked as billed
-  | 'rejected';       // Rejected by any approver
+  | 'draft'                // Employee creating timesheet
+  | 'submitted'            // Submitted, awaiting Lead/Manager review
+  | 'lead_approved'        // Tier 1: Lead approved employee timesheet
+  | 'lead_rejected'        // Tier 1: Lead rejected employee timesheet
+  | 'manager_approved'     // Tier 2: Manager approved
+  | 'manager_rejected'     // Tier 2: Manager rejected
+  | 'management_pending'   // Manager's own timesheet waiting for Management
+  | 'management_rejected'  // Tier 3: Management rejected
+  | 'frozen'               // Tier 3: Management verified and frozen
+  | 'billed';              // Final: Marked as billed
 
 /**
- * Project-specific approval tracking
+ * Project-specific approval tracking (3-Tier Hierarchy)
  * Tracks approval status per project for multi-manager scenarios
  */
 export interface TimesheetProjectApproval {
   project_id: string;
   project_name: string;
 
-  // Lead approval (if project has a lead)
+  // Tier 1: Lead approval (if project has a lead)
   lead_id?: string;
   lead_name?: string;
   lead_status: ApprovalStatus;
   lead_approved_at?: Date;
   lead_rejection_reason?: string;
 
-  // Manager approval (required for all projects)
+  // Tier 2: Manager approval (required for all projects)
   manager_id: string;
   manager_name: string;
   manager_status: ApprovalStatus;
   manager_approved_at?: Date;
   manager_rejection_reason?: string;
+
+  // Tier 3: Management verification (NEW)
+  management_status: ApprovalStatus;
+  management_approved_at?: Date;
+  management_rejection_reason?: string;
 
   // Project-specific time tracking
   entries_count: number;

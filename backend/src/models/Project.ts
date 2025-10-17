@@ -3,6 +3,10 @@ import { UserRole } from './User';
 
 export type ProjectStatus = 'active' | 'completed' | 'archived';
 
+export interface IProjectApprovalSettings {
+  lead_approval_auto_escalates: boolean;
+}
+
 export interface IProject extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
@@ -14,6 +18,7 @@ export interface IProject extends Document {
   budget?: number;
   description?: string;
   is_billable: boolean;
+  approval_settings?: IProjectApprovalSettings;
   created_at: Date;
   updated_at: Date;
   deleted_at?: Date;
@@ -75,6 +80,16 @@ const ProjectSchema: Schema = new Schema({
   is_billable: {
     type: Boolean,
     default: true
+  },
+  approval_settings: {
+    type: {
+      lead_approval_auto_escalates: {
+        type: Boolean,
+        default: false
+      }
+    },
+    required: false,
+    default: () => ({ lead_approval_auto_escalates: false })
   },
   deleted_at: {
     type: Date,

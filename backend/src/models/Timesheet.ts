@@ -3,6 +3,8 @@ import mongoose, { Document, Model, Schema } from 'mongoose';
 export type TimesheetStatus =
   | 'draft'
   | 'submitted'
+  | 'lead_approved'        // NEW: Lead approved employee timesheet
+  | 'lead_rejected'        // NEW: Lead rejected employee timesheet
   | 'manager_approved'
   | 'manager_rejected'
   | 'management_pending'
@@ -17,6 +19,12 @@ export interface ITimesheet extends Document {
   week_end_date: Date;
   total_hours: number;
   status: TimesheetStatus;
+
+  // Lead approval fields (NEW)
+  approved_by_lead_id?: mongoose.Types.ObjectId;
+  approved_by_lead_at?: Date;
+  lead_rejection_reason?: string;
+  lead_rejected_at?: Date;
 
   // Manager approval fields
   approved_by_manager_id?: mongoose.Types.ObjectId;
@@ -78,6 +86,8 @@ const TimesheetSchema: Schema = new Schema({
     enum: [
       'draft',
       'submitted',
+      'lead_approved',        // NEW: Lead approved employee timesheet
+      'lead_rejected',        // NEW: Lead rejected employee timesheet
       'manager_approved',
       'manager_rejected',
       'management_pending',
@@ -86,6 +96,26 @@ const TimesheetSchema: Schema = new Schema({
       'billed'
     ],
     default: 'draft'
+  },
+
+  // Lead approval fields (NEW)
+  approved_by_lead_id: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
+    required: false
+  },
+  approved_by_lead_at: {
+    type: Date,
+    required: false
+  },
+  lead_rejection_reason: {
+    type: String,
+    trim: true,
+    required: false
+  },
+  lead_rejected_at: {
+    type: Date,
+    required: false
   },
 
   // Manager approval fields

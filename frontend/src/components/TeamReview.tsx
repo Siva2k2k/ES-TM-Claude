@@ -59,7 +59,11 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
 
   // Role-based access control
   const canViewTeamTimesheets = currentUserRole === 'lead' || currentUserRole === 'manager' || currentUserRole === 'management' || currentUserRole === 'super_admin';
-  const canApproveTimesheets = currentUserRole === 'manager' || currentUserRole === 'management' || currentUserRole === 'super_admin';
+  const canApproveTimesheets =
+    currentUserRole === 'manager' ||
+    currentUserRole === 'management' ||
+    currentUserRole === 'super_admin' ||
+    currentUserRole === 'lead';
   const isLeadRole = currentUserRole === 'lead';
   const isManagerRole = currentUserRole === 'manager';
   const isManagementRole = currentUserRole === 'management';
@@ -151,6 +155,8 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
       return;
     }
     
+    const previousStatus = timesheet.status;
+
     try {
       setLoading(true);
       let result;
@@ -250,14 +256,16 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
             const canApprove = canManageThisUser && ts.status === 'submitted';
             const canReject = canManageThisUser && ts.status === 'submitted';
             console.log(`🔍 Timesheet ${ts.id} permissions: canApprove=${canApprove}, canReject=${canReject} (canManageThisUser=${canManageThisUser}, status=${ts.status})`);
-            
+
             return {
               ...ts,
               user_name: member.full_name,
               user_email: member.email,
               user: member,
-              can_approve: canApprove, // Lead can approve if they manage this user in a project
-              can_reject: canReject,   // Lead can reject if they manage this user in a project
+              owner_role: member.role,
+              can_approve: canApprove,
+              can_reject: canReject,
+              can_finalize: canApprove,
               can_edit: false
             };
           });
@@ -282,15 +290,22 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
           const result = await TimesheetApprovalService.getUserTimesheets(member.id);
           console.log(`📤 Timesheets for ${member.full_name}:`, result);
           
-          const enhancedTimesheets = result.map(ts => ({
-            ...ts,
-            user_name: member.full_name,
-            user_email: member.email,
-            user: member,
-            can_approve: ts.status === 'submitted',
-            can_reject: ts.status === 'submitted',
-            can_edit: false
-          }));
+          const enhancedTimesheets = result.map(ts => {
+            const canApprove = ts.status === 'submitted' || ts.status === 'manager_approved';
+            const canReject = ts.status === 'submitted' || ts.status === 'manager_approved';
+
+            return {
+              ...ts,
+              user_name: member.full_name,
+              user_email: member.email,
+              user: member,
+              owner_role: member.role,
+              can_approve: canApprove,
+              can_reject: canReject,
+              can_finalize: ts.status === 'manager_approved',
+              can_edit: false
+            };
+          });
           allTimesheets.push(...enhancedTimesheets);
         }
       } else {
@@ -308,16 +323,28 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
           const result = await TimesheetApprovalService.getUserTimesheets(member.id);
           console.log(`📤 Timesheets for ${member.full_name}:`, result);
           
-          const enhancedTimesheets = result.filter(tss => (tss.status === 'frozen' )).map(ts => ({
-            ...ts,
-            user_name: member.full_name,
-            user_email: member.email,
-            user: member,
-            // Management can approve manager_approved and management_pending timesheets
-            can_approve: ts.status === 'manager_approved' || ts.status === 'management_pending',
-            can_reject: ts.status === 'manager_approved' || ts.status === 'management_pending',
-            can_edit: false
-          }));
+          const relevantStatuses: TimesheetStatus[] = member.role === 'manager'
+            ? ['submitted', 'management_pending', 'manager_approved', 'manager_rejected']
+            : ['manager_approved', 'management_pending', 'frozen', 'management_rejected'];
+
+          const enhancedTimesheets = result
+            .filter(ts => relevantStatuses.includes(ts.status))
+            .map(ts => {
+              const awaitingManagement = ts.status === 'manager_approved' || ts.status === 'management_pending';
+              const managerSelfSubmitted = member.role === 'manager' && ts.status === 'submitted';
+
+              return {
+                ...ts,
+                user_name: member.full_name,
+                user_email: member.email,
+                user: member,
+                owner_role: member.role,
+                can_approve: awaitingManagement || managerSelfSubmitted,
+                can_reject: awaitingManagement || managerSelfSubmitted,
+                can_finalize: awaitingManagement,
+                can_edit: false
+              };
+            });
           console.log(enhancedTimesheets.length, "Wohoooo")
           allTimesheets.push(...enhancedTimesheets);
         }
@@ -338,7 +365,12 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
           const existingIds = new Set(allTimesheets.map(ts => ts.id));
           const additionalTimesheets = managementResult.filter(ts => !existingIds.has(ts.id));
           console.log('📤 Additional timesheets from management API:', additionalTimesheets.length);
-          allTimesheets.push(...additionalTimesheets);
+          const normalizedAdditionalTimesheets = additionalTimesheets.map(ts => ({
+            ...ts,
+            owner_role: ts.user?.role || ts.owner_role,
+            can_finalize: ts.status === 'manager_approved' || ts.status === 'management_pending'
+          }));
+          allTimesheets.push(...normalizedAdditionalTimesheets);
         } catch (fallbackError) {
           console.error('⚠️ Management API fallback failed:', fallbackError);
         }
@@ -387,13 +419,15 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
   }, [currentUser?.id, currentUserRole, statusFilter, userFilter, searchTerm, teamMembers, canViewTeamTimesheets, isLeadRole, isManagerRole, canManageUser]);
 
   // Handle timesheet approval (Manager or Lead with project manager role)
-  const handleApproveTimesheet = async (timesheetId: string) => {
+  const handleApproveTimesheet = async (timesheetId: string, mode: 'default' | 'finalize' = 'default') => {
     // Find the timesheet to check user-specific permissions
     const timesheet = timesheets.find(ts => ts.id === timesheetId);
     if (!timesheet) {
       showError('Timesheet not found');
       return;
     }
+
+    const previousStatus = timesheet.status;
 
     // Check if user can manage this specific timesheet owner
     const canManageThisUser = canManageUser(timesheet.user_id);
@@ -407,21 +441,43 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
       
       // Determine which action to call based on timesheet status and user role
       let success = false;
-      if (timesheet.status === 'manager_approved' || timesheet.status === 'management_pending') {
-        // Management approval for manager_approved or management_pending timesheets
+      if (timesheet.status === 'manager_approved') {
+        const finalizeByManagement = isManagementRole || isSuperAdminRole;
         success = await TimesheetApprovalService.managementAction(
           timesheetId,
           currentUser?.id || '',
           'approve',
-          'Verified and approved by management'
+          {
+            reason: finalizeByManagement ? 'Final approval by management' : 'Final approval by manager',
+            approverRole: finalizeByManagement ? 'management' : 'manager',
+            finalize: true,
+            notify: true
+          }
+        );
+      } else if (timesheet.status === 'management_pending') {
+        success = await TimesheetApprovalService.managementAction(
+          timesheetId,
+          currentUser?.id || '',
+          'approve',
+          {
+            reason: 'Verified and approved by management',
+            approverRole: 'management',
+            finalize: true,
+            notify: true
+          }
         );
       } else if (timesheet.status === 'submitted') {
-        // Manager approval for submitted timesheets
+      const approverRole = isLeadRole ? 'lead' : 'manager';
         success = await TimesheetApprovalService.managerAction(
           timesheetId,
           currentUser?.id || '',
           'approve',
-          isLeadRole ? 'Approved by lead (project manager)' : 'Approved by manager'
+          {
+            reason: isLeadRole ? 'Approved by lead (project manager)' : 'Approved by manager',
+            approverRole,
+            finalize: isLeadRole && mode === 'finalize',
+            notify: true
+          }
         );
       } else {
         showWarning(`Cannot approve timesheet with status: ${timesheet.status}`);
@@ -432,7 +488,7 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
       if (success) {
         await loadTeamTimesheets();
         setSelectedTimesheet(null);
-        showSuccess('Timesheet approved successfully');
+        showSuccess(previousStatus === 'manager_approved' ? 'Timesheet finalized successfully' : 'Timesheet approved successfully');
       } else {
         showError('Error approving timesheet');
       }
@@ -471,20 +527,29 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
       // Determine which action to call based on timesheet status and user role
       let success = false;
       if (timesheet.status === 'manager_approved' || timesheet.status === 'management_pending') {
-        // Management rejection for manager_approved or management_pending timesheets
+        const finalizeByManagement = isManagementRole || isSuperAdminRole;
         success = await TimesheetApprovalService.managementAction(
           timesheetId,
           currentUser?.id || '',
           'reject',
-          reason
+          {
+            reason,
+            approverRole: finalizeByManagement ? 'management' : 'manager',
+            finalize: false,
+            notify: true
+          }
         );
       } else if (timesheet.status === 'submitted') {
-        // Manager rejection for submitted timesheets
+        const approverRole = isLeadRole ? 'lead' : 'manager';
         success = await TimesheetApprovalService.managerAction(
           timesheetId,
           currentUser?.id || '',
           'reject',
-          reason
+          {
+            reason,
+            approverRole,
+            notify: true
+          }
         );
       } else {
         showWarning(`Cannot reject timesheet with status: ${timesheet.status}`);
@@ -629,8 +694,8 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
             <p className="text-gray-600">
               {isLeadRole && (
                 <span className="inline-flex items-center text-sm bg-blue-50 text-blue-700 px-2 py-1 rounded-full">
-                  <Eye className="w-3 h-3 mr-1" />
-                  View Only Access - Employee Timesheets
+                  <CheckCircle className="w-3 h-3 mr-1" />
+                  Project Approval - Employee Timesheets
                 </span>
               )}
               {isManagerRole && (
@@ -914,14 +979,26 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
                             
                             {/* Approve Button - Manager only */}
                             {actions.includes('approve') && (
-                              <button
-                                onClick={() => handleApproveTimesheet(timesheet.id)}
-                                className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50 transition-colors"
-                                disabled={loading}
-                                title="Approve timesheet"
-                              >
-                                <Check className="w-4 h-4" />
-                              </button>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  onClick={() => handleApproveTimesheet(timesheet.id)}
+                                  className="text-green-600 hover:text-green-900 p-1 rounded hover:bg-green-50 transition-colors"
+                                  disabled={loading}
+                                  title="Approve and send to manager"
+                                >
+                                  <Check className="w-4 h-4" />
+                                </button>
+                                {isLeadRole && timesheet.can_finalize && (
+                                  <button
+                                    onClick={() => handleApproveTimesheet(timesheet.id, 'finalize')}
+                                    className="text-emerald-600 hover:text-emerald-900 p-1 rounded hover:bg-emerald-50 transition-colors"
+                                    disabled={loading}
+                                    title="Approve and finalize for manager"
+                                  >
+                                    <CheckCircle className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
                             )}
                             
                             {/* Reject Button - Manager only */}
@@ -1205,17 +1282,32 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
               
               <div className="flex space-x-3">
                 {getAvailableActions(selectedTimesheet).includes('approve') && (
-                  <button
-                    onClick={() => {
-                      handleApproveTimesheet(selectedTimesheet.id);
-                      setSelectedTimesheet(null);
-                    }}
-                    disabled={loading}
-                    className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition-colors"
-                  >
-                    <Check className="w-4 h-4 mr-2" />
-                    Approve Timesheet
-                  </button>
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 space-y-2 sm:space-y-0">
+                    <button
+                      onClick={() => {
+                        handleApproveTimesheet(selectedTimesheet.id);
+                        setSelectedTimesheet(null);
+                      }}
+                      disabled={loading}
+                      className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-green-600 hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    >
+                      <Check className="w-4 h-4 mr-2" />
+                      Approve & Notify Manager
+                    </button>
+                    {isLeadRole && selectedTimesheet?.can_finalize && (
+                      <button
+                        onClick={() => {
+                          handleApproveTimesheet(selectedTimesheet.id, 'finalize');
+                          setSelectedTimesheet(null);
+                        }}
+                        disabled={loading}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+                      >
+                        <CheckCircle className="w-4 h-4 mr-2" />
+                        Approve & Finalize
+                      </button>
+                    )}
+                  </div>
                 )}
                 
                 {getAvailableActions(selectedTimesheet).includes('reject') && (
@@ -1320,13 +1412,13 @@ const TeamReview: React.FC<TeamReviewProps> = ({ defaultView = 'list' }) => {
             </h4>
             <p className="text-sm text-blue-700 mt-1">
               {isLeadRole && (
-                'As a Lead, you can view employee timesheets in your projects for coordination purposes. You cannot approve or reject timesheets.'
+                'As a Lead, you can review and approve or reject employee timesheets for the projects where you serve as the project manager. Approved entries are automatically forwarded to the employee\'s manager for final review.'
               )}
               {isManagerRole && (
-                'As a Manager, you can view, approve, or reject timesheets from employees and leads in your team. Approved timesheets are automatically forwarded to Management for final approval.'
+                'As a Manager, you can approve or reject timesheets from employees and leads in your team. Once all entries are cleared, finalize the timesheet to move it to the frozen state.'
               )}
               {(currentUserRole === 'management' || currentUserRole === 'super_admin') && (
-                'You have full access to view and manage all team timesheets. You can provide final approval for manager-approved timesheets.'
+                'You have full access to view and manage all team timesheets. Provide the final approval for manager submissions and oversee escalated employee timesheets when needed.'
               )}
             </p>
           </div>

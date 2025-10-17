@@ -466,6 +466,51 @@ export class TeamReviewController {
       });
     }
   }
+
+  /**
+   * Bulk freeze all timesheets for a project-week (Management only)
+   * POST /api/v1/timesheets/project-week/freeze
+   */
+  static async freezeProjectWeek(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+
+      if (!userId || !userRole) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      // Only Management can bulk freeze
+      if (userRole !== 'management' && userRole !== 'super_admin') {
+        res.status(403).json({ error: 'Only Management can bulk freeze project-week timesheets' });
+        return;
+      }
+
+      const { project_id, week_start, week_end } = req.body;
+
+      if (!project_id || !week_start || !week_end) {
+        res.status(400).json({
+          error: 'project_id, week_start, and week_end are required'
+        });
+        return;
+      }
+
+      const result = await TeamReviewApprovalService.bulkFreezeProjectWeek(
+        project_id,
+        week_start,
+        week_end,
+        userId
+      );
+
+      res.status(200).json(result);
+    } catch (error) {
+      logger.error('Error freezing project-week:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to freeze project-week'
+      });
+    }
+  }
 }
 
 export default TeamReviewController;

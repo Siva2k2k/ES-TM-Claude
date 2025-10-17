@@ -31,9 +31,12 @@ import { LoadingSpinner } from '../../components/shared/LoadingSpinner';
 import { PageHeader } from '../../components/shared/PageHeader';
 import {
   TimesheetForm,
-  TimesheetCalendar,
   TimesheetList,
-  type Timesheet
+  TimesheetMonthlyCalendar,
+  type Timesheet,
+  type CalendarDay,
+  type CalendarEntryDetail,
+  type DayStatus
 } from '../../components/timesheet';
 import type { TimesheetWithDetails } from '../../types';
 import type { TimeEntry } from '../../types/timesheet.schemas';
@@ -62,6 +65,12 @@ type CalendarEntry = TimeEntry & {
   project_name?: string;
 };
 
+type CalendarDayAggregate = {
+  totalHours: number;
+  entries: CalendarEntryDetail[];
+  statusCounts: Record<DayStatus, number>;
+};
+
 export const EmployeeTimesheetPage: React.FC = () => {
   const { currentUser } = useAuth();
   const createModal = useModal();
@@ -69,7 +78,7 @@ export const EmployeeTimesheetPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { isOpen: isCreateModalOpen, open: rawOpenCreateModal, close: rawCloseCreateModal } = createModal;
 
-  const openCreateModal = useCallback(() => {
+  const openCreateDialog = useCallback(() => {
     rawOpenCreateModal();
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('modal', 'create');
@@ -90,9 +99,19 @@ export const EmployeeTimesheetPage: React.FC = () => {
     setEditingProjectApprovals([]);
   }, [editModal]);
 
+  const startCreateTimesheet = useCallback((date?: string) => {
+    if (date) {
+      const monday = getWeekMondayFromDate(new Date(date));
+      setWeekStartDate(monday);
+      setCalendarDate(startOfMonth(new Date(date)));
+    }
+    openCreateDialog();
+  }, [openCreateDialog]);
+
   // State
   const [viewMode, setViewMode] = useState<ViewMode>('calendar');
   const [weekStartDate, setWeekStartDate] = useState(getCurrentWeekMonday());
+  const [calendarDate, setCalendarDate] = useState<Date>(() => startOfMonth(new Date()));
   const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
   const [timesheetDetails, setTimesheetDetails] = useState<Record<string, TimesheetWithDetails>>({});
   const [editingTimesheetId, setEditingTimesheetId] = useState<string | null>(null);
@@ -148,11 +167,8 @@ export const EmployeeTimesheetPage: React.FC = () => {
     void loadData();
   }, [loadData]);
 
-  const calendarEntries = useMemo<CalendarEntry[]>(() => {
-    return Object.values(timesheetDetails)
-      .filter(ts => ts.week_start_date === weekStartDate)
-      .flatMap(ts => (ts.entries || []) as CalendarEntry[]);
-  }, [timesheetDetails, weekStartDate]);
+  const calendarDayMap = useMemo(() => buildCalendarDayMap(timesheetDetails, projects), [timesheetDetails, projects]);
+  const calendarDays = useMemo<CalendarDay[]>(() => buildMonthlyCalendarDays(calendarDate, calendarDayMap), [calendarDate, calendarDayMap]);
 
   const openTimesheetForEdit = useCallback(async (timesheetId: string) => {
     setIsEditingLoading(true);
@@ -169,6 +185,11 @@ export const EmployeeTimesheetPage: React.FC = () => {
       const history = await TeamReviewService.getTimesheetWithHistory(timesheetId);
       const historyEntries = normalizeEntries(history?.entries || detail.entries || [], timesheetId);
       const projectApprovals = history?.timesheet?.project_approvals || detail.project_approvals || [];
+
+      const firstEntryDate = historyEntries[0]?.date || detail.entries?.[0]?.date;
+      if (firstEntryDate) {
+        setCalendarDate(startOfMonth(new Date(firstEntryDate)));
+      }
 
       const enhancedDetail = {
         ...detail,
@@ -231,21 +252,13 @@ export const EmployeeTimesheetPage: React.FC = () => {
     }
   };
 
-  const handleCalendarEntryClick = useCallback((entry: CalendarEntry) => {
-    const entryTimesheetId =
-      (entry.timesheet_id as string | undefined) ||
-      Object.values(timesheetDetails).find(ts =>
-        (ts.entries || []).some(e => (e as any).id === (entry as any).id || (e as any)._id === (entry as any)._id)
-      )?.id;
+  const handleCalendarEntryClick = useCallback((entry: CalendarEntryDetail) => {
+    void openTimesheetForEdit(entry.timesheetId);
+  }, [openTimesheetForEdit]);
 
-    if (entryTimesheetId) {
-      void openTimesheetForEdit(entryTimesheetId);
-    }
-  }, [openTimesheetForEdit, timesheetDetails]);
-
-  const handleWeekChange = (newWeekStart: string) => {
-    setWeekStartDate(newWeekStart);
-  };
+  const handleDayClick = useCallback((date: string) => {
+    startCreateTimesheet(date);
+  }, [startCreateTimesheet]);
 
   // Sync selected tab with query parameter for deep linking
   useEffect(() => {
@@ -260,6 +273,8 @@ export const EmployeeTimesheetPage: React.FC = () => {
   useEffect(() => {
     const modalParam = searchParams.get('modal');
     if (modalParam === 'create' && !isCreateModalOpen) {
+      setWeekStartDate(getCurrentWeekMonday());
+      setCalendarDate(startOfMonth(new Date()));
       rawOpenCreateModal();
     } else if (modalParam !== 'create' && isCreateModalOpen) {
       rawCloseCreateModal();
@@ -291,7 +306,7 @@ export const EmployeeTimesheetPage: React.FC = () => {
         title="My Timesheets"
         description="Track your time and manage your weekly timesheets"
         actions={
-          <Button onClick={openCreateModal}>
+          <Button onClick={() => startCreateTimesheet()}>
             <Plus className="-ml-1 mr-2 h-4 w-4" />
             New Timesheet
           </Button>
@@ -313,21 +328,13 @@ export const EmployeeTimesheetPage: React.FC = () => {
 
         {/* Calendar View */}
         <TabsContent value="calendar">
-          <TimesheetCalendar
-            weekStartDate={weekStartDate}
-            entries={calendarEntries}
-            projects={projects.map(project => ({
-              id: project.id,
-              name: project.name,
-              color: project.color,
-              is_active: project.is_active
-            }))}
-            onWeekChange={handleWeekChange}
+          <TimesheetMonthlyCalendar
+            referenceDate={calendarDate}
+            days={calendarDays}
+            onChangeMonth={(date) => setCalendarDate(startOfMonth(date))}
+            onCreateTimesheet={() => startCreateTimesheet()}
+            onDayClick={handleDayClick}
             onEntryClick={handleCalendarEntryClick}
-            onDayClick={() => {
-              // Could open create modal with pre-selected date
-              openCreateModal();
-            }}
           />
         </TabsContent>
 
@@ -427,7 +434,8 @@ function normalizeEntries(entries: any[], timesheetId?: string): CalendarEntry[]
       hours: Number(entry.hours ?? entry.total_hours ?? 0),
       description: entry.description || entry.note || '',
       is_billable: entry.is_billable !== undefined ? Boolean(entry.is_billable) : true,
-      entry_type: (entry.entry_type as TimeEntry['entry_type']) || 'project_task'
+      entry_type: (entry.entry_type as TimeEntry['entry_type']) || 'project_task',
+      project_name: entry.project_name || entry.project?.name || entry.projectName || ''
     } as CalendarEntry;
   });
 }
@@ -509,12 +517,103 @@ function mapTaskToOption(task: any): TaskOption {
   };
 }
 
+function buildCalendarDayMap(
+  details: Record<string, TimesheetWithDetails>,
+  projects: ProjectOption[]
+): Map<string, CalendarDayAggregate> {
+  const projectLookup = new Map<string, ProjectOption>();
+  projects.forEach((project) => {
+    if (project.id) {
+      projectLookup.set(project.id, project);
+    }
+  });
+
+  const dayMap = new Map<string, CalendarDayAggregate>();
+
+  Object.values(details).forEach((timesheet) => {
+    const status = mapTimesheetStatus(timesheet.status) as DayStatus;
+    const entries = (timesheet.entries || timesheet.time_entries || []) as CalendarEntry[];
+
+    entries.forEach((entry, index) => {
+      if (!entry.date) return;
+
+      const isoDate = entry.date;
+      const existing = dayMap.get(isoDate) || {
+        totalHours: 0,
+        entries: [] as CalendarEntryDetail[],
+        statusCounts: { draft: 0, submitted: 0, approved: 0, rejected: 0 } as Record<DayStatus, number>,
+      };
+
+      const project = entry.project_id ? projectLookup.get(entry.project_id) : undefined;
+      const calendarEntry: CalendarEntryDetail = {
+        id: entry.id || `${timesheet.id}-${isoDate}-${index}`,
+        timesheetId: timesheet.id,
+        projectId: entry.project_id,
+        projectName: entry.project_name || project?.name || 'General Work',
+        projectColor: project?.color,
+        hours: Number(entry.hours ?? 0),
+        status,
+        description: entry.description,
+      };
+
+      existing.totalHours += calendarEntry.hours;
+      existing.entries.push(calendarEntry);
+      existing.statusCounts[status] = (existing.statusCounts[status] || 0) + 1;
+
+      dayMap.set(isoDate, existing);
+    });
+  });
+
+  return dayMap;
+}
+
+function buildMonthlyCalendarDays(referenceDate: Date, dayMap: Map<string, CalendarDayAggregate>): CalendarDay[] {
+  const monthStart = startOfMonth(referenceDate);
+  const firstGridDay = new Date(monthStart);
+  firstGridDay.setDate(monthStart.getDate() - monthStart.getDay());
+
+  const todayIso = toISODate(new Date());
+  const days: CalendarDay[] = [];
+
+  for (let i = 0; i < 42; i++) {
+    const current = new Date(firstGridDay);
+    current.setDate(firstGridDay.getDate() + i);
+    const iso = toISODate(current);
+    const aggregate = dayMap.get(iso);
+    const isCurrentMonth = current.getMonth() === monthStart.getMonth();
+    const isToday = iso === todayIso;
+
+    let status: DayStatus | 'idle' = 'idle';
+    if (aggregate && aggregate.totalHours > 0) {
+      status = pickDominantStatus(aggregate.statusCounts);
+    }
+
+    days.push({
+      date: iso,
+      day: current.getDate(),
+      isCurrentMonth,
+      isToday,
+      totalHours: aggregate?.totalHours ?? 0,
+      status,
+      entries: aggregate?.entries ?? [],
+    });
+  }
+
+  return days;
+}
+
+function pickDominantStatus(counts: Record<DayStatus, number>): DayStatus {
+  const priority: DayStatus[] = ['rejected', 'submitted', 'draft', 'approved'];
+  for (const status of priority) {
+    if ((counts[status] ?? 0) > 0) {
+      return status;
+    }
+  }
+  return 'draft';
+}
+
 function getCurrentWeekMonday(): string {
-  const today = new Date();
-  const day = today.getDay();
-  const diff = today.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(today.setDate(diff));
-  return monday.toISOString().split('T')[0];
+  return getWeekMondayFromDate(new Date());
 }
 
 function getWeekEndDate(weekStartDate: string): string {
@@ -522,4 +621,25 @@ function getWeekEndDate(weekStartDate: string): string {
   const endDate = new Date(startDate);
   endDate.setDate(startDate.getDate() + 4); // Friday (4 days after Monday)
   return endDate.toISOString().split('T')[0];
+}
+
+function getWeekMondayFromDate(date: Date): string {
+  const temp = new Date(date);
+  temp.setHours(0, 0, 0, 0);
+  const day = temp.getDay();
+  const diff = temp.getDate() - day + (day === 0 ? -6 : 1);
+  temp.setDate(diff);
+  temp.setHours(0, 0, 0, 0);
+  return toISODate(temp);
+}
+
+function startOfMonth(date: Date): Date {
+  const start = new Date(date);
+  start.setDate(1);
+  start.setHours(0, 0, 0, 0);
+  return start;
+}
+
+function toISODate(date: Date): string {
+  return date.toISOString().split('T')[0];
 }

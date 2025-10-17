@@ -118,10 +118,15 @@ export class BackendTimesheetService {
   static async managerApproveRejectTimesheet(
     timesheetId: string,
     action: 'approve' | 'reject',
-    reason?: string
+    options: {
+      reason?: string;
+      approverRole?: 'lead' | 'manager';
+      finalize?: boolean;
+      notify?: boolean;
+    } = {}
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.managerApproveRejectTimesheet(timesheetId, action, reason);
+      const response = await backendApi.managerApproveRejectTimesheet(timesheetId, action, options);
 
       if (response.success) {
         console.log(`Manager ${action}ed timesheet: ${timesheetId}`);
@@ -141,10 +146,15 @@ export class BackendTimesheetService {
   static async managementApproveRejectTimesheet(
     timesheetId: string,
     action: 'approve' | 'reject',
-    reason?: string
+    options: {
+      reason?: string;
+      approverRole?: 'management' | 'manager';
+      finalize?: boolean;
+      notify?: boolean;
+    } = {}
   ): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.managementApproveRejectTimesheet(timesheetId, action, reason);
+      const response = await backendApi.managementApproveRejectTimesheet(timesheetId, action, options);
 
       if (response.success) {
         console.log(`Management ${action}ed timesheet: ${timesheetId}`);

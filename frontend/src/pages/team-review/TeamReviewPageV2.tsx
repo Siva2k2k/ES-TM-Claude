@@ -30,6 +30,15 @@ export const TeamReviewPageV2: React.FC = () => {
   const { currentUserRole } = useAuth();
   const roleManager = useRoleManager();
 
+  const approvalRole: 'lead' | 'manager' | 'management' =
+    currentUserRole === 'management' || currentUserRole === 'super_admin'
+      ? 'management'
+      : currentUserRole === 'manager'
+      ? 'manager'
+      : 'lead';
+
+  const isManagementRole = approvalRole === 'management';
+
   // State
   const [activeTab, setActiveTab] = useState<TabStatus>('pending');
   const [data, setData] = useState<ProjectWeekResponse | null>(null);
@@ -51,10 +60,12 @@ export const TeamReviewPageV2: React.FC = () => {
     isOpen: boolean;
     projectWeek: ProjectWeekGroup | null;
     action: 'approve' | 'reject';
+    approvalRole: 'lead' | 'manager' | 'management';
   }>({
     isOpen: false,
     projectWeek: null,
-    action: 'approve'
+    action: 'approve',
+    approvalRole
   });
 
   // Check permissions
@@ -112,10 +123,22 @@ export const TeamReviewPageV2: React.FC = () => {
 
   // Handle approval actions
   const handleApproveClick = (projectWeek: ProjectWeekGroup) => {
+    if (isManagementRole) {
+      const allManagerApproved =
+        projectWeek.users.length > 0 && projectWeek.users.every(user => user.timesheet_status === 'manager_approved');
+
+      if (!allManagerApproved) {
+        setError('All timesheets in this project must be manager approved before final verification.');
+        setTimeout(() => setError(null), 5000);
+        return;
+      }
+    }
+
     setModalState({
       isOpen: true,
       projectWeek,
-      action: 'approve'
+      action: 'approve',
+      approvalRole
     });
   };
 
@@ -123,7 +146,8 @@ export const TeamReviewPageV2: React.FC = () => {
     setModalState({
       isOpen: true,
       projectWeek,
-      action: 'reject'
+      action: 'reject',
+      approvalRole
     });
   };
 
@@ -210,25 +234,42 @@ export const TeamReviewPageV2: React.FC = () => {
   };
 
   const handleModalConfirm = async (reason?: string) => {
-    if (!modalState.projectWeek) return;
+    const projectWeek = modalState.projectWeek;
+    if (!projectWeek) return;
 
     try {
       if (modalState.action === 'approve') {
-        await TeamReviewService.approveProjectWeek(
-          modalState.projectWeek.project_id,
-          modalState.projectWeek.week_start,
-          modalState.projectWeek.week_end
-        );
-        setSuccess(`Successfully approved ${modalState.projectWeek.project_name} - ${modalState.projectWeek.week_label}`);
+        if (modalState.approvalRole === 'management') {
+          const managerApprovedUsers = projectWeek.users.filter(user => user.timesheet_status === 'manager_approved');
+
+          if (managerApprovedUsers.length !== projectWeek.users.length) {
+            throw new Error('All timesheets must be manager approved before verification.');
+          }
+
+          await TeamReviewService.bulkVerifyTimesheets({
+            timesheet_ids: managerApprovedUsers.map(user => user.timesheet_id),
+            project_id: projectWeek.project_id,
+            action: 'verify'
+          });
+
+          setSuccess(`Successfully verified ${managerApprovedUsers.length} timesheet${managerApprovedUsers.length === 1 ? '' : 's'} for ${projectWeek.project_name} - ${projectWeek.week_label}.`);
+        } else {
+          await TeamReviewService.approveProjectWeek(
+            projectWeek.project_id,
+            projectWeek.week_start,
+            projectWeek.week_end
+          );
+          setSuccess(`Successfully approved ${projectWeek.project_name} - ${projectWeek.week_label}`);
+        }
       } else {
         if (!reason) throw new Error('Rejection reason is required');
         await TeamReviewService.rejectProjectWeek(
-          modalState.projectWeek.project_id,
-          modalState.projectWeek.week_start,
-          modalState.projectWeek.week_end,
+          projectWeek.project_id,
+          projectWeek.week_start,
+          projectWeek.week_end,
           reason
         );
-        setSuccess(`Successfully rejected ${modalState.projectWeek.project_name} - ${modalState.projectWeek.week_label}`);
+        setSuccess(`Successfully rejected ${projectWeek.project_name} - ${projectWeek.week_label}`);
       }
 
       // Reload data
@@ -365,9 +406,10 @@ export const TeamReviewPageV2: React.FC = () => {
                 projectWeek={projectWeek}
                 onApprove={handleApproveClick}
                 onReject={handleRejectClick}
-                onApproveUser={handleApproveUser}
-                onRejectUser={handleRejectUser}
+                onApproveUser={isManagementRole ? undefined : handleApproveUser}
+                onRejectUser={isManagementRole ? undefined : handleRejectUser}
                 canApprove={canApprove}
+                approvalRole={approvalRole}
                 isLoading={loading}
               />
             ))}
@@ -391,6 +433,7 @@ export const TeamReviewPageV2: React.FC = () => {
         onClose={() => setModalState({ ...modalState, isOpen: false })}
         projectWeek={modalState.projectWeek}
         action={modalState.action}
+        approvalRole={modalState.approvalRole}
         onConfirm={handleModalConfirm}
         isLoading={loading}
       />

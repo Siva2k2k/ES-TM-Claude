@@ -7,7 +7,7 @@ import { z } from 'zod';
  */
 
 // Entry type enum
-export const entryTypeSchema = z.enum(['project_task', 'non_project', 'leave', 'holiday']);
+export const entryTypeSchema = z.enum(['project_task', 'custom_task', 'non_project', 'leave', 'holiday']);
 
 // Time entry schema
 export const timeEntrySchema = z.object({
@@ -20,11 +20,15 @@ export const timeEntrySchema = z.object({
   description: z.string().min(1, 'Description is required').max(500, 'Description too long'),
   is_billable: z.boolean().default(true),
   entry_type: entryTypeSchema.default('project_task'),
+  custom_task_description: z.string().optional(),
 }).refine(
   (data) => {
     // Project tasks require project_id and task_id
     if (data.entry_type === 'project_task') {
       return !!data.project_id && !!data.task_id;
+    }
+    if (data.entry_type === 'custom_task') {
+      return !!data.custom_task_description;
     }
     return true;
   },
@@ -86,7 +90,11 @@ export const timesheetFormSchema = z.object({
     const seen = new Set<string>();
 
     for (const entry of data.entries) {
-      const key = `${entry.project_id}-${entry.task_id}-${entry.date}`;
+      const identifier =
+        entry.entry_type === 'custom_task'
+          ? entry.custom_task_description || entry.date
+          : entry.task_id;
+      const key = `${entry.entry_type}-${entry.project_id}-${identifier}-${entry.date}`;
       if (seen.has(key)) {
         return false;
       }

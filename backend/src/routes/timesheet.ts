@@ -126,6 +126,18 @@ router.post('/project-week/reject', [
 ], TeamReviewController.rejectProjectWeek);
 
 /**
+ * @route POST /api/v1/timesheets/project-week/freeze
+ * @desc Bulk freeze all timesheets for a project-week (Management only)
+ * @access Private (Management/Super Admin)
+ */
+router.post('/project-week/freeze', [
+  body('project_id').isMongoId().withMessage('Valid project ID is required'),
+  body('week_start').isISO8601().withMessage('Valid week start date is required'),
+  body('week_end').isISO8601().withMessage('Valid week end date is required'),
+  validate
+], TeamReviewController.freezeProjectWeek);
+
+/**
  * @route GET /api/v1/timesheets/:userId/:weekStartDate
  * @desc Get timesheet by user and week
  * @access Private

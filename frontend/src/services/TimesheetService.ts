@@ -75,9 +75,14 @@ export class TimesheetService {
   static async managerApproveRejectTimesheet(
     timesheetId: string,
     action: 'approve' | 'reject',
-    reason?: string
+    options: {
+      reason?: string;
+      approverRole?: 'lead' | 'manager';
+      finalize?: boolean;
+      notify?: boolean;
+    } = {}
   ): Promise<{ success: boolean; error?: string }> {
-    return BackendTimesheetService.managerApproveRejectTimesheet(timesheetId, action, reason);
+    return BackendTimesheetService.managerApproveRejectTimesheet(timesheetId, action, options);
   }
 
   /**
@@ -86,9 +91,14 @@ export class TimesheetService {
   static async managementApproveRejectTimesheet(
     timesheetId: string,
     action: 'approve' | 'reject',
-    reason?: string
+    options: {
+      reason?: string;
+      approverRole?: 'management' | 'manager';
+      finalize?: boolean;
+      notify?: boolean;
+    } = {}
   ): Promise<{ success: boolean; error?: string }> {
-    return BackendTimesheetService.managementApproveRejectTimesheet(timesheetId, action, reason);
+    return BackendTimesheetService.managementApproveRejectTimesheet(timesheetId, action, options);
   }
 
   /**

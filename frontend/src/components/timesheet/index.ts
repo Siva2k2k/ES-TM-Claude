@@ -13,3 +13,10 @@ export {
   type GroupedTimesheetEntriesProps
 } from './TimesheetEntry';
 export { ApprovalHistoryModal } from './ApprovalHistoryModal';
+export {
+  TimesheetMonthlyCalendar,
+  type TimesheetMonthlyCalendarProps,
+  type CalendarDay,
+  type CalendarEntryDetail,
+  type DayStatus,
+} from './TimesheetMonthlyCalendar';

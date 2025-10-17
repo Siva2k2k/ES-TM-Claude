@@ -227,11 +227,22 @@ export class BackendApiClient {
   async managerApproveRejectTimesheet(
     timesheetId: string,
     action: 'approve' | 'reject',
-    reason?: string
+    options: {
+      reason?: string;
+      approverRole?: 'lead' | 'manager';
+      finalize?: boolean;
+      notify?: boolean;
+    } = {}
   ): Promise<{ success: boolean; message?: string }> {
     return this.request(`/timesheets/${timesheetId}/manager-action`, {
       method: 'POST',
-      body: JSON.stringify({ action, reason })
+      body: JSON.stringify({
+        action,
+        reason: options.reason,
+        approverRole: options.approverRole,
+        finalize: options.finalize,
+        notify: options.notify
+      })
     });
   }
 
@@ -241,11 +252,22 @@ export class BackendApiClient {
   async managementApproveRejectTimesheet(
     timesheetId: string,
     action: 'approve' | 'reject',
-    reason?: string
+    options: {
+      reason?: string;
+      approverRole?: 'management' | 'manager';
+      finalize?: boolean;
+      notify?: boolean;
+    } = {}
   ): Promise<{ success: boolean; message?: string }> {
     return this.request(`/timesheets/${timesheetId}/management-action`, {
       method: 'POST',
-      body: JSON.stringify({ action, reason })
+      body: JSON.stringify({
+        action,
+        reason: options.reason,
+        approverRole: options.approverRole,
+        finalize: options.finalize,
+        notify: options.notify
+      })
     });
   }
 

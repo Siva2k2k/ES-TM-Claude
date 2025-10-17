@@ -26,6 +26,11 @@ export interface ITimesheetProjectApproval extends Document {
   manager_approved_at?: Date;
   manager_rejection_reason?: string;
 
+  // Management verification (Tier 3) - NEW
+  management_status: ApprovalStatus;
+  management_approved_at?: Date;
+  management_rejection_reason?: string;
+
   // Time tracking for this project
   entries_count: number;
   total_hours: number;
@@ -86,6 +91,23 @@ const TimesheetProjectApprovalSchema: Schema = new Schema({
     required: false
   },
   manager_rejection_reason: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    required: false
+  },
+
+  // Management verification fields (Tier 3) - NEW
+  management_status: {
+    type: String,
+    enum: ['approved', 'rejected', 'pending', 'not_required'],
+    default: 'pending'
+  },
+  management_approved_at: {
+    type: Date,
+    required: false
+  },
+  management_rejection_reason: {
     type: String,
     trim: true,
     maxlength: 500,

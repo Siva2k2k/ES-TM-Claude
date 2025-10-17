@@ -12,6 +12,7 @@ interface ProjectWeekApprovalModalProps {
   onClose: () => void;
   projectWeek: ProjectWeekGroup | null;
   action: 'approve' | 'reject';
+  approvalRole?: 'lead' | 'manager' | 'management';
   onConfirm: (reason?: string) => Promise<void>;
   isLoading?: boolean;
 }
@@ -21,6 +22,7 @@ export const ProjectWeekApprovalModal: React.FC<ProjectWeekApprovalModalProps> =
   onClose,
   projectWeek,
   action,
+  approvalRole = 'manager',
   onConfirm,
   isLoading = false
 }) => {
@@ -28,6 +30,13 @@ export const ProjectWeekApprovalModal: React.FC<ProjectWeekApprovalModalProps> =
   const [error, setError] = useState('');
 
   if (!isOpen || !projectWeek) return null;
+
+  const modalTitle = action === 'approve'
+    ? (isManagementMode ? 'Verify Project-Week' : 'Approve Project-Week')
+    : 'Reject Project-Week';
+  const confirmLabel = action === 'approve'
+    ? (isManagementMode ? 'Verification' : 'Approval')
+    : 'Rejection';
 
   const handleConfirm = async () => {
     if (action === 'reject') {
@@ -59,7 +68,11 @@ export const ProjectWeekApprovalModal: React.FC<ProjectWeekApprovalModalProps> =
     }
   };
 
-  const pendingUsers = projectWeek.users.filter(u => u.approval_status === 'pending');
+  const isManagementMode = approvalRole === 'management';
+  const affectedUsers = isManagementMode
+    ? projectWeek.users.filter(u => u.timesheet_status === 'manager_approved')
+    : projectWeek.users.filter(u => u.approval_status === 'pending');
+  const totalAffectedHours = affectedUsers.reduce((sum, user) => sum + (user.total_hours_for_project || 0), 0);
 
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto">
@@ -83,7 +96,7 @@ export const ProjectWeekApprovalModal: React.FC<ProjectWeekApprovalModalProps> =
                 <AlertTriangle className="w-6 h-6 text-red-600" />
               )}
               <h3 className="text-lg font-semibold text-gray-900">
-                {action === 'approve' ? 'Approve Project-Week' : 'Reject Project-Week'}
+                {modalTitle}
               </h3>
             </div>
             <button
@@ -108,13 +121,13 @@ export const ProjectWeekApprovalModal: React.FC<ProjectWeekApprovalModalProps> =
               <div className="grid grid-cols-3 gap-4 text-center">
                 <div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {pendingUsers.length}
+                {affectedUsers.length}
                   </div>
                   <div className="text-xs text-gray-600">Users</div>
                 </div>
                 <div>
                   <div className="text-2xl font-bold text-gray-900">
-                    {projectWeek.total_hours.toFixed(1)}
+                    {(isManagementMode ? totalAffectedHours : projectWeek.total_hours).toFixed(1)}
                   </div>
                   <div className="text-xs text-gray-600">Hours</div>
                 </div>
@@ -133,14 +146,20 @@ export const ProjectWeekApprovalModal: React.FC<ProjectWeekApprovalModalProps> =
                 Affected Users:
               </h5>
               <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3 space-y-1">
-                {pendingUsers.map(user => (
-                  <div key={user.user_id} className="flex items-center justify-between text-sm">
-                    <span className="text-gray-900">{user.user_name}</span>
-                    <span className="text-gray-600">
-                      {user.total_hours_for_project.toFixed(1)}h
-                    </span>
+                {affectedUsers.length === 0 ? (
+                  <div className="text-sm text-gray-500">
+                    No timesheets available for this action.
                   </div>
-                ))}
+                ) : (
+                  affectedUsers.map(user => (
+                    <div key={user.user_id} className="flex items-center justify-between text-sm">
+                      <span className="text-gray-900">{user.user_name}</span>
+                      <span className="text-gray-600">
+                        {user.total_hours_for_project.toFixed(1)}h
+                      </span>
+                    </div>
+                  ))
+                )}
               </div>
             </div>
 
@@ -152,13 +171,20 @@ export const ProjectWeekApprovalModal: React.FC<ProjectWeekApprovalModalProps> =
                 action === 'approve' ? 'text-green-800' : 'text-red-800'
               }`}>
                 {action === 'approve' ? (
-                  <>
-                    You are about to <strong>approve</strong> all {pendingUsers.length} user timesheet(s)
-                    for this project-week. This action will update the approval status for all affected timesheets.
-                  </>
+                  isManagementMode ? (
+                    <>
+                      You are about to <strong>verify</strong> {affectedUsers.length} manager-approved timesheet(s).
+                      Verified timesheets move to the <strong>frozen</strong> state and are ready for billing.
+                    </>
+                  ) : (
+                    <>
+                      You are about to <strong>approve</strong> all {affectedUsers.length} user timesheet(s)
+                      for this project-week. This action will update the approval status for all affected timesheets.
+                    </>
+                  )
                 ) : (
                   <>
-                    You are about to <strong>reject</strong> all {pendingUsers.length} user timesheet(s)
+                    You are about to <strong>reject</strong> all {affectedUsers.length} user timesheet(s)
                     for this project-week. This will reset all approvals and require resubmission.
                   </>
                 )}
@@ -207,7 +233,11 @@ export const ProjectWeekApprovalModal: React.FC<ProjectWeekApprovalModalProps> =
             </button>
             <button
               onClick={handleConfirm}
-              disabled={isLoading || (action === 'reject' && reason.trim().length < 10)}
+              disabled={
+                isLoading ||
+                (action === 'reject' && reason.trim().length < 10) ||
+                (action === 'approve' && affectedUsers.length === 0)
+              }
               className={`px-4 py-2 rounded-lg text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors ${
                 action === 'approve'
                   ? 'bg-green-600 hover:bg-green-700'
@@ -220,7 +250,7 @@ export const ProjectWeekApprovalModal: React.FC<ProjectWeekApprovalModalProps> =
                   Processing...
                 </span>
               ) : (
-                `Confirm ${action === 'approve' ? 'Approval' : 'Rejection'}`
+                `Confirm ${confirmLabel}`
               )}
             </button>
           </div>
