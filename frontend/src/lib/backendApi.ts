@@ -337,11 +337,28 @@ export class BackendApiClient {
   async getProjectBillingView(params: {
     startDate: string;
     endDate: string;
-    view?: 'weekly' | 'monthly';
+    view?: 'weekly' | 'monthly' | 'custom';
     projectIds?: string;
+    clientIds?: string;
   }): Promise<any> {
     const queryParams = new URLSearchParams(params as any);
     return this.get(`/project-billing/projects?${queryParams}`);
+  }
+
+  /**
+   * Get user-based billing view
+   */
+  async getUserBillingView(params: {
+    startDate: string;
+    endDate: string;
+    view?: 'weekly' | 'monthly' | 'custom';
+    projectIds?: string;
+    clientIds?: string;
+    roles?: string;
+    search?: string;
+  }): Promise<any> {
+    const queryParams = new URLSearchParams(params as any);
+    return this.get(`/project-billing/users?${queryParams}`);
   }
 
   /**
@@ -365,7 +382,10 @@ export class BackendApiClient {
     project_id?: string;
     task_id?: string;
     date: string;
+    start_date?: string;
+    end_date?: string;
     billable_hours: number;
+    total_hours?: number;
     reason?: string;
   }): Promise<any> {
     return this.request('/project-billing/billable-hours', {

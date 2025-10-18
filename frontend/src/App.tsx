@@ -48,6 +48,7 @@ import { TeamReviewPageV2 as TeamReviewPage } from './pages/team-review/TeamRevi
 import BillingLayout from './pages/billing/BillingLayout';
 import BillingDashboardPage from './pages/billing/BillingDashboardPage';
 import ProjectBillingPage from './pages/billing/ProjectBillingPage';
+import UserBillingPage from './pages/billing/UserBillingPage';
 import TaskBillingPage from './pages/billing/TaskBillingPage';
 import InvoiceManagementPage from './pages/billing/InvoiceManagementPage';
 import RateManagementPage from './pages/billing/RateManagementPage';
@@ -208,6 +209,14 @@ const App: React.FC = () => {
               element={
                 <ProtectedRoute requiredRoles={['super_admin', 'management']}>
                   <ProjectBillingPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="users"
+              element={
+                <ProtectedRoute requiredRoles={['super_admin', 'management']}>
+                  <UserBillingPage />
                 </ProtectedRoute>
               }
             />

@@ -3,7 +3,9 @@ import {
   ProjectBillingController,
   getProjectBillingViewValidation,
   getTaskBillingViewValidation,
-  updateBillableHoursValidation
+  getUserBillingViewValidation,
+  updateBillableHoursValidation,
+  updateProjectBillableTotalValidation
 } from '@/controllers/ProjectBillingController';
 import { requireAuth, requireManager } from '@/middleware/auth';
 
@@ -18,6 +20,24 @@ router.use(requireAuth);
  * @access Private (Manager+)
  */
 router.get('/projects', getProjectBillingViewValidation, ProjectBillingController.getProjectBillingView);
+
+/**
+ * @route PUT /api/v1/project-billing/projects/:projectId/billable-total
+ * @desc Update total billable hours for a project (distributes across members)
+ * @access Private (Manager+)
+ */
+router.put(
+  '/projects/:projectId/billable-total',
+  updateProjectBillableTotalValidation,
+  ProjectBillingController.updateProjectBillableTotal
+);
+
+/**
+ * @route GET /api/v1/project-billing/users
+ * @desc Get user-based billing analytics with task breakdown
+ * @access Private (Manager+)
+ */
+router.get('/users', getUserBillingViewValidation, ProjectBillingController.getUserBillingView);
 
 /**
  * @route GET /api/v1/project-billing/tasks

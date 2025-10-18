@@ -127,12 +127,16 @@ export class TeamReviewServiceV2 {
         }
 
         // Group timesheets by week for this project
+        // Apply role-based filtering here
         const projectTimesheets = timesheets.filter(ts => {
           const approval = approvals.find(
             a => a.timesheet_id.toString() === ts._id.toString() &&
                  a.project_id.toString() === project._id.toString()
           );
-          return approval !== undefined;
+          if (!approval) return false;
+
+          // Role-based visibility filtering
+          return this.isTimesheetVisibleToRole(ts, approval, approverRole, approverId, leadInfo);
         });
 
         // Group by week
@@ -160,7 +164,7 @@ export class TeamReviewServiceV2 {
             weekTimesheets.some(ts => ts._id.toString() === a.timesheet_id.toString())
           );
 
-          const approvalStatus = this.determineProjectWeekStatus(projectWeekApprovals, status);
+          const approvalStatus = this.determineProjectWeekStatus(projectWeekApprovals, status, approverRole);
           if (approvalStatus === null) continue; // Skip if doesn't match filter
 
           // Build users for this project-week
@@ -204,6 +208,16 @@ export class TeamReviewServiceV2 {
               is_billable: e.is_billable
             }));
 
+            // Determine approval status based on viewer role
+            let approvalStatusForUser = approval.manager_status; // default
+            if (approverRole === 'lead') {
+              approvalStatusForUser = approval.lead_status;
+            } else if (approverRole === 'manager' || approverRole === 'super_admin') {
+              approvalStatusForUser = approval.manager_status;
+            } else if (approverRole === 'management') {
+              approvalStatusForUser = approval.management_status;
+            }
+
             users.push({
               user_id: ts.user_id._id.toString(),
               user_name: ts.user_id.full_name || 'Unknown',
@@ -214,7 +228,7 @@ export class TeamReviewServiceV2 {
               timesheet_status: ts.status,
               total_hours_for_project: userHours,
               entries: entryDetails,
-              approval_status: approval.manager_status
+              approval_status: approvalStatusForUser
             });
 
             totalHours += userHours;
@@ -223,9 +237,33 @@ export class TeamReviewServiceV2 {
 
           if (users.length === 0) continue;
 
-          // Get rejection/approval details
-          const rejectedApproval = projectWeekApprovals.find(a => a.manager_status === 'rejected');
-          const approvedApproval = projectWeekApprovals.find(a => a.manager_status === 'approved');
+          // Get rejection/approval details based on role
+          let rejectedApproval, approvedApproval;
+          if (approverRole === 'lead') {
+            rejectedApproval = projectWeekApprovals.find(a => a.lead_status === 'rejected');
+            approvedApproval = projectWeekApprovals.find(a => a.lead_status === 'approved');
+          } else if (approverRole === 'manager' || approverRole === 'super_admin') {
+            rejectedApproval = projectWeekApprovals.find(a => a.manager_status === 'rejected');
+            approvedApproval = projectWeekApprovals.find(a => a.manager_status === 'approved');
+          } else if (approverRole === 'management') {
+            rejectedApproval = projectWeekApprovals.find(a => a.management_status === 'rejected');
+            approvedApproval = projectWeekApprovals.find(a => a.management_status === 'approved');
+          } else {
+            rejectedApproval = projectWeekApprovals.find(a => a.manager_status === 'rejected');
+            approvedApproval = projectWeekApprovals.find(a => a.manager_status === 'approved');
+          }
+
+          // Get role-specific rejection reason
+          let rejectionReason;
+          if (approverRole === 'lead') {
+            rejectionReason = rejectedApproval?.lead_rejection_reason;
+          } else if (approverRole === 'manager' || approverRole === 'super_admin') {
+            rejectionReason = rejectedApproval?.manager_rejection_reason;
+          } else if (approverRole === 'management') {
+            rejectionReason = rejectedApproval?.management_rejection_reason;
+          } else {
+            rejectionReason = rejectedApproval?.manager_rejection_reason;
+          }
 
           projectWeekMap.set(projectWeekKey, {
             project_id: project._id.toString(),
@@ -243,7 +281,7 @@ export class TeamReviewServiceV2 {
             total_users: users.length,
             total_hours: totalHours,
             total_entries: totalEntries,
-            rejected_reason: rejectedApproval?.manager_rejection_reason,
+            rejected_reason: rejectionReason,
             rejected_by: rejectedApproval?.rejected_by?.toString(),
             rejected_at: rejectedApproval && rejectedApproval.updated_at ? new Date(rejectedApproval.updated_at).toISOString() : undefined,
             approved_by: approvedApproval?.approved_by?.toString(),
@@ -334,17 +372,91 @@ export class TeamReviewServiceV2 {
   }
 
   /**
-   * Determine approval status for a project-week
+   * Check if timesheet is visible to the approver based on their role
+   * TIER 1 (Lead): See only Employee timesheets with status 'submitted'
+   * TIER 2 (Manager): See lead_approved + submitted employees (direct) + submitted leads/managers
+   * TIER 3 (Management): See manager_approved + management_pending
+   */
+  private static isTimesheetVisibleToRole(
+    timesheet: any,
+    approval: any,
+    approverRole: string,
+    approverId: string,
+    leadInfo: any
+  ): boolean {
+    const userRole = timesheet.user_id?.role;
+    const timesheetStatus = timesheet.status;
+
+    // TIER 1: LEAD
+    if (approverRole === 'lead') {
+      // Lead can only see Employee timesheets with status 'submitted'
+      return userRole === 'employee' && timesheetStatus === 'submitted';
+    }
+
+    // TIER 2: MANAGER
+    if (approverRole === 'manager' || approverRole === 'super_admin') {
+      // Manager can see:
+      // 1. lead_approved (recommended path)
+      // 2. submitted employees (direct approval path)
+      // 3. submitted leads/managers (their own timesheets)
+      // 4. management_rejected (resubmitted)
+      return (
+        timesheetStatus === 'lead_approved' ||
+        (timesheetStatus === 'submitted' && ['employee', 'lead', 'manager'].includes(userRole)) ||
+        timesheetStatus === 'management_rejected'
+      );
+    }
+
+    // TIER 3: MANAGEMENT
+    if (approverRole === 'management') {
+      // Management can see:
+      // 1. manager_approved (for verification/freezing)
+      // 2. management_pending (manager's own timesheets)
+      return (
+        timesheetStatus === 'manager_approved' ||
+        timesheetStatus === 'management_pending'
+      );
+    }
+
+    return false;
+  }
+
+  /**
+   * Determine approval status for a project-week based on approver role
    */
   private static determineProjectWeekStatus(
     approvals: any[],
-    statusFilter: string
+    statusFilter: string,
+    approverRole?: string
   ): 'pending' | 'approved' | 'rejected' | null {
     if (approvals.length === 0) return null;
 
-    const hasRejected = approvals.some(a => a.manager_status === 'rejected');
-    const hasPending = approvals.some(a => a.manager_status === 'pending');
-    const allApproved = approvals.every(a => a.manager_status === 'approved');
+    let hasRejected = false;
+    let hasPending = false;
+    let allApproved = false;
+
+    // Check status based on approver role
+    if (approverRole === 'lead') {
+      // For Lead: check lead_status
+      hasRejected = approvals.some(a => a.lead_status === 'rejected');
+      hasPending = approvals.some(a => a.lead_status === 'pending');
+      allApproved = approvals.every(a => a.lead_status === 'approved' || a.lead_status === 'not_required');
+    } else if (approverRole === 'manager' || approverRole === 'super_admin') {
+      // For Manager: check manager_status
+      hasRejected = approvals.some(a => a.manager_status === 'rejected');
+      hasPending = approvals.some(a => a.manager_status === 'pending');
+      allApproved = approvals.every(a => a.manager_status === 'approved');
+    } else if (approverRole === 'management') {
+      // For Management: check management_status
+      hasRejected = approvals.some(a => a.management_status === 'rejected');
+      hasPending = approvals.some(a => a.management_status === 'pending');
+      allApproved = approvals.every(a => a.management_status === 'approved');
+    } else {
+      // Default to manager_status for backward compatibility
+      hasRejected = approvals.some(a => a.manager_status === 'rejected');
+      hasPending = approvals.some(a => a.manager_status === 'pending');
+      allApproved = approvals.every(a => a.manager_status === 'approved');
+    }
 
     let status: 'pending' | 'approved' | 'rejected';
 

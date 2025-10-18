@@ -73,7 +73,7 @@ export function BillingEditHoursDialog({
                 {originalHours !== undefined && (
                   <>
                     Original: {originalHours.toFixed(2)}h
-                    {workedHours !== undefined && ' · '}
+                    {workedHours !== undefined && ' | '}
                   </>
                 )}
                 {workedHours !== undefined && <>Worked: {workedHours.toFixed(2)}h</>}

@@ -1,4 +1,4 @@
-export type BillingPeriodView = 'weekly' | 'monthly';
+export type BillingPeriodView = 'weekly' | 'monthly' | 'custom';
 
 export interface BillingDashboardMetrics {
   totalRevenue: number;
@@ -52,6 +52,18 @@ export interface ProjectBillingResource {
     billable_hours: number;
     amount: number;
   }>;
+  tasks?: ProjectBillingResourceTask[];
+}
+
+export interface ProjectBillingResourceTask {
+  task_id: string;
+  task_name: string;
+  project_id: string;
+  project_name: string;
+  total_hours: number;
+  billable_hours: number;
+  non_billable_hours: number;
+  amount: number;
 }
 
 export interface ProjectBillingRecord {
@@ -116,6 +128,57 @@ export interface TaskBillingResponse {
   period: {
     startDate: string;
     endDate: string;
+  };
+}
+
+export interface UserBillingProjectSummary {
+  project_id: string;
+  project_name: string;
+  client_name?: string;
+  total_hours: number;
+  billable_hours: number;
+  non_billable_hours: number;
+  amount: number;
+}
+
+export interface UserBillingTaskSummary {
+  task_id: string;
+  task_name: string;
+  project_id: string;
+  project_name: string;
+  total_hours: number;
+  billable_hours: number;
+  non_billable_hours: number;
+  amount: number;
+}
+
+export interface UserBillingRecord {
+  user_id: string;
+  user_name: string;
+  role: string;
+  total_hours: number;
+  billable_hours: number;
+  non_billable_hours: number;
+  total_amount: number;
+  projects: UserBillingProjectSummary[];
+  tasks: UserBillingTaskSummary[];
+}
+
+export interface UserBillingSummary {
+  total_users: number;
+  total_hours: number;
+  total_billable_hours: number;
+  total_non_billable_hours: number;
+  total_amount: number;
+}
+
+export interface UserBillingResponse {
+  users: UserBillingRecord[];
+  summary: UserBillingSummary;
+  period: {
+    startDate: string;
+    endDate: string;
+    view: 'weekly' | 'monthly' | 'custom';
   };
 }
 

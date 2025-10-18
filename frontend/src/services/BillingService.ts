@@ -9,7 +9,8 @@ import type {
   CreateRateData,
   ProjectBillingResponse,
   RevenueByProject,
-  TaskBillingResponse
+  TaskBillingResponse,
+  UserBillingResponse
 } from '../types/billing';
 
 interface ProjectBillingParams {
@@ -17,6 +18,7 @@ interface ProjectBillingParams {
   endDate: string;
   view: BillingPeriodView;
   projectIds?: string[];
+  clientIds?: string[];
 }
 
 interface TaskBillingParams {
@@ -24,6 +26,16 @@ interface TaskBillingParams {
   endDate: string;
   projectIds?: string[];
   taskIds?: string[];
+}
+
+interface UserBillingParams {
+  startDate: string;
+  endDate: string;
+  view: BillingPeriodView | 'custom';
+  projectIds?: string[];
+  clientIds?: string[];
+  roles?: string[];
+  search?: string;
 }
 
 interface UpdateBillingHoursPayload {
@@ -291,6 +303,9 @@ export class BillingService {
         view: params.view,
         ...(params.projectIds && params.projectIds.length > 0
           ? { projectIds: params.projectIds.join(',') }
+          : {}),
+        ...(params.clientIds && params.clientIds.length > 0
+          ? { clientIds: params.clientIds.join(',') }
           : {})
       });
 
@@ -340,6 +355,32 @@ export class BillingService {
     }
   }
 
+  static async updateProjectTotalBillableHours(
+    projectId: string,
+    startDate: string,
+    endDate: string,
+    billableHours: number
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await backendApi.put(`/project-billing/projects/${projectId}/billable-total`, {
+        start_date: startDate,
+        end_date: endDate,
+        billable_hours: billableHours
+      });
+
+      return {
+        success: Boolean(response.success),
+        error: response.success ? undefined : (response.message || 'Failed to update project billable hours')
+      };
+    } catch (error: unknown) {
+      console.error('Error in updateProjectTotalBillableHours:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update project billable hours'
+      };
+    }
+  }
+
   /**
    * Get task-level billing data
    */
@@ -368,6 +409,45 @@ export class BillingService {
       console.error('Error in getTaskBilling:', error);
       return {
         error: error instanceof Error ? error.message : 'Failed to fetch task billing data'
+      };
+    }
+  }
+
+  /**
+   * Get user-level billing data with project and task breakdowns
+   */
+  static async getUserBilling(params: UserBillingParams): Promise<{ data?: UserBillingResponse; error?: string }> {
+    try {
+      const query = new URLSearchParams({
+        startDate: params.startDate,
+        endDate: params.endDate,
+        view: params.view,
+        ...(params.projectIds && params.projectIds.length > 0
+          ? { projectIds: params.projectIds.join(',') }
+          : {}),
+        ...(params.clientIds && params.clientIds.length > 0
+          ? { clientIds: params.clientIds.join(',') }
+          : {}),
+        ...(params.roles && params.roles.length > 0
+          ? { roles: params.roles.join(',') }
+          : {}),
+        ...(params.search && params.search.trim().length > 0
+          ? { search: params.search.trim() }
+          : {})
+      });
+
+      const response = await backendApi.get(`/project-billing/users?${query.toString()}`);
+      if (response.success && response.data) {
+        return { data: response.data as UserBillingResponse };
+      }
+
+      return {
+        error: response.message || 'Failed to fetch user billing data'
+      };
+    } catch (error: unknown) {
+      console.error('Error in getUserBilling:', error);
+      return {
+        error: error instanceof Error ? error.message : 'Failed to fetch user billing data'
       };
     }
   }

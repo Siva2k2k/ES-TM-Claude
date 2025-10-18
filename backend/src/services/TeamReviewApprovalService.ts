@@ -5,7 +5,7 @@
  */
 
 import mongoose from 'mongoose';
-import { Timesheet } from '../models/Timesheet';
+import { Timesheet, TimesheetStatus } from '../models/Timesheet';
 import { TimesheetProjectApproval } from '../models/TimesheetProjectApproval';
 import { ApprovalHistory } from '../models/ApprovalHistory';
 import { Project } from '../models/Project';
@@ -16,6 +16,8 @@ import type { BulkProjectWeekApprovalResponse } from '../types/teamReview';
 const ALLOWED_STATUSES = new Set([
   'draft',
   'submitted',
+  'lead_approved',
+  'lead_rejected',
   'manager_approved',
   'manager_rejected',
   'management_pending',
@@ -219,12 +221,14 @@ export class TeamReviewApprovalService {
 
       if (session) await session.commitTransaction();
 
+      const statusChanged = newStatus !== statusBefore;
+
       return {
         success: true,
-        message: allApprovals
+        message: statusChanged
           ? 'Timesheet approved and status updated'
-          : 'Project approved, waiting for other managers',
-        all_approved: allApprovals,
+          : 'Project approved, waiting for other approvers',
+        all_approved: statusChanged,
         new_status: newStatus
       };
     } catch (error) {
@@ -269,7 +273,7 @@ export class TeamReviewApprovalService {
 
       const statusBefore = timesheet.status;
 
-      let newStatus: string;
+      let newStatus: TimesheetStatus;
 
       // TIER 1: LEAD REJECTION
       if (approverRole === 'lead') {
@@ -582,7 +586,7 @@ export class TeamReviewApprovalService {
 
         const statusBefore = timesheet.status;
         const timesheetUser = await timesheet.populate('user_id');
-        const timesheetUserRole = timesheetUser.user_id?.role || 'employee';
+        const timesheetUserRole = (timesheetUser.user_id as any)?.role || 'employee';
 
         // TIER 1: LEAD APPROVAL
         if (approverRole === 'lead') {
@@ -679,19 +683,18 @@ export class TeamReviewApprovalService {
         affectedTimesheetIds.add(timesheet._id.toString());
         affectedUsers++;
 
-          // Record history - use the timesheet's status values so they match ApprovalHistory enum
-          await ApprovalHistory.create([{
-            timesheet_id: timesheet._id,
-            project_id: new mongoose.Types.ObjectId(projectId),
-            user_id: timesheet.user_id,
-            approver_id: new mongoose.Types.ObjectId(approverId),
-            approver_role: approverRole,
-            action: 'approved',
-            status_before: normalizeTimesheetStatus(statusBefore),
-            status_after: normalizeTimesheetStatus(timesheet.status),
-            notes: 'Bulk project-week approval'
-          }], queryOpts);
-        }
+        // Record history - use the timesheet's status values so they match ApprovalHistory enum
+        await ApprovalHistory.create([{
+          timesheet_id: timesheet._id,
+          project_id: new mongoose.Types.ObjectId(projectId),
+          user_id: timesheet.user_id,
+          approver_id: new mongoose.Types.ObjectId(approverId),
+          approver_role: approverRole,
+          action: 'approved',
+          status_before: normalizeTimesheetStatus(statusBefore),
+          status_after: normalizeTimesheetStatus(timesheet.status),
+          notes: 'Bulk project-week approval'
+        }], queryOpts);
       }
 
       if(session) await session.commitTransaction();

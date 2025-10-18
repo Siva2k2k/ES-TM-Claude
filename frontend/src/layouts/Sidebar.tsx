@@ -26,16 +26,19 @@ interface SidebarProps {
   onClose: () => void;
 }
 
+interface NavSubItem {
+  id: string;
+  label: string;
+  path: string;
+  group?: 'primary' | 'others';
+}
+
 interface NavItem {
   id: string;
   label: string;
   icon: React.ElementType;
   path: string;
-  subItems?: {
-    id: string;
-    label: string;
-    path: string;
-  }[];
+  subItems?: NavSubItem[];
 }
 
 export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
@@ -73,11 +76,11 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
         }
 
         const items: NavItem['subItems'] = [
-          { id: 'billing-projects', label: 'Project Billing', path: '/dashboard/billing' },
-          { id: 'billing-dashboard', label: 'Billing Dashboard', path: '/dashboard/billing/dashboard' },
-          { id: 'billing-tasks', label: 'Task Billing', path: '/dashboard/billing/tasks' },
-          { id: 'billing-invoices', label: 'Invoices', path: '/dashboard/billing/invoices' },
-          { id: 'billing-rates', label: 'Rates', path: '/dashboard/billing/rates' }
+          { id: 'billing-projects', label: 'Project View', path: '/dashboard/billing/projects', group: 'primary' },
+          { id: 'billing-users', label: 'User View', path: '/dashboard/billing/users', group: 'primary' },
+          { id: 'billing-dashboard', label: 'Billing Dashboard', path: '/dashboard/billing/dashboard', group: 'others' },
+          { id: 'billing-invoices', label: 'Invoices', path: '/dashboard/billing/invoices', group: 'others' },
+          { id: 'billing-rates', label: 'Rates', path: '/dashboard/billing/rates', group: 'others' }
         ];
 
         return items;
@@ -100,7 +103,7 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
           ]
         },
         { id: 'reports', label: 'Reports & Analytics', icon: TrendingUp, path: '/dashboard/reports' },
-        { id: 'billing', label: 'Billing Management', icon: FileText, path: '/dashboard/billing', subItems: billingSubItems },
+        { id: 'billing', label: 'Billing Management', icon: FileText, path: '/dashboard/billing/projects', subItems: billingSubItems },
         {
           id: 'audit',
           label: 'Audit Logs',
@@ -120,7 +123,7 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
         { id: 'clients', label: 'Client Management', icon: UserCheck, path: '/dashboard/clients' },
         { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team-review' },
         { id: 'reports', label: 'Reports & Analytics', icon: TrendingUp, path: '/dashboard/reports' },
-        { id: 'billing', label: 'Billing Management', icon: FileText, path: '/dashboard/billing', subItems: billingSubItems },
+        { id: 'billing', label: 'Billing Management', icon: FileText, path: '/dashboard/billing/projects', subItems: billingSubItems },
         { id: 'deleted-items', label: 'Deleted Items', icon: Trash2, path: '/dashboard/admin/deleted-items' }
       );
     }
@@ -205,6 +208,20 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
             const Icon = item.icon;
             const hasSubItems = item.subItems && item.subItems.length > 0;
             const isExpanded = expandedSections.has(item.id);
+            const groupedSubItems = item.subItems?.reduce<Record<'primary' | 'others', NavSubItem[]>>(
+              (acc, subItem) => {
+                const group = subItem.group ?? 'primary';
+                if (!acc[group]) {
+                  acc[group] = [];
+                }
+                acc[group].push(subItem);
+                return acc;
+              },
+              { primary: [], others: [] }
+            ) ?? { primary: [], others: [] };
+            const usesGroupedLayout = item.subItems?.some((subItem) => subItem.group) ?? false;
+            const primarySubItems = groupedSubItems.primary;
+            const otherSubItems = groupedSubItems.others;
 
             if (hasSubItems) {
               // Item with sub-items - always expanded view on mobile
@@ -230,23 +247,70 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
                   {/* Sub-items */}
                   {isExpanded && (
                     <div className="ml-4 space-y-1 pl-4 border-l-2 border-slate-200 dark:border-gray-700">
-                      {item.subItems?.map((subItem) => (
-                        <NavLink
-                          key={subItem.id}
-                          to={subItem.path}
-                          onClick={onClose}
-                          className={({ isActive }) =>
-                            cn(
-                              'block px-4 py-2.5 rounded-lg text-sm transition-all',
-                              isActive
-                                ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium'
-                                : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-700'
-                            )
-                          }
-                        >
-                          {subItem.label}
-                        </NavLink>
-                      ))}
+                      {usesGroupedLayout ? (
+                        <>
+                          {primarySubItems.map((subItem) => (
+                            <NavLink
+                              key={subItem.id}
+                              to={subItem.path}
+                              onClick={onClose}
+                              className={({ isActive }) =>
+                                cn(
+                                  'block px-4 py-2.5 rounded-lg text-sm transition-all',
+                                  isActive
+                                    ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium'
+                                    : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-700'
+                                )
+                              }
+                            >
+                              {subItem.label}
+                            </NavLink>
+                          ))}
+
+                          {otherSubItems.length > 0 && (
+                            <>
+                              <div className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                                Others
+                              </div>
+                              {otherSubItems.map((subItem) => (
+                                <NavLink
+                                  key={subItem.id}
+                                  to={subItem.path}
+                                  onClick={onClose}
+                                  className={({ isActive }) =>
+                                    cn(
+                                      'block px-4 py-2.5 rounded-lg text-sm transition-all',
+                                      isActive
+                                        ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium'
+                                        : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-700'
+                                    )
+                                  }
+                                >
+                                  {subItem.label}
+                                </NavLink>
+                              ))}
+                            </>
+                          )}
+                        </>
+                      ) : (
+                        item.subItems?.map((subItem) => (
+                          <NavLink
+                            key={subItem.id}
+                            to={subItem.path}
+                            onClick={onClose}
+                            className={({ isActive }) =>
+                              cn(
+                                'block px-4 py-2.5 rounded-lg text-sm transition-all',
+                                isActive
+                                  ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium'
+                                  : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-700'
+                              )
+                            }
+                          >
+                            {subItem.label}
+                          </NavLink>
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
@@ -306,6 +370,20 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
             const Icon = item.icon;
             const hasSubItems = item.subItems && item.subItems.length > 0;
             const isExpanded = expandedSections.has(item.id);
+            const desktopGroupedSubItems = item.subItems?.reduce<Record<'primary' | 'others', NavSubItem[]>>(
+              (acc, subItem) => {
+                const group = subItem.group ?? 'primary';
+                if (!acc[group]) {
+                  acc[group] = [];
+                }
+                acc[group].push(subItem);
+                return acc;
+              },
+              { primary: [], others: [] }
+            ) ?? { primary: [], others: [] };
+            const desktopUsesGroupedLayout = item.subItems?.some((subItem) => subItem.group) ?? false;
+            const desktopPrimarySubItems = desktopGroupedSubItems.primary;
+            const desktopOtherSubItems = desktopGroupedSubItems.others;
 
             if (hasSubItems) {
               // Item with sub-items (dropdown or tooltip on collapsed)
@@ -335,7 +413,7 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
                           <div className="text-xs font-medium text-slate-500 dark:text-gray-400 px-3 py-2 uppercase tracking-wider">
                             {item.label}
                           </div>
-                          {item.subItems?.map((subItem) => (
+                          {(desktopUsesGroupedLayout ? desktopPrimarySubItems : item.subItems ?? []).map((subItem) => (
                             <NavLink
                               key={subItem.id}
                               to={subItem.path}
@@ -352,6 +430,31 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
                               {subItem.label}
                             </NavLink>
                           ))}
+
+                          {desktopUsesGroupedLayout && desktopOtherSubItems.length > 0 && (
+                            <>
+                              <div className="px-3 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                                Others
+                              </div>
+                              {desktopOtherSubItems.map((subItem) => (
+                                <NavLink
+                                  key={subItem.id}
+                                  to={subItem.path}
+                                  onClick={onClose}
+                                  className={({ isActive }) =>
+                                    cn(
+                                      'block px-3 py-2 rounded-md text-sm transition-all',
+                                      isActive
+                                        ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium'
+                                        : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-700'
+                                    )
+                                  }
+                                >
+                                  {subItem.label}
+                                </NavLink>
+                              ))}
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -378,23 +481,70 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
                       {/* Sub-items */}
                       {isExpanded && (
                         <div className="ml-4 space-y-1 pl-4 border-l-2 border-slate-200 dark:border-gray-700">
-                          {item.subItems?.map((subItem) => (
-                            <NavLink
-                              key={subItem.id}
-                              to={subItem.path}
-                              onClick={onClose}
-                              className={({ isActive }) =>
-                                cn(
-                                  'block px-4 py-2 rounded-lg text-sm transition-all',
-                                  isActive
-                                    ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium'
-                                    : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-700'
-                                )
-                              }
-                            >
-                              {subItem.label}
-                            </NavLink>
-                          ))}
+                          {desktopUsesGroupedLayout ? (
+                            <>
+                              {desktopPrimarySubItems.map((subItem) => (
+                                <NavLink
+                                  key={subItem.id}
+                                  to={subItem.path}
+                                  onClick={onClose}
+                                  className={({ isActive }) =>
+                                    cn(
+                                      'block px-4 py-2 rounded-lg text-sm transition-all',
+                                      isActive
+                                        ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium'
+                                        : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-700'
+                                    )
+                                  }
+                                >
+                                  {subItem.label}
+                                </NavLink>
+                              ))}
+
+                              {desktopOtherSubItems.length > 0 && (
+                                <>
+                                  <div className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                                    Others
+                                  </div>
+                                  {desktopOtherSubItems.map((subItem) => (
+                                    <NavLink
+                                      key={subItem.id}
+                                      to={subItem.path}
+                                      onClick={onClose}
+                                      className={({ isActive }) =>
+                                        cn(
+                                          'block px-4 py-2 rounded-lg text-sm transition-all',
+                                          isActive
+                                            ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium'
+                                            : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-700'
+                                        )
+                                      }
+                                    >
+                                      {subItem.label}
+                                    </NavLink>
+                                  ))}
+                                </>
+                              )}
+                            </>
+                          ) : (
+                            item.subItems?.map((subItem) => (
+                              <NavLink
+                                key={subItem.id}
+                                to={subItem.path}
+                                onClick={onClose}
+                                className={({ isActive }) =>
+                                  cn(
+                                    'block px-4 py-2 rounded-lg text-sm transition-all',
+                                    isActive
+                                      ? 'bg-blue-50 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 font-medium'
+                                      : 'text-slate-600 dark:text-gray-400 hover:bg-slate-100 dark:hover:bg-gray-700'
+                                  )
+                                }
+                              >
+                                {subItem.label}
+                              </NavLink>
+                            ))
+                          )}
                         </div>
                       )}
                     </>

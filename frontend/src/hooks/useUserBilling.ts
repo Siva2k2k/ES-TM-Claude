@@ -1,17 +1,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BillingService } from '../services/BillingService';
-import type { BillingPeriodView, ProjectBillingResponse } from '../types/billing';
+import type { BillingPeriodView, UserBillingResponse } from '../types/billing';
 import { showError, showSuccess } from '../utils/toast';
 
 const getDefaultRange = () => {
   const now = new Date();
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-  const toIso = (date: Date) => date.toISOString().split('T')[0];
+  const format = (date: Date) => date.toISOString().split('T')[0];
 
   return {
-    startDate: toIso(start),
-    endDate: toIso(end)
+    startDate: format(start),
+    endDate: format(end)
   };
 };
 
@@ -23,28 +23,34 @@ interface UpdateHoursArgs {
   reason?: string;
 }
 
-interface UpdateHoursOptions {
-  silent?: boolean;
-  skipRefresh?: boolean;
+interface UseUserBillingOptions {
+  initialProjectIds?: string[];
+  initialClientIds?: string[];
 }
 
-export function useProjectBilling(initialProjectIds: string[] = []) {
+type ViewOption = BillingPeriodView | 'custom';
+
+export function useUserBilling(options: UseUserBillingOptions = {}) {
   const defaultRange = useMemo(getDefaultRange, []);
 
   const [params, setParams] = useState<{
     startDate: string;
     endDate: string;
-    view: BillingPeriodView;
+    view: ViewOption;
     projectIds: string[];
     clientIds: string[];
-  }>({
+    search: string;
+    roles: string[];
+  }>(() => ({
     ...defaultRange,
     view: 'monthly',
-    projectIds: initialProjectIds,
-    clientIds: []
-  });
+    projectIds: options.initialProjectIds ?? [],
+    clientIds: options.initialClientIds ?? [],
+    search: '',
+    roles: []
+  }));
 
-  const [data, setData] = useState<ProjectBillingResponse | null>(null);
+  const [data, setData] = useState<UserBillingResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,12 +58,14 @@ export function useProjectBilling(initialProjectIds: string[] = []) {
     setLoading(true);
     setError(null);
 
-    const result = await BillingService.getProjectBilling({
+    const result = await BillingService.getUserBilling({
       startDate: params.startDate,
       endDate: params.endDate,
       view: params.view,
       projectIds: params.projectIds,
-      clientIds: params.clientIds
+      clientIds: params.clientIds,
+      search: params.search,
+      roles: params.roles
     });
 
     if (result.error) {
@@ -68,13 +76,13 @@ export function useProjectBilling(initialProjectIds: string[] = []) {
     }
 
     setLoading(false);
-  }, [params.startDate, params.endDate, params.view, params.projectIds]);
+  }, [params]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
 
-  const updateBillingHours = useCallback(async (args: UpdateHoursArgs, options: UpdateHoursOptions = {}) => {
+  const updateProjectHours = useCallback(async (args: UpdateHoursArgs) => {
     const { success, error: updateError } = await BillingService.updateProjectBillingHours({
       userId: args.userId,
       projectId: args.projectId,
@@ -82,7 +90,7 @@ export function useProjectBilling(initialProjectIds: string[] = []) {
       endDate: params.endDate,
       billableHours: args.billableHours,
       totalHours: args.totalHours,
-      reason: args.reason ?? 'Manual adjustment from project billing view'
+      reason: args.reason ?? 'Manual adjustment from user billing view'
     });
 
     if (!success) {
@@ -90,14 +98,8 @@ export function useProjectBilling(initialProjectIds: string[] = []) {
       return false;
     }
 
-    if (!options.silent) {
-      showSuccess('Billable hours updated');
-    }
-
-    if (!options.skipRefresh) {
-      await loadData();
-    }
-
+    showSuccess('Billable hours updated');
+    await loadData();
     return true;
   }, [params.startDate, params.endDate, loadData]);
 
@@ -109,7 +111,7 @@ export function useProjectBilling(initialProjectIds: string[] = []) {
     }));
   }, []);
 
-  const setView = useCallback((view: BillingPeriodView) => {
+  const setView = useCallback((view: ViewOption) => {
     setParams((prev) => ({
       ...prev,
       view
@@ -130,6 +132,20 @@ export function useProjectBilling(initialProjectIds: string[] = []) {
     }));
   }, []);
 
+  const setSearch = useCallback((value: string) => {
+    setParams((prev) => ({
+      ...prev,
+      search: value
+    }));
+  }, []);
+
+  const setRoles = useCallback((roles: string[]) => {
+    setParams((prev) => ({
+      ...prev,
+      roles
+    }));
+  }, []);
+
   return {
     data,
     loading,
@@ -139,7 +155,9 @@ export function useProjectBilling(initialProjectIds: string[] = []) {
     setView,
     setProjectIds,
     setClientIds,
+    setSearch,
+    setRoles,
     refresh: loadData,
-    updateBillingHours
+    updateProjectHours
   };
 }

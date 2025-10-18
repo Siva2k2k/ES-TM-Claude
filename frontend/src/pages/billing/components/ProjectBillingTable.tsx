@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Edit3 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Edit3, Lock } from 'lucide-react';
 import type { ProjectBillingRecord, ProjectBillingResponse } from '../../../types/billing';
 
 interface ProjectBillingTableProps {
@@ -12,9 +12,17 @@ interface ProjectBillingTableProps {
     currentBillable: number;
     totalHours: number;
   }) => void;
+  onProjectAdjust?: (project: ProjectBillingRecord) => void;
+  lockedProjects?: Set<string>;
 }
 
-export function ProjectBillingTable({ data, loading, onEdit }: ProjectBillingTableProps) {
+export function ProjectBillingTable({
+  data,
+  loading,
+  onEdit,
+  onProjectAdjust,
+  lockedProjects
+}: ProjectBillingTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const toggleProject = (projectId: string) => {
@@ -73,10 +81,14 @@ export function ProjectBillingTable({ data, loading, onEdit }: ProjectBillingTab
               <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                 Cost
               </th>
+              <th className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
+                Actions
+              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
             {data.projects.map((project) => {
+              const isLocked = lockedProjects?.has(project.project_id) ?? false;
               const isExpanded = expanded.has(project.project_id);
               const projectTotalHours =
                 project.total_hours ??
@@ -87,10 +99,12 @@ export function ProjectBillingTable({ data, loading, onEdit }: ProjectBillingTab
                   (sum, resource) => sum + (resource.billable_hours ?? resource.total_hours),
                   0
                 );
-              const projectCost = project.resources.reduce(
-                (sum, resource) => sum + resource.hourly_rate * resource.total_hours,
-                0
-              );
+              const projectCost =
+                project.total_amount ??
+                project.resources.reduce(
+                  (sum, resource) => sum + (resource.total_amount ?? resource.billable_hours * resource.hourly_rate),
+                  0
+                );
               const projectNonBillable = Math.max(
                 project.total_hours !== undefined && project.non_billable_hours !== undefined
                   ? project.non_billable_hours
@@ -112,7 +126,15 @@ export function ProjectBillingTable({ data, loading, onEdit }: ProjectBillingTab
                         ) : (
                           <ChevronRight className="h-4 w-4" />
                         )}
-                        {project.project_name}
+                        <span className="flex items-center gap-2">
+                          {project.project_name}
+                          {isLocked && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
+                              <Lock className="h-3 w-3" />
+                              Locked
+                            </span>
+                          )}
+                        </span>
                       </button>
                     </td>
                     <td className="px-4 py-3 text-sm text-slate-500 dark:text-slate-400">
@@ -130,11 +152,24 @@ export function ProjectBillingTable({ data, loading, onEdit }: ProjectBillingTab
                     <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900 dark:text-slate-100">
                       ${projectCost.toLocaleString()}
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      {onProjectAdjust && (
+                        <button
+                          type="button"
+                          onClick={() => !isLocked && onProjectAdjust(project)}
+                          disabled={isLocked}
+                          className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium transition hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-blue-900/20 dark:disabled:border-slate-700 dark:disabled:text-slate-600"
+                        >
+                          <Edit3 className="h-4 w-4" />
+                          {isLocked ? 'Locked' : 'Adjust Total'}
+                        </button>
+                      )}
+                    </td>
                   </tr>
 
                   {isExpanded && (
                     <tr className="bg-slate-50/60 dark:bg-slate-800/40">
-                      <td colSpan={6} className="px-4 pb-4 pt-0">
+                      <td colSpan={7} className="px-4 pb-4 pt-0">
                         <div className="overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700">
                           <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
                             <thead className="bg-slate-100 dark:bg-slate-800">
@@ -166,7 +201,7 @@ export function ProjectBillingTable({ data, loading, onEdit }: ProjectBillingTab
                               {project.resources.map((resource) => {
                                 const workedHours = resource.total_hours;
                                 const billableHours = resource.billable_hours ?? workedHours;
-                                const cost = resource.hourly_rate * workedHours;
+                                const cost = resource.total_amount ?? billableHours * resource.hourly_rate;
 
                                 return (
                                   <tr key={resource.user_id}>
@@ -200,10 +235,11 @@ export function ProjectBillingTable({ data, loading, onEdit }: ProjectBillingTab
                                             totalHours: workedHours
                                           })
                                         }
-                                        className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-600 transition hover:bg-blue-50 hover:text-blue-600 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-blue-900/20"
+                                        disabled={isLocked}
+                                        className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium transition hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-blue-900/20 dark:disabled:border-slate-700 dark:disabled:text-slate-600"
                                       >
                                         <Edit3 className="mr-2 h-4 w-4" />
-                                        Adjust
+                                        {isLocked ? 'Locked' : 'Adjust'}
                                       </button>
                                     </td>
                                   </tr>
