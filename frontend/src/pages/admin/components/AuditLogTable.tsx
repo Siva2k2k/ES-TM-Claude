@@ -60,7 +60,8 @@ export const AuditLogTable: React.FC<AuditLogTableProps> = ({
 }) => {
   const [expandedRows, setExpandedRows] = React.useState<Set<string>>(new Set());
 
-  const toggleRow = (logId: string) => {
+  const toggleRow = (logId: string, event: React.MouseEvent) => {
+    event.stopPropagation(); // Prevent event bubbling
     setExpandedRows(prev => {
       const newSet = new Set(prev);
       if (newSet.has(logId)) {
@@ -149,7 +150,7 @@ export const AuditLogTable: React.FC<AuditLogTableProps> = ({
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     {hasDetails && (
                       <button
-                        onClick={() => toggleRow(log._id)}
+                        onClick={(e) => toggleRow(log._id, e)}
                         className="text-blue-600 hover:text-blue-900 inline-flex items-center"
                       >
                         {isExpanded ? (

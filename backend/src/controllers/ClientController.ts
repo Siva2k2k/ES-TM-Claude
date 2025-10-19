@@ -203,7 +203,14 @@ export class ClientController {
       }
 
       const { clientId } = req.params;
-      const result = await ClientService.deleteClient(clientId, req.user as any);
+      const { reason } = req.body;
+
+      if (!reason || reason.trim().length === 0) {
+        res.status(400).json({ success: false, message: 'Delete reason is required' });
+        return;
+      }
+
+      const result = await ClientService.deleteClient(clientId, reason, req.user as any);
 
       if (result.error) {
         res.status(400).json({ success: false, message: result.error });
@@ -216,6 +223,90 @@ export class ClientController {
       });
     } catch (error) {
       console.error('Error in deleteClient:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  }
+
+  static async hardDeleteClient(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+
+      const { clientId } = req.params;
+      const result = await ClientService.hardDeleteClient(clientId, req.user as any);
+
+      if (result.error) {
+        res.status(400).json({ success: false, message: result.error });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Client permanently deleted'
+      });
+    } catch (error) {
+      console.error('Error in hardDeleteClient:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  }
+
+  static async restoreClient(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+
+      const { clientId } = req.params;
+      const result = await ClientService.restoreClient(clientId, req.user as any);
+
+      if (result.error) {
+        res.status(400).json({ success: false, message: result.error });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: 'Client restored successfully'
+      });
+    } catch (error) {
+      console.error('Error in restoreClient:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  }
+
+  static async getDeletedClients(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: 'Authentication required' });
+        return;
+      }
+
+      const result = await ClientService.getDeletedClients(req.user as any);
+
+      if (result.error) {
+        res.status(403).json({ success: false, message: result.error });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        data: result.clients,
+        message: 'Deleted clients fetched successfully'
+      });
+    } catch (error) {
+      console.error('Error in getDeletedClients:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error'

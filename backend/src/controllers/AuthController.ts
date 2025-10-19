@@ -12,6 +12,7 @@ import {
 import { PasswordSecurity } from '@/utils/passwordSecurity';
 import { UserService } from '@/services/UserService';
 import { logger } from '@/config/logger';
+import { AuditLogService } from '@/services/AuditLogService';
 
 interface AuthResponse {
   success: boolean;
@@ -68,6 +69,20 @@ export class AuthController {
     });
 
     await user.save();
+
+    // Log registration audit event
+    await AuditLogService.logEvent(
+      'users',
+      user.id,
+      'USER_CREATED',
+      user.id,
+      user.full_name,
+      {
+        email: user.email,
+        role: user.role,
+        registration_method: 'self-registration'
+      }
+    );
 
     // Generate tokens
     const tokenPayload = {
@@ -137,6 +152,21 @@ export class AuthController {
     if (!isPasswordValid) {
       // Record failed login attempt
       await UserService.recordFailedLogin(user._id);
+
+      // Log failed login attempt
+      await AuditLogService.logEvent(
+        'users',
+        user.id,
+        'USER_LOGIN',
+        user.id,
+        user.full_name,
+        {
+          success: false,
+          reason: 'Invalid password',
+          ip_address: req.ip || req.socket.remoteAddress
+        }
+      );
+
       throw new AuthenticationError('Invalid email or password');
     }
 
@@ -190,6 +220,20 @@ export class AuthController {
       (response as any).requirePasswordChange = true;
       (response as any).passwordExpired = passwordStatus.expired;
     }
+
+    // Log successful login
+    await AuditLogService.logEvent(
+      'users',
+      user.id,
+      'USER_LOGIN',
+      user.id,
+      user.full_name,
+      {
+        success: true,
+        ip_address: req.ip || req.socket.remoteAddress,
+        user_agent: req.headers['user-agent']
+      }
+    );
 
     logger.info(`Successful login for user: ${user.email}`);
     res.json(response);
@@ -310,6 +354,23 @@ export class AuthController {
    * Logout (invalidate tokens - in a real implementation, you'd maintain a blacklist)
    */
   static logout = handleAsyncError(async (req: Request, res: Response) => {
+    const userId = (req as any).user?.id;
+    const userName = (req as any).user?.full_name || 'Unknown User';
+
+    // Log logout event
+    if (userId) {
+      await AuditLogService.logEvent(
+        'users',
+        userId,
+        'USER_LOGOUT',
+        userId,
+        userName,
+        {
+          ip_address: req.ip || req.socket.remoteAddress
+        }
+      );
+    }
+
     // In a more sophisticated implementation, you would:
     // 1. Add the tokens to a blacklist/revocation list
     // 2. Store blacklisted tokens in Redis or database

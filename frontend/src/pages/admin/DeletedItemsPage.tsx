@@ -6,7 +6,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../store/contexts/AuthContext';
-import { DeletedItemsTable, DeletedItem } from './components';
+import { DeletedItemsTable } from './components';
+import type { DeletedItem } from './components/DeletedItemsTable';
+import DeletedItemsService from '../../services/DeletedItemsService';
 import {
   Shield,
   Trash2,
@@ -42,23 +44,14 @@ export const DeletedItemsPage: React.FC = () => {
   const loadDeletedItems = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (selectedEntityType !== 'all') {
-        params.append('entityType', selectedEntityType);
+      const result = await DeletedItemsService.getDeletedItems(selectedEntityType);
+
+      if (result.error) {
+        showError(result.error);
+        return;
       }
 
-      const response = await fetch(`/api/v1/delete/deleted-items?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch deleted items');
-      }
-
-      const data = await response.json();
-      setItems(data.items || []);
+      setItems(result.items || []);
     } catch (error) {
       showError('Failed to load deleted items');
       console.error('Error loading deleted items:', error);
@@ -95,20 +88,13 @@ export const DeletedItemsPage: React.FC = () => {
     if (!selectedItem || !actionType) return;
 
     try {
-      const endpoint = actionType === 'restore'
-        ? `/api/v1/delete/${selectedItem.entity_type}/${selectedItem._id}/restore`
-        : `/api/v1/delete/${selectedItem.entity_type}/${selectedItem._id}/hard-delete`;
+      const result = actionType === 'restore'
+        ? await DeletedItemsService.restoreItem(selectedItem.entity_type, selectedItem._id)
+        : await DeletedItemsService.hardDeleteItem(selectedItem.entity_type, selectedItem._id);
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error(`Failed to ${actionType === 'restore' ? 'restore' : 'delete'} item`);
+      if (!result.success || result.error) {
+        showError(result.error || `Failed to ${actionType === 'restore' ? 'restore' : 'delete'} item`);
+        return;
       }
 
       showSuccess(

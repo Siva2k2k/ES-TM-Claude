@@ -6,7 +6,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../store/contexts/AuthContext';
-import { AuditLogTable, AuditLog } from './components';
+import { AuditLogTable } from './components';
+import type { ActivityAuditLog } from '../../services/AuditLogService';
+import AuditLogService from '../../services/AuditLogService';
+import { MultiSelect } from '../../components/ui/MultiSelect';
 import {
   Shield,
   Activity,
@@ -14,23 +17,43 @@ import {
   Filter,
   Download,
   Calendar,
-  RefreshCw
+  RefreshCw,
+  X
 } from 'lucide-react';
 import { showError, showSuccess } from '../../utils/toast';
 
+// Map ActivityAuditLog to AuditLog for component compatibility
+type AuditLog = ActivityAuditLog & { _id: string };
+
 const AUDIT_ACTIONS = [
+  'INSERT',
+  'UPDATE',
+  'DELETE',
+  'APPROVE',
+  'REJECT',
+  'VERIFY',
+  'FREEZE',
+  'SUBMIT',
+  'ESCALATE',
   'USER_LOGIN',
   'USER_LOGOUT',
   'USER_CREATED',
-  'USER_UPDATED',
-  'USER_DELETED',
+  'USER_APPROVED',
+  'USER_DEACTIVATED',
+  'USER_ROLE_CHANGED',
   'TIMESHEET_SUBMITTED',
   'TIMESHEET_APPROVED',
+  'TIMESHEET_VERIFIED',
   'TIMESHEET_REJECTED',
   'PROJECT_CREATED',
   'PROJECT_UPDATED',
   'PROJECT_DELETED',
-  'PERMISSION_DENIED'
+  'BILLING_SNAPSHOT_GENERATED',
+  'BILLING_APPROVED',
+  'ROLE_SWITCHED',
+  'PERMISSION_DENIED',
+  'DATA_EXPORT',
+  'SYSTEM_CONFIG_CHANGED'
 ];
 
 export const AuditLogsPage: React.FC = () => {
@@ -40,62 +63,114 @@ export const AuditLogsPage: React.FC = () => {
   const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
+  const [searchQuery, setSearchQuery] = useState(''); // For debounced search
   const [selectedActions, setSelectedActions] = useState<string[]>([]);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [totalLogs, setTotalLogs] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [sortBy, setSortBy] = useState<'timestamp' | 'action' | 'actor'>('timestamp');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const LOGS_PER_PAGE = 50;
 
   // Permission check
   const canViewAuditLogs = ['super_admin', 'management'].includes(currentUserRole);
 
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchTerm);
+      setCurrentPage(1);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
   useEffect(() => {
     if (canViewAuditLogs) {
       loadAuditLogs();
     }
-  }, [currentPage, selectedActions, startDate, endDate, canViewAuditLogs]);
+  }, [currentPage, selectedActions, startDate, endDate, searchQuery, sortBy, sortOrder, canViewAuditLogs]);
 
   const loadAuditLogs = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        limit: LOGS_PER_PAGE.toString(),
-        offset: ((currentPage - 1) * LOGS_PER_PAGE).toString()
-      });
+      // If there's a search query, use search API
+      if (searchQuery.trim()) {
+        const result = await AuditLogService.searchAuditLogs(searchQuery, {
+          limit: LOGS_PER_PAGE,
+          actions: selectedActions.length > 0 ? selectedActions as any[] : undefined
+        });
 
-      if (selectedActions.length > 0) {
-        params.append('actions', selectedActions.join(','));
-      }
-      if (startDate) {
-        params.append('startDate', startDate);
-      }
-      if (endDate) {
-        params.append('endDate', endDate);
-      }
-
-      const response = await fetch(`/api/v1/audit/logs?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        if (result.error) {
+          showError(result.error);
+          return;
         }
-      });
 
-      if (!response.ok) {
-        throw new Error('Failed to fetch audit logs');
+        const mappedLogs: AuditLog[] = result.logs.map(log => ({
+          ...log,
+          _id: log.id
+        }));
+
+        // Apply client-side sorting for search results
+        const sortedLogs = sortLogs(mappedLogs);
+        setLogs(sortedLogs);
+        setTotalLogs(result.logs.length);
+        setHasMore(false);
+      } else {
+        // Regular filtering
+        const result = await AuditLogService.getAuditLogs({
+          limit: LOGS_PER_PAGE,
+          offset: (currentPage - 1) * LOGS_PER_PAGE,
+          actions: selectedActions.length > 0 ? selectedActions as any[] : undefined,
+          startDate,
+          endDate
+        });
+
+        if (result.error) {
+          showError(result.error);
+          return;
+        }
+
+        const mappedLogs: AuditLog[] = result.logs.map(log => ({
+          ...log,
+          _id: log.id
+        }));
+
+        // Apply client-side sorting
+        const sortedLogs = sortLogs(mappedLogs);
+        setLogs(sortedLogs);
+        setTotalLogs(result.total);
+        setHasMore(result.hasMore);
       }
-
-      const data = await response.json();
-      setLogs(data.logs || []);
-      setTotalLogs(data.total || 0);
-      setHasMore(data.hasMore || false);
     } catch (error) {
       showError('Failed to load audit logs');
       console.error('Error loading audit logs:', error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const sortLogs = (logsToSort: AuditLog[]): AuditLog[] => {
+    return [...logsToSort].sort((a, b) => {
+      let compareValue = 0;
+
+      switch (sortBy) {
+        case 'timestamp':
+          compareValue = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime();
+          break;
+        case 'action':
+          compareValue = a.action.localeCompare(b.action);
+          break;
+        case 'actor':
+          compareValue = a.actor_name.localeCompare(b.actor_name);
+          break;
+      }
+
+      return sortOrder === 'asc' ? compareValue : -compareValue;
+    });
   };
 
   const handleActionFilter = (action: string) => {
@@ -107,26 +182,37 @@ export const AuditLogsPage: React.FC = () => {
     setCurrentPage(1);
   };
 
+  const clearAllFilters = () => {
+    setSearchTerm('');
+    setSearchQuery('');
+    setSelectedActions([]);
+    setStartDate('');
+    setEndDate('');
+    setSortBy('timestamp');
+    setSortOrder('desc');
+    setCurrentPage(1);
+  };
+
+  const hasActiveFilters = searchTerm || selectedActions.length > 0 || startDate || endDate;
+
   const handleExport = async () => {
     try {
-      const params = new URLSearchParams();
-      if (startDate) params.append('startDate', startDate);
-      if (endDate) params.append('endDate', endDate);
-      params.append('format', 'csv');
-
-      const response = await fetch(`/api/v1/audit/export?${params.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to export audit logs');
+      if (!startDate || !endDate) {
+        showError('Please select both start and end dates for export');
+        return;
       }
 
-      const data = await response.json();
+      const result = await AuditLogService.exportAuditLogs(startDate, endDate, 'csv');
+
+      if (result.error || !result.success) {
+        showError(result.error || 'Failed to export audit logs');
+        return;
+      }
+
       showSuccess('Audit logs export initiated');
-      window.open(data.downloadUrl, '_blank');
+      if (result.downloadUrl) {
+        window.open(result.downloadUrl, '_blank');
+      }
     } catch (error) {
       showError('Failed to export audit logs');
       console.error('Error exporting audit logs:', error);
@@ -184,9 +270,73 @@ export const AuditLogsPage: React.FC = () => {
           </div>
         </div>
 
+        {/* Search and Sort */}
+        <div className="bg-white rounded-lg shadow p-6 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+            {/* Search Bar */}
+            <div className="md:col-span-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                <Search className="inline h-4 w-4 mr-1" />
+                Search Logs
+              </label>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by actor name, action, or table name..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+
+            {/* Sort By */}
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="timestamp">Timestamp</option>
+                <option value="action">Action</option>
+                <option value="actor">Actor</option>
+              </select>
+            </div>
+
+            {/* Order */}
+            <div className="md:col-span-3">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Order</label>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as any)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                <option value="desc">Newest First</option>
+                <option value="asc">Oldest First</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
         {/* Filters */}
         <div className="bg-white rounded-lg shadow p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+              <Filter className="h-5 w-5 text-gray-600" />
+              Filters
+            </h3>
+            {hasActiveFilters && (
+              <button
+                onClick={clearAllFilters}
+                className="flex items-center gap-2 px-3 py-1.5 text-sm text-red-600 hover:text-red-800 hover:bg-red-50 rounded-lg transition-colors"
+              >
+                <X className="h-4 w-4" />
+                Clear All Filters
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Start Date */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <Calendar className="inline h-4 w-4 mr-1" />
@@ -196,9 +346,12 @@ export const AuditLogsPage: React.FC = () => {
                 type="date"
                 value={startDate}
                 onChange={(e) => { setStartDate(e.target.value); setCurrentPage(1); }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="dd-mm-yyyy"
               />
             </div>
+
+            {/* End Date */}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 <Calendar className="inline h-4 w-4 mr-1" />
@@ -208,52 +361,31 @@ export const AuditLogsPage: React.FC = () => {
                 type="date"
                 value={endDate}
                 onChange={(e) => { setEndDate(e.target.value); setCurrentPage(1); }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="dd-mm-yyyy"
               />
             </div>
+
+            {/* Action Types Multi-Select */}
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Filter className="inline h-4 w-4 mr-1" />
-                Action Types
-              </label>
-              <select
-                multiple
-                value={selectedActions}
-                onChange={(e) => {
-                  const selected = Array.from(e.target.selectedOptions, option => option.value);
+              <MultiSelect
+                label={
+                  <span>
+                    <Filter className="inline h-4 w-4 mr-1" />
+                    Action Types
+                  </span>
+                }
+                options={AUDIT_ACTIONS}
+                selected={selectedActions}
+                onChange={(selected) => {
                   setSelectedActions(selected);
                   setCurrentPage(1);
                 }}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                size={4}
-              >
-                {AUDIT_ACTIONS.map(action => (
-                  <option key={action} value={action}>
-                    {action.replace(/_/g, ' ')}
-                  </option>
-                ))}
-              </select>
+                placeholder="Select action types..."
+                formatLabel={(action) => action.replace(/_/g, ' ')}
+              />
             </div>
           </div>
-
-          {selectedActions.length > 0 && (
-            <div className="flex flex-wrap gap-2 mt-4">
-              {selectedActions.map(action => (
-                <span
-                  key={action}
-                  className="px-3 py-1 bg-blue-100 text-blue-800 text-sm rounded-full flex items-center gap-2"
-                >
-                  {action.replace(/_/g, ' ')}
-                  <button
-                    onClick={() => handleActionFilter(action)}
-                    className="text-blue-600 hover:text-blue-800"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* Audit Logs Table */}

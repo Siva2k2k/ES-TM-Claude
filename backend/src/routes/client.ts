@@ -23,5 +23,8 @@ router.put('/:clientId', ClientController.updateClient);
 router.patch('/:clientId/deactivate', ClientController.deactivateClient);
 router.patch('/:clientId/reactivate', ClientController.reactivateClient);
 router.delete('/:clientId', ClientController.deleteClient);
+router.delete('/:clientId/hard-delete', ClientController.hardDeleteClient);
+router.post('/:clientId/restore', ClientController.restoreClient);
+router.get('/deleted/all', ClientController.getDeletedClients);
 
 export default router;

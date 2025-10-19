@@ -240,27 +240,98 @@ export class AuditLogService {
     try {
       console.log(`Exporting audit logs from ${startDate} to ${endDate} in ${format} format`);
 
-      const result = await this.getAuditLogs({
-        startDate,
-        endDate,
-        limit: 1000
-      });
+      // Backend limits to 1000 per request, so we'll fetch in batches
+      const BATCH_SIZE = 1000;
+      const MAX_EXPORT_LOGS = 5000; // Export up to 5k logs total
+      let allLogs: ActivityAuditLog[] = [];
+      let offset = 0;
+      let hasMore = true;
 
-      if (result.error) {
-        return { success: false, error: result.error };
+      // Fetch logs in batches until we have all logs or reach the max
+      while (hasMore && allLogs.length < MAX_EXPORT_LOGS) {
+        const result = await this.getAuditLogs({
+          startDate,
+          endDate,
+          limit: BATCH_SIZE,
+          offset
+        });
+
+        if (result.error) {
+          return { success: false, error: result.error };
+        }
+
+        allLogs = [...allLogs, ...result.logs];
+        hasMore = result.hasMore || false;
+        offset += BATCH_SIZE;
+
+        // If we got fewer logs than requested, we've reached the end
+        if (result.logs.length < BATCH_SIZE) {
+          hasMore = false;
+        }
       }
 
-      // In real implementation, this would generate the actual file
-      console.log(`Would export ${result.logs.length} audit log entries`);
+      if (allLogs.length === 0) {
+        return { success: false, error: 'No audit logs found for the selected date range' };
+      }
 
+      // Generate and download file locally
+      if (format === 'csv') {
+        this.downloadCSV(allLogs, `audit_logs_${startDate}_to_${endDate}.csv`);
+      } else if (format === 'json') {
+        this.downloadJSON(allLogs, `audit_logs_${startDate}_to_${endDate}.json`);
+      } else {
+        return { success: false, error: 'PDF export not yet implemented' };
+      }
+
+      console.log(`Exported ${allLogs.length} audit logs successfully`);
       return {
         success: true,
-        downloadUrl: `/api/audit/export/${Date.now()}.${format}`
+        downloadUrl: `Exported ${allLogs.length} audit logs`
       };
     } catch (error) {
       console.error('Error in exportAuditLogs:', error);
       return { success: false, error: 'Failed to export audit logs' };
     }
+  }
+
+  /**
+   * Download logs as CSV
+   */
+  private static downloadCSV(logs: ActivityAuditLog[], filename: string): void {
+    const headers = ['Timestamp', 'Actor', 'Action', 'Table', 'Record ID', 'Details'];
+    const rows = logs.map(log => [
+      new Date(log.timestamp).toLocaleString(),
+      log.actor_name,
+      log.action,
+      log.table_name,
+      log.record_id,
+      log.details ? JSON.stringify(log.details) : ''
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  /**
+   * Download logs as JSON
+   */
+  private static downloadJSON(logs: ActivityAuditLog[], filename: string): void {
+    const jsonContent = JSON.stringify(logs, null, 2);
+    const blob = new Blob([jsonContent], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
   }
 
   /**

@@ -455,8 +455,12 @@ export class ClientService {
     }
   }
 
+  /**
+   * Soft delete client with reason
+   */
   static async deleteClient(
     clientId: string,
+    reason: string,
     currentUser: AuthUser
   ): Promise<{ success: boolean; error?: string }> {
     try {
@@ -483,6 +487,8 @@ export class ClientService {
       // Soft delete the client
       await Client.findByIdAndUpdate(clientId, {
         deleted_at: new Date(),
+        deleted_by: currentUser.id,
+        deleted_reason: reason,
         is_active: false,
         updated_at: new Date()
       });
@@ -495,8 +501,9 @@ export class ClientService {
         currentUser.id,
         currentUser.full_name,
         {
-          operation: 'client_deleted',
-          client_name: client.name
+          operation: 'client_soft_deleted',
+          client_name: client.name,
+          reason: reason
         }
       );
 
@@ -507,6 +514,153 @@ export class ClientService {
         return { success: false, error: error.message };
       }
       return { success: false, error: 'Failed to delete client' };
+    }
+  }
+
+  /**
+   * Hard delete client - permanent deletion
+   */
+  static async hardDeleteClient(
+    clientId: string,
+    currentUser: AuthUser
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (currentUser.role !== 'super_admin') {
+        throw new AuthorizationError('Only super admins can permanently delete clients');
+      }
+
+      const client = await Client.findById(clientId);
+      if (!client) {
+        return { success: false, error: 'Client not found' };
+      }
+
+      // Must be soft deleted first
+      if (!client.deleted_at) {
+        return {
+          success: false,
+          error: 'Client must be soft deleted first before permanent deletion'
+        };
+      }
+
+      // Check if client has any projects (even deleted ones)
+      const projectCount = await Project.countDocuments({
+        client_id: clientId
+      });
+
+      if (projectCount > 0) {
+        return {
+          success: false,
+          error: `Cannot permanently delete client with ${projectCount} project(s) in database.`
+        };
+      }
+
+      // Log audit event BEFORE deleting
+      await AuditLogService.logEvent(
+        'clients',
+        clientId,
+        'DELETE',
+        currentUser.id,
+        currentUser.full_name,
+        {
+          operation: 'client_hard_deleted',
+          client_name: client.name,
+          original_deleted_at: client.deleted_at,
+          original_deleted_by: client.deleted_by,
+          original_deleted_reason: client.deleted_reason,
+          permanent: true
+        }
+      );
+
+      // Permanently delete from database
+      await Client.deleteOne({ _id: clientId });
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error hard deleting client:', error);
+      if (error instanceof AuthorizationError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to permanently delete client' };
+    }
+  }
+
+  /**
+   * Restore soft deleted client
+   */
+  static async restoreClient(
+    clientId: string,
+    currentUser: AuthUser
+  ): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (currentUser.role !== 'super_admin') {
+        throw new AuthorizationError('Only super admins can restore clients');
+      }
+
+      const client = await Client.findOne({
+        _id: clientId,
+        deleted_at: { $exists: true }
+      });
+
+      if (!client) {
+        return { success: false, error: 'Client not found or not deleted' };
+      }
+
+      // Restore client
+      await Client.findByIdAndUpdate(clientId, {
+        $unset: { deleted_at: '', deleted_by: '', deleted_reason: '' },
+        is_active: true,
+        updated_at: new Date()
+      });
+
+      // Log the restoration
+      await AuditLogService.logEvent(
+        'clients',
+        clientId,
+        'UPDATE',
+        currentUser.id,
+        currentUser.full_name,
+        {
+          operation: 'client_restored',
+          client_name: client.name,
+          was_deleted_at: client.deleted_at,
+          was_deleted_by: client.deleted_by,
+          was_deleted_reason: client.deleted_reason
+        }
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('Error restoring client:', error);
+      if (error instanceof AuthorizationError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to restore client' };
+    }
+  }
+
+  /**
+   * Get deleted clients (for admin view)
+   */
+  static async getDeletedClients(
+    currentUser: AuthUser
+  ): Promise<{ clients?: IClient[]; error?: string }> {
+    try {
+      if (currentUser.role !== 'super_admin') {
+        throw new AuthorizationError('Only super admins can view deleted clients');
+      }
+
+      const clients = await Client.find({
+        deleted_at: { $exists: true },
+        is_hard_deleted: false
+      }).sort({ deleted_at: -1 });
+
+      return { clients: clients as IClient[] };
+    } catch (error: any) {
+      console.error('Error fetching deleted clients:', error);
+      if (error instanceof AuthorizationError) {
+        return { error: error.message };
+      }
+      return { error: 'Failed to fetch deleted clients' };
     }
   }
 

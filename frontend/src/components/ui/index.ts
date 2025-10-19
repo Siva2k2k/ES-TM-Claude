@@ -12,6 +12,7 @@ export { Select, type SelectProps, type SelectOption } from './Select';
 export { Checkbox, type CheckboxProps } from './Checkbox';
 export { RadioGroup, type RadioGroupProps, type RadioOption } from './Radio';
 export { Switch, type SwitchProps } from './Switch';
+export { MultiSelect } from './MultiSelect';
 
 // Layout Components
 export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './Card';

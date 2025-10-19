@@ -301,6 +301,12 @@ export class UserService {
         throw new AuthorizationError('Only super admins can change user status');
       }
 
+      // Get user before update for audit
+      const userBefore = await (User.findOne as any)({ _id: userId, deleted_at: { $exists: false } });
+      if (!userBefore) {
+        throw new NotFoundError('User not found');
+      }
+
       const result = await (User.updateOne as any)({
         _id: userId,
         deleted_at: { $exists: false }
@@ -312,6 +318,23 @@ export class UserService {
       if (result.matchedCount === 0) {
         throw new NotFoundError('User not found');
       }
+
+      // Log audit event
+      await AuditLogService.logEvent(
+        'users',
+        userId,
+        isActive ? 'USER_ACTIVATED' : 'USER_DEACTIVATED',
+        currentUser.id,
+        currentUser.full_name,
+        {
+          action: isActive ? 'activate' : 'deactivate',
+          email: userBefore.email,
+          role: userBefore.role
+        },
+        undefined,
+        { is_active: userBefore.is_active },
+        { is_active: isActive }
+      );
 
       console.log(`Setting user ${userId} status to: ${isActive ? 'active' : 'inactive'}`);
       return { success: true };
@@ -337,6 +360,12 @@ export class UserService {
         throw new ValidationError('Hourly rate must be greater than 0');
       }
 
+      // Get user before update for audit
+      const userBefore = await (User.findOne as any)({ _id: userId, deleted_at: { $exists: false } });
+      if (!userBefore) {
+        throw new NotFoundError('User not found');
+      }
+
       const result = await (User.updateOne as any)({
         _id: userId,
         deleted_at: { $exists: false }
@@ -348,6 +377,24 @@ export class UserService {
       if (result.matchedCount === 0) {
         throw new NotFoundError('User not found');
       }
+
+      // Log audit event for billing rate change
+      await AuditLogService.logEvent(
+        'users',
+        userId,
+        'UPDATE',
+        currentUser.id,
+        currentUser.full_name,
+        {
+          action: 'billing_rate_update',
+          email: userBefore.email,
+          role: userBefore.role,
+          field_changed: 'hourly_rate'
+        },
+        undefined,
+        { hourly_rate: userBefore.hourly_rate },
+        { hourly_rate: hourlyRate }
+      );
 
       console.log(`Setting billing for user ${userId}: $${hourlyRate}/hr`);
       return { success: true };
@@ -604,22 +651,7 @@ export class UserService {
       const auditLogsResult = await AuditLogService.getAuditLogs(currentUser as any, { tableName: 'users' });
       const auditLogs = auditLogsResult.logs || [];
 
-      // Mark as hard deleted (keep record for audit trail)
-      const result = await (User.updateOne as any)(
-        { _id: userId },
-        {
-          is_hard_deleted: true,
-          hard_deleted_at: new Date(),
-          hard_deleted_by: currentUser.id,
-          updated_at: new Date()
-        }
-      );
-
-      if (result.matchedCount === 0) {
-        throw new NotFoundError('User not found');
-      }
-
-      // Final audit log: User permanently deleted
+      // Log audit event BEFORE deleting
       await AuditLogService.logEvent(
         'users',
         userId,
@@ -643,6 +675,13 @@ export class UserService {
         { is_hard_deleted: false },
         { is_hard_deleted: true, hard_deleted_at: new Date(), hard_deleted_by: currentUser.id }
       );
+
+      // Permanently delete from database
+      const result = await (User.deleteOne as any)({ _id: userId });
+
+      if (result.deletedCount === 0) {
+        throw new NotFoundError('User not found or already deleted');
+      }
 
       logger.warn(`User permanently deleted: ${userId} by ${currentUser.full_name}`);
       return { success: true };
@@ -929,6 +968,12 @@ export class UserService {
         throw new ValidationError(`Password validation failed: ${pwValidation.errors.join(', ')}`);
       }
 
+      // Get user before update for audit
+      const userBefore = await (User.findOne as any)({ _id: userId, deleted_at: { $exists: false } });
+      if (!userBefore) {
+        throw new NotFoundError('User not found');
+      }
+
       // Hash the password
       const passwordHash = await bcrypt.hash(password, 10);
 
@@ -943,6 +988,21 @@ export class UserService {
       if (result.matchedCount === 0) {
         throw new NotFoundError('User not found');
       }
+
+      // Log audit event for password reset
+      await AuditLogService.logEvent(
+        'users',
+        userId,
+        'UPDATE',
+        currentUser.id,
+        currentUser.full_name,
+        {
+          action: 'admin_password_reset',
+          email: userBefore.email,
+          role: userBefore.role,
+          reset_by: 'super_admin'
+        }
+      );
 
       console.log(`Set credentials for user: ${userId}`);
       return { success: true };
@@ -1086,6 +1146,21 @@ export class UserService {
           account_locked_until: null,
           last_password_change: new Date(),
           updated_at: new Date()
+        }
+      );
+
+      // Log audit event for password change
+      await AuditLogService.logEvent(
+        'users',
+        userId,
+        'UPDATE',
+        currentUser.id,
+        currentUser.full_name,
+        {
+          action: 'password_change',
+          email: user.email,
+          role: user.role,
+          self_initiated: currentUser.id === userId
         }
       );
 
