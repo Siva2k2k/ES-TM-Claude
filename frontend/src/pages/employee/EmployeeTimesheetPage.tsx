@@ -71,7 +71,7 @@ type CalendarDayAggregate = {
   statusCounts: Record<DayStatus, number>;
 };
 
-export const EmployeeTimesheetPage: React.FC = () => {
+export const  EmployeeTimesheetPage: React.FC = () => {
   const { currentUser } = useAuth();
   const createModal = useModal();
   const editModal = useModal();

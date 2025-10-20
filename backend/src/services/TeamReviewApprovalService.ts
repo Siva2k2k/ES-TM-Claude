@@ -79,7 +79,16 @@ export class TeamReviewApprovalService {
       const project = await (Project as any).findById(projectId, null, queryOpts);
       const autoEscalate = project?.approval_settings?.lead_approval_auto_escalates || false;
       const timesheetUser = await (timesheet as any).populate('user_id');
+      const timesheetOwnerId = timesheet.user_id?.toString?.() || timesheetUser.user_id?._id?.toString?.();
       const timesheetUserRole = timesheetUser.user_id?.role || 'employee';
+
+      if (
+        timesheetOwnerId &&
+        timesheetOwnerId === approverId &&
+        (approverRole === 'lead' || approverRole === 'manager')
+      ) {
+        throw new Error('Leads and managers cannot approve their own timesheets');
+      }
 
       let newStatus = timesheet.status;
 
@@ -576,6 +585,7 @@ export class TeamReviewApprovalService {
       const autoEscalate = project.approval_settings?.lead_approval_auto_escalates || false;
 
       let affectedUsers = 0;
+      let selfApprovalSkips = 0;
       const affectedTimesheetIds = new Set<string>();
 
       // Update all project approvals based on role
@@ -587,6 +597,20 @@ export class TeamReviewApprovalService {
         const statusBefore = timesheet.status;
         const timesheetUser = await timesheet.populate('user_id');
         const timesheetUserRole = (timesheetUser.user_id as any)?.role || 'employee';
+        const timesheetOwnerId =
+          timesheet.user_id?.toString?.() || (timesheetUser.user_id as any)?._id?.toString?.();
+
+        if (
+          timesheetOwnerId &&
+          timesheetOwnerId === approverId &&
+          (approverRole === 'lead' || approverRole === 'manager')
+        ) {
+          logger.warn(
+            `Skipping self-approval attempt by ${approverRole} ${approverId} for timesheet ${timesheet._id}`
+          );
+          selfApprovalSkips++;
+          continue;
+        }
 
         // TIER 1: LEAD APPROVAL
         if (approverRole === 'lead') {
@@ -701,11 +725,17 @@ export class TeamReviewApprovalService {
 
       const weekLabel = this.formatWeekLabel(weekStartDate, weekEndDate);
 
+      const note =
+        selfApprovalSkips > 0
+          ? ` (skipped ${selfApprovalSkips} self-approval${selfApprovalSkips > 1 ? 's' : ''})`
+          : '';
+
       return {
         success: true,
-        message: `Successfully approved ${affectedUsers} user(s) for ${project.name} - ${weekLabel}`,
+        message: `Successfully approved ${affectedUsers} user(s) for ${project.name} - ${weekLabel}${note}`,
         affected_users: affectedUsers,
         affected_timesheets: affectedTimesheetIds.size,
+        skipped_self_approvals: selfApprovalSkips,
         project_week: {
           project_name: project.name,
           week_label: weekLabel

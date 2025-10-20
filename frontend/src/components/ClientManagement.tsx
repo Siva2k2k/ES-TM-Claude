@@ -3,7 +3,7 @@ import { useRoleManager } from '../hooks/useRoleManager';
 import { useAuth } from '../store/contexts/AuthContext';
 import { ClientService } from '../services/ClientService';
 import { showSuccess, showError, showWarning } from '../utils/toast';
-import { DeleteButton } from './common/DeleteButton';
+import { DeleteActionModal, type DeleteAction } from './DeleteActionModal';
 import {
   Building,
   Plus,
@@ -67,6 +67,12 @@ export const ClientManagement: React.FC = () => {
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [editingClient, setEditingClient] = useState<ClientWithProjects | null>(null);
+
+  // Delete modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingClient, setDeletingClient] = useState<ClientWithProjects | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteDependencies, setDeleteDependencies] = useState<string[]>([]);
 
   const [clientForm, setClientForm] = useState<ClientFormData>({
     name: '',
@@ -312,30 +318,44 @@ export const ClientManagement: React.FC = () => {
     }
   };
 
-  const handleDeleteClient = async (entityType: string, entityId: string, deleteType: 'soft' | 'hard') => {
+  const handleDeleteClick = async (client: ClientWithProjects) => {
     if (!canDeleteClients) {
       showError('You do not have permission to delete clients');
       return;
     }
 
+    // Check dependencies
+    const { dependencies } = await ClientService.checkClientDependencies(client.id);
+    setDeleteDependencies(dependencies);
+    setDeletingClient(client);
+    setShowDeleteModal(true);
+  };
+
+  const handleDeleteConfirm = async (action: DeleteAction, reason?: string) => {
+    if (!deletingClient) return;
+
+    setDeleteLoading(true);
     try {
-      const result = await ClientService.deleteClient(entityId);
+      if (action === 'soft' && reason) {
+        const result = await ClientService.deleteClient(deletingClient.id, reason);
 
-      if (result.error) {
-        showError(`Error deleting client: ${result.error}`);
-        return;
-      }
+        if (result.error) {
+          showError(`Error deleting client: ${result.error}`);
+          setDeleteLoading(false);
+          return;
+        }
 
-      if (deleteType === 'soft') {
-        showSuccess('Client moved to trash successfully');
-      } else {
-        showSuccess('Client permanently deleted');
+        showSuccess('Client deleted successfully');
+        setShowDeleteModal(false);
+        setDeletingClient(null);
+        setDeleteDependencies([]);
+        setRefreshTrigger(prev => prev + 1);
       }
-      
-      setRefreshTrigger(prev => prev + 1);
     } catch (err) {
       showError('Error deleting client');
       console.error('Error deleting client:', err);
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
@@ -571,15 +591,13 @@ export const ClientManagement: React.FC = () => {
                             )}
 
                             {canDeleteClients && (
-                              <DeleteButton
-                                onDelete={handleDeleteClient}
-                                entityName={client.name}
-                                entityId={client.id}
-                                entityType="client"
-                                variant="icon"
-                                disabled={client.total_projects! > 0}
-                                disabledReason={client.total_projects! > 0 ? `Cannot delete client with ${client.total_projects} active projects` : undefined}
-                              />
+                              <button
+                                onClick={() => handleDeleteClick(client)}
+                                className="text-red-600 hover:text-red-900 p-1.5 sm:p-2 hover:bg-red-50 rounded-lg transition-colors"
+                                title="Delete client"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+                              </button>
                             )}
                           </>
                         )}
@@ -893,6 +911,25 @@ export const ClientManagement: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* Delete Action Modal */}
+        <DeleteActionModal
+          isOpen={showDeleteModal}
+          onClose={() => {
+            setShowDeleteModal(false);
+            setDeletingClient(null);
+            setDeleteDependencies([]);
+          }}
+          onConfirm={handleDeleteConfirm}
+          title="Delete Client"
+          itemName={deletingClient?.name || ''}
+          itemType="client"
+          action="soft"
+          isLoading={deleteLoading}
+          dependencies={deleteDependencies}
+          isSoftDeleted={false}
+          canHardDelete={false}
+        />
       </div>
     </div>
   );

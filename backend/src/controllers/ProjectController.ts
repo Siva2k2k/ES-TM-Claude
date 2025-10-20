@@ -84,7 +84,16 @@ export class ProjectController {
     }
 
     const { projectId } = req.params;
-    const result = await ProjectService.deleteProject(projectId, req.user);
+    const { reason } = req.body;
+
+    if (!reason || reason.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Delete reason is required'
+      });
+    }
+
+    const result = await ProjectService.deleteProject(projectId, reason, req.user);
 
     if (!result.success) {
       return res.status(400).json({
@@ -776,6 +785,98 @@ export class ProjectController {
     res.json({
       success: true,
       members: result.members
+    });
+  });
+
+  /**
+   * Hard delete project (permanent deletion)
+   */
+  static hardDeleteProject = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const { projectId } = req.params;
+    const result = await ProjectService.hardDeleteProject(projectId, req.user);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Project permanently deleted successfully'
+    });
+  });
+
+  /**
+   * Restore soft-deleted project
+   */
+  static restoreProject = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const { projectId } = req.params;
+    const result = await ProjectService.restoreProject(projectId, req.user);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Project restored successfully'
+    });
+  });
+
+  /**
+   * Get all deleted projects
+   */
+  static getDeletedProjects = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const result = await ProjectService.getDeletedProjects(req.user);
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      data: result.projects
+    });
+  });
+
+  static checkProjectDependencies = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const { projectId } = req.params;
+    const dependencyCheck = await ProjectService.canHardDeleteProject(projectId);
+
+    res.json({
+      success: true,
+      canDelete: dependencyCheck.canDelete,
+      dependencies: dependencyCheck.dependencies,
+      counts: dependencyCheck.counts
     });
   });
 }

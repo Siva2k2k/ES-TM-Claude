@@ -85,6 +85,7 @@ export interface BulkProjectWeekApprovalResponse {
   message: string;
   affected_users: number;
   affected_timesheets: number;
+  skipped_self_approvals?: number;
   project_week: {
     project_name: string;
     week_label: string;

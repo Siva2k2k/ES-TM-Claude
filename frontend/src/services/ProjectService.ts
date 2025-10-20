@@ -371,12 +371,13 @@ export class ProjectService {
   }
 
   /**
-   * Soft delete project
+   * Soft delete project (requires reason)
    */
-  static async deleteProject(projectId: string): Promise<{ success: boolean; error?: string }> {
+  static async deleteProject(projectId: string, reason: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.delete<{ success: boolean; message?: string }>(
-        `/projects/${projectId}`
+      const response = await backendApi.deleteWithBody<{ success: boolean; message?: string }>(
+        `/projects/${projectId}`,
+        { reason }
       );
 
       if (!response.success) {
@@ -388,6 +389,28 @@ export class ProjectService {
     } catch (error) {
       console.error('Error in deleteProject:', error);
       const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to delete project';
+      return { success: false, error: errorMessage };
+    }
+  }
+
+  /**
+   * Hard delete project (permanent deletion)
+   */
+  static async hardDeleteProject(projectId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      const response = await backendApi.delete<{ success: boolean; message?: string }>(
+        `/projects/${projectId}/hard-delete`
+      );
+
+      if (!response.success) {
+        return { success: false, error: response.message || 'Failed to permanently delete project' };
+      }
+
+      console.log(`Permanently deleted project: ${projectId}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error in hardDeleteProject:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to permanently delete project';
       return { success: false, error: errorMessage };
     }
   }

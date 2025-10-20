@@ -628,6 +628,10 @@ export class TimesheetService {
         throw new NotFoundError('Timesheet not found');
       }
 
+      if (timesheet.user_id?.toString?.() === currentUser.id && action === 'approve') {
+        throw new TimesheetError('Managers cannot approve their own timesheets');
+      }
+
       // Check status
       if (timesheet.status !== 'submitted') {
         throw new TimesheetError(`Timesheet cannot be processed from current status: ${timesheet.status}`);

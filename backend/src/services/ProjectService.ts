@@ -539,14 +539,31 @@ export class ProjectService {
   /**
    * Soft delete project
    */
-  static async deleteProject(projectId: string, currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
+  static async deleteProject(projectId: string, reason: string, currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
     try {
       requireManagementRole(currentUser);
+
+      if (!reason || reason.trim().length === 0) {
+        return { success: false, error: 'Delete reason is required' };
+      }
+
+      // Check if project exists and is not already deleted
+      const project = await (Project.findById as any)(projectId);
+      if (!project) {
+        throw new NotFoundError('Project not found');
+      }
+
+      if (project.deleted_at) {
+        return { success: false, error: 'Project is already deleted' };
+      }
 
       const result = await (Project.updateOne as any)({
         _id: projectId
       }, {
         deleted_at: new Date(),
+        deleted_by: currentUser.id,
+        deleted_reason: reason,
+        status: 'archived',
         updated_at: new Date()
       });
 
@@ -554,21 +571,35 @@ export class ProjectService {
         throw new NotFoundError('Project not found');
       }
 
+      // Cascade soft delete to all tasks associated with this project
+      const Task = (await import('../models/Task')).default;
+      const taskUpdateResult = await (Task.updateMany as any)(
+        { project_id: projectId, deleted_at: null },
+        {
+          deleted_at: new Date(),
+          deleted_by: currentUser.id,
+          deleted_reason: `Project deleted: ${reason}`
+        }
+      );
+
+      console.log(`Cascade deleted ${taskUpdateResult.modifiedCount} tasks for project: ${projectId}`);
+
       // Audit log: Project deleted
-      const deletedProject = await (Project.findById as any)(projectId).lean();
-      if (deletedProject) {
-        await AuditLogService.logEvent(
-          'projects',
-          projectId,
-          'PROJECT_DELETED',
-          currentUser.id,
-          currentUser.full_name,
-          { name: deletedProject.name, client_id: deletedProject.client_id?.toString() },
-          { deleted_by: currentUser.id },
-          { deleted_at: null },
-          { deleted_at: new Date() }
-        );
-      }
+      await AuditLogService.logEvent(
+        'projects',
+        projectId,
+        'PROJECT_DELETED',
+        currentUser.id,
+        currentUser.full_name,
+        {
+          name: project.name,
+          client_id: project.client_id?.toString(),
+          reason: reason,
+          cascade_deleted_tasks: taskUpdateResult.modifiedCount
+        },
+        { deleted_by: null, deleted_at: null, deleted_reason: null },
+        { deleted_by: currentUser.id, deleted_at: new Date(), deleted_reason: reason }
+      );
 
       console.log(`Soft deleted project: ${projectId}`);
       return { success: true };
@@ -578,6 +609,231 @@ export class ProjectService {
         return { success: false, error: error.message };
       }
       return { success: false, error: 'Failed to delete project' };
+    }
+  }
+
+  /**
+   * Check if project can be hard deleted (check for critical dependencies)
+   */
+  static async canHardDeleteProject(projectId: string): Promise<{
+    canDelete: boolean;
+    dependencies: string[];
+    counts: {
+      timeEntries: number;
+      billingRecords: number;
+      timesheetApprovals: number;
+    };
+  }> {
+    try {
+      const dependencies: string[] = [];
+      const counts = {
+        timeEntries: 0,
+        billingRecords: 0,
+        timesheetApprovals: 0
+      };
+
+      // Check for time entries (critical financial/legal records)
+      const TimeEntry = (await import('../models/TimeEntry')).default;
+      const timeEntryCount = await (TimeEntry.countDocuments as any)({
+        project_id: projectId
+      });
+      counts.timeEntries = timeEntryCount;
+      if (timeEntryCount > 0) {
+        dependencies.push(`${timeEntryCount} time entry/entries (financial records)`);
+      }
+
+      // Check for billing adjustments
+      const BillingAdjustment = (await import('../models/BillingAdjustment')).default;
+      const billingCount = await (BillingAdjustment.countDocuments as any)({
+        project_id: projectId
+      });
+      counts.billingRecords = billingCount;
+      if (billingCount > 0) {
+        dependencies.push(`${billingCount} billing record(s)`);
+      }
+
+      // Check for timesheet project approvals
+      const TimesheetProjectApproval = (await import('../models/TimesheetProjectApproval')).default;
+      const approvalCount = await (TimesheetProjectApproval.countDocuments as any)({
+        project_id: projectId
+      });
+      counts.timesheetApprovals = approvalCount;
+      if (approvalCount > 0) {
+        dependencies.push(`${approvalCount} timesheet approval(s)`);
+      }
+
+      return {
+        canDelete: dependencies.length === 0,
+        dependencies,
+        counts
+      };
+    } catch (error) {
+      console.error('Error checking project dependencies:', error);
+      return {
+        canDelete: false,
+        dependencies: ['Error checking dependencies'],
+        counts: { timeEntries: 0, billingRecords: 0, timesheetApprovals: 0 }
+      };
+    }
+  }
+
+  /**
+   * Hard delete project (permanent deletion)
+   * Only allowed if no critical dependencies exist
+   */
+  static async hardDeleteProject(projectId: string, currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
+    try {
+      requireSuperAdmin(currentUser);
+
+      // Get the project before deletion
+      const project = await (Project.findById as any)(projectId);
+      if (!project) {
+        throw new NotFoundError('Project not found');
+      }
+
+      // Must be soft deleted first
+      if (!project.deleted_at) {
+        return {
+          success: false,
+          error: 'Project must be soft deleted first before permanent deletion'
+        };
+      }
+
+      // CHECK CRITICAL DEPENDENCIES - Enterprise Standard
+      const dependencyCheck = await this.canHardDeleteProject(projectId);
+
+      if (!dependencyCheck.canDelete) {
+        return {
+          success: false,
+          error: `Cannot permanently delete project. Has critical dependencies: ${dependencyCheck.dependencies.join(', ')}. These are permanent financial/legal records that must be preserved.`
+        };
+      }
+
+      // If no critical dependencies, cascade hard delete non-critical data
+      const Task = (await import('../models/Task')).default;
+      const ProjectMember = (await import('../models/Project')).ProjectMember;
+
+      const taskDeleteResult = await (Task.deleteMany as any)({ project_id: projectId });
+      const memberDeleteResult = await (ProjectMember.deleteMany as any)({ project_id: projectId });
+
+      console.log(`Cascade hard deleted ${taskDeleteResult.deletedCount} tasks and ${memberDeleteResult.deletedCount} members for project: ${projectId}`);
+
+      // Log audit event BEFORE deleting
+      await AuditLogService.logEvent(
+        'projects',
+        projectId,
+        'PROJECT_HARD_DELETED',
+        currentUser.id,
+        currentUser.full_name,
+        {
+          name: project.name,
+          client_id: project.client_id?.toString(),
+          deleted_reason: project.deleted_reason,
+          original_deleted_at: project.deleted_at,
+          original_deleted_by: project.deleted_by,
+          cascade_hard_deleted_tasks: taskDeleteResult.deletedCount,
+          cascade_hard_deleted_members: memberDeleteResult.deletedCount,
+          dependency_check: dependencyCheck.counts
+        }
+      );
+
+      // Permanently delete from database
+      const result = await (Project.deleteOne as any)({ _id: projectId });
+
+      if (result.deletedCount === 0) {
+        throw new NotFoundError('Project not found or already deleted');
+      }
+
+      console.log(`Hard deleted project: ${projectId}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error in hardDeleteProject:', error);
+      if (error instanceof AuthorizationError || error instanceof NotFoundError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to permanently delete project' };
+    }
+  }
+
+  /**
+   * Restore soft-deleted project
+   */
+  static async restoreProject(projectId: string, currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
+    try {
+      requireManagementRole(currentUser);
+
+      // Get the project before restoration
+      const project = await (Project.findById as any)(projectId);
+      if (!project) {
+        throw new NotFoundError('Project not found');
+      }
+
+      if (!project.deleted_at) {
+        return { success: false, error: 'Project is not deleted' };
+      }
+
+      const result = await (Project.updateOne as any)({
+        _id: projectId
+      }, {
+        $unset: { deleted_at: '', deleted_by: '', deleted_reason: '' },
+        status: 'active',
+        updated_at: new Date()
+      });
+
+      if (result.matchedCount === 0) {
+        throw new NotFoundError('Project not found');
+      }
+
+      // Audit log: Project restored
+      await AuditLogService.logEvent(
+        'projects',
+        projectId,
+        'PROJECT_RESTORED',
+        currentUser.id,
+        currentUser.full_name,
+        {
+          name: project.name,
+          client_id: project.client_id?.toString(),
+          original_deleted_reason: project.deleted_reason
+        },
+        { deleted_at: project.deleted_at, deleted_by: project.deleted_by, deleted_reason: project.deleted_reason },
+        { deleted_at: null, deleted_by: null, deleted_reason: null }
+      );
+
+      console.log(`Restored project: ${projectId}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error in restoreProject:', error);
+      if (error instanceof AuthorizationError || error instanceof NotFoundError) {
+        return { success: false, error: error.message };
+      }
+      return { success: false, error: 'Failed to restore project' };
+    }
+  }
+
+  /**
+   * Get all deleted projects
+   */
+  static async getDeletedProjects(currentUser: AuthUser): Promise<{ projects: any[]; error?: string }> {
+    try {
+      requireManagementRole(currentUser);
+
+      const projects = await (Project.find as any)({
+        deleted_at: { $ne: null },
+        is_hard_deleted: { $ne: true }
+      })
+        .populate('client_id', 'name')
+        .populate('primary_manager_id', 'full_name email')
+        .sort({ deleted_at: -1 })
+        .lean();
+
+      return { projects };
+    } catch (error) {
+      console.error('Error in getDeletedProjects:', error);
+      if (error instanceof AuthorizationError) {
+        return { projects: [], error: error.message };
+      }
+      return { projects: [], error: 'Failed to fetch deleted projects' };
     }
   }
 

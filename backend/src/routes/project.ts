@@ -14,7 +14,7 @@ import {
   addProjectMemberEnhancedValidation,
   updateProjectMemberRoleValidation
 } from '@/controllers/ProjectController';
-import { requireAuth, requireManager, requireManagement } from '@/middleware/auth';
+import { requireAuth, requireManager, requireManagement, requireSuperAdmin } from '@/middleware/auth';
 
 const router = Router();
 
@@ -41,6 +41,13 @@ router.post('/', requireManagement, createProjectValidation, ProjectController.c
  * @access Private
  */
 router.get('/status', projectStatusValidation, ProjectController.getProjectsByStatus);
+
+/**
+ * @route GET /api/v1/projects/deleted/all
+ * @desc Get all deleted projects
+ * @access Private (Management+)
+ */
+router.get('/deleted/all', requireManagement, ProjectController.getDeletedProjects);
 
 // Client Management - Must come before /:projectId routes to avoid conflicts
 /**
@@ -101,10 +108,32 @@ router.put('/:projectId', projectIdValidation, createProjectValidation, ProjectC
 
 /**
  * @route DELETE /api/v1/projects/:projectId
- * @desc Delete project (Management+ only)
+ * @desc Soft delete project (Management+ only)
  * @access Private (Management+)
  */
 router.delete('/:projectId', requireManagement, projectIdValidation, ProjectController.deleteProject);
+
+/**
+ * @route GET /api/v1/projects/:projectId/dependencies
+ * @desc Check if project can be permanently deleted (check dependencies)
+ * @access Private (Super Admin)
+ */
+// TEMPORARILY DISABLED - troubleshooting
+// router.get('/:projectId/dependencies', requireSuperAdmin, projectIdValidation, ProjectController.checkProjectDependencies);
+
+/**
+ * @route DELETE /api/v1/projects/:projectId/hard-delete
+ * @desc Permanently delete project (Super Admin only)
+ * @access Private (Super Admin)
+ */
+router.delete('/:projectId/hard-delete', requireSuperAdmin, projectIdValidation, ProjectController.hardDeleteProject);
+
+/**
+ * @route POST /api/v1/projects/:projectId/restore
+ * @desc Restore soft-deleted project (Management+ only)
+ * @access Private (Management+)
+ */
+router.post('/:projectId/restore', requireManagement, projectIdValidation, ProjectController.restoreProject);
 
 // Project Members Management
 /**

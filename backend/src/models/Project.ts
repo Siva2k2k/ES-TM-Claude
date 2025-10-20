@@ -22,6 +22,11 @@ export interface IProject extends Document {
   created_at: Date;
   updated_at: Date;
   deleted_at?: Date;
+  deleted_by?: string;
+  deleted_reason?: string;
+  is_hard_deleted?: boolean;
+  hard_deleted_at?: Date;
+  hard_deleted_by?: string;
 }
 
 export interface IProjectMember extends Document {
@@ -93,6 +98,26 @@ const ProjectSchema: Schema = new Schema({
   },
   deleted_at: {
     type: Date,
+    required: false
+  },
+  deleted_by: {
+    type: String,
+    required: false
+  },
+  deleted_reason: {
+    type: String,
+    required: false
+  },
+  is_hard_deleted: {
+    type: Boolean,
+    default: false
+  },
+  hard_deleted_at: {
+    type: Date,
+    required: false
+  },
+  hard_deleted_by: {
+    type: String,
     required: false
   }
 }, {

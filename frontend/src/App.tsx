@@ -54,7 +54,7 @@ import InvoiceManagementPage from './pages/billing/InvoiceManagementPage';
 import RateManagementPage from './pages/billing/RateManagementPage';
 
 // Reports & Admin
-import ReportsHub from './components/ReportsHub';
+import { ReportsPage } from './pages/reports';
 import { AuditLogsPage, DeletedItemsPage, ClientManagementPage } from './pages/admin';
 
 const App: React.FC = () => {
@@ -247,7 +247,7 @@ const App: React.FC = () => {
           {/* Reports - All Authenticated Users */}
           <Route path="reports" element={
             <ProtectedRoute>
-              <ReportsHub />
+              <ReportsPage />
             </ProtectedRoute>
           } />
 
