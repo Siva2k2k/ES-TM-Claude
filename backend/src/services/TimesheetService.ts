@@ -27,6 +27,7 @@ import {
 } from '@/utils/auth';
 import { AuditLogService } from '@/services/AuditLogService';
 import { ValidationUtils } from '@/utils/validation';
+import { NotificationService } from '@/services/NotificationService';
 
 const WEEKDAY_MIN_HOURS = 8;
 const WEEKDAY_MAX_HOURS = 10;
@@ -521,6 +522,8 @@ export class TimesheetService {
         throw new NotFoundError('Timesheet not found');
       }
 
+      const timesheetOwnerId = timesheet.user_id?.toString?.() ?? String(timesheet.user_id);
+
       // Validate access permissions
       validateTimesheetAccess(currentUser, timesheet.user_id.toString(), 'edit');
 
@@ -556,6 +559,7 @@ export class TimesheetService {
 
       // Group entries by project
       const projectIds = [...new Set(entries.map((e: any) => e.project_id?.toString()).filter(Boolean))];
+      const submissionRecipientIds = new Set<string>();
 
       if (projectIds.length > 0) {
         const { Project, ProjectMember } = require('@/models/Project');
@@ -586,6 +590,27 @@ export class TimesheetService {
             removed_at: null
           }).lean().exec();
 
+          const managerId =
+            project?.primary_manager_id && typeof project.primary_manager_id.toString === 'function'
+              ? project.primary_manager_id.toString()
+              : project?.primary_manager_id
+                ? String(project.primary_manager_id)
+                : undefined;
+
+          if (managerId && managerId !== timesheetOwnerId) {
+            submissionRecipientIds.add(managerId);
+          }
+
+          const leadId = leadMember?.user_id
+            ? typeof leadMember.user_id.toString === 'function'
+              ? leadMember.user_id.toString()
+              : String(leadMember.user_id)
+            : undefined;
+
+          if (leadId && leadId !== timesheetOwnerId) {
+            submissionRecipientIds.add(leadId);
+          }
+
           // Check if user is a project member
           const userIsMember = await ProjectMember.findOne({
             project_id: new mongoose.Types.ObjectId(projectId),
@@ -614,6 +639,21 @@ export class TimesheetService {
             user_not_in_project: !userIsMember
           });
 
+        }
+      }
+
+      if (submissionRecipientIds.size > 0) {
+        try {
+          await NotificationService.notifyTimesheetSubmission({
+            recipientIds: Array.from(submissionRecipientIds),
+            timesheetId,
+            submittedById: currentUser.id,
+            submittedByName: currentUser.full_name,
+            weekStartDate: timesheet.week_start_date,
+            totalHours: timesheet.total_hours
+          });
+        } catch (notificationError) {
+          console.error('Failed to send timesheet submission notifications:', notificationError);
         }
       }
 

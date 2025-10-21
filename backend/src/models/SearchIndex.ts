@@ -33,7 +33,10 @@ export enum SearchItemType {
   PROJECT = 'project',
   TASK = 'task',
   TIMESHEET = 'timesheet',
-  REPORT = 'report'
+  REPORT = 'report',
+  CLIENT = 'client',
+  AUDIT_LOG = 'audit_log',
+  BILLING = 'billing'
 }
 
 const SearchIndexSchema = new Schema<ISearchIndex>({

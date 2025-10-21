@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { ProjectService, NotificationService } from '@/services';
+import Task from '@/models/Task';
 import { UserRole } from '@/models/User';
 import {
   ValidationError,
@@ -40,6 +41,37 @@ export class ProjectController {
       });
     }
 
+    const project = result.project;
+    if (project) {
+      try {
+        const projectAny = project as any;
+        const projectId =
+          typeof projectAny.id === 'string'
+            ? projectAny.id
+            : projectAny._id && typeof projectAny._id.toString === 'function'
+              ? projectAny._id.toString()
+              : undefined;
+        const managerRaw = projectAny.primary_manager_id;
+        const managerId = managerRaw && typeof managerRaw.toString === 'function'
+          ? managerRaw.toString()
+          : managerRaw
+            ? String(managerRaw)
+            : undefined;
+
+        if (projectId && managerId && managerId !== req.user.id) {
+          await NotificationService.notifyProjectCreated({
+            recipientIds: [managerId],
+            projectId,
+            projectName: projectAny.name,
+            createdById: req.user.id,
+            createdByName: req.user.full_name
+          });
+        }
+      } catch (notificationError) {
+        console.error('Failed to send project creation notification:', notificationError);
+      }
+    }
+
     res.status(201).json({
       success: true,
       message: 'Project created successfully',
@@ -58,6 +90,17 @@ export class ProjectController {
     }
 
     const { projectId } = req.params;
+    const existingProjectResult = await ProjectService.getProjectById(projectId, req.user);
+
+    if (!existingProjectResult.project || existingProjectResult.error) {
+      const statusCode = existingProjectResult.error === 'You do not have access to this project' ? 403 : 404;
+      return res.status(statusCode).json({
+        success: false,
+        error: existingProjectResult.error || 'Project not found'
+      });
+    }
+
+    const previousProject = existingProjectResult.project;
     const result = await ProjectService.updateProject(projectId, req.body, req.user);
 
     if (!result.success) {
@@ -65,6 +108,114 @@ export class ProjectController {
         success: false,
         error: result.error
       });
+    }
+
+    let updatedProject = previousProject;
+    try {
+      const updatedProjectResult = await ProjectService.getProjectById(projectId, req.user);
+      if (!updatedProjectResult.error && updatedProjectResult.project) {
+        updatedProject = updatedProjectResult.project;
+      }
+    } catch (fetchError) {
+      console.error('Failed to fetch project after update:', fetchError);
+    }
+
+    try {
+      const membersResult = await ProjectService.getProjectMembers(projectId, req.user);
+      const members = !membersResult.error && membersResult.members ? membersResult.members : [];
+
+      const toIdString = (value: any): string | undefined => {
+        if (!value) {
+          return undefined;
+        }
+        if (typeof value === 'string') {
+          return value;
+        }
+        if (typeof value.toString === 'function') {
+          const strValue = value.toString();
+          return strValue && strValue !== '[object Object]' ? strValue : undefined;
+        }
+        return undefined;
+      };
+
+      const allMemberIds = new Set<string>();
+      const leadershipIds = new Set<string>();
+
+      members.forEach(member => {
+        if (!member?.user_id) {
+          return;
+        }
+
+        allMemberIds.add(member.user_id);
+        if (
+          member.project_role === 'manager' ||
+          member.project_role === 'lead' ||
+          member.is_primary_manager ||
+          member.is_secondary_manager
+        ) {
+          leadershipIds.add(member.user_id);
+        }
+      });
+
+      const previousPrimaryManagerId = toIdString((previousProject as any)?.primary_manager_id);
+      const updatedPrimaryManagerId = toIdString((updatedProject as any)?.primary_manager_id);
+      const projectName = (updatedProject as any)?.name || (previousProject as any)?.name || 'Project';
+      const previousStatus = (previousProject as any)?.status;
+      const updatedStatus = (updatedProject as any)?.status;
+      const statusChanged = Boolean(previousStatus && updatedStatus && previousStatus !== updatedStatus);
+      const completedNow = statusChanged && updatedStatus === 'completed';
+      const updatedFields = Object.keys(req.body || {});
+
+      const actorId = req.user.id;
+      const actorName = req.user.full_name;
+
+      if (completedNow) {
+        const recipientSet = new Set<string>(allMemberIds);
+        if (previousPrimaryManagerId) {
+          recipientSet.add(previousPrimaryManagerId);
+        }
+        if (updatedPrimaryManagerId) {
+          recipientSet.add(updatedPrimaryManagerId);
+        }
+        recipientSet.delete(actorId);
+
+        if (recipientSet.size > 0) {
+          await NotificationService.notifyProjectCompleted({
+            recipientIds: Array.from(recipientSet),
+            projectId,
+            projectName,
+            completedById: actorId,
+            completedByName: actorName
+          });
+        }
+      } else if (updatedFields.length > 0 || statusChanged) {
+        const recipientSet = new Set<string>(leadershipIds);
+        if (previousPrimaryManagerId) {
+          recipientSet.add(previousPrimaryManagerId);
+        }
+        if (updatedPrimaryManagerId) {
+          recipientSet.add(updatedPrimaryManagerId);
+        }
+        recipientSet.delete(actorId);
+
+        if (recipientSet.size > 0) {
+          const fieldsForNotification =
+            statusChanged && !updatedFields.includes('status')
+              ? [...updatedFields, 'status']
+              : updatedFields;
+
+          await NotificationService.notifyProjectUpdated({
+            recipientIds: Array.from(recipientSet),
+            projectId,
+            projectName,
+            updatedById: actorId,
+            updatedByName: actorName,
+            updatedFields: fieldsForNotification
+          });
+        }
+      }
+    } catch (notificationError) {
+      console.error('Failed to send project update notification:', notificationError);
     }
 
     res.json({
@@ -255,7 +406,7 @@ export class ProjectController {
       });
     }
 
-    // 🔔 Trigger automatic project allocation notification
+    // Trigger automatic project allocation notification
     try {
       // Get project name for notification
       const projectResult = await ProjectService.getProjectById(projectId, req.user);
@@ -346,7 +497,7 @@ export class ProjectController {
       });
     }
 
-    // 🔔 Trigger automatic task allocation notification
+    // Trigger automatic task allocation notification
     try {
       const task = result.task;
       if (task && taskData.assigned_to_user_id) {
@@ -355,13 +506,15 @@ export class ProjectController {
         const projectName = projectResult.project?.name || 'Unknown Project';
         const taskName = task.name || taskData.name || 'Unknown Task';
         
-        await NotificationService.notifyTaskAllocation(
-          taskData.assigned_to_user_id, 
-          task._id.toString(), 
-          taskName, 
-          projectName, 
-          req.user.id
-        );
+        await NotificationService.notifyTaskReceived({
+          recipientIds: [taskData.assigned_to_user_id],
+          taskId: task._id.toString(),
+          taskName,
+          projectName,
+          projectId,
+          assignedById: req.user.id,
+          assignedByName: req.user.full_name
+        });
       }
     } catch (notificationError) {
       console.error('Failed to send task allocation notification:', notificationError);
@@ -386,6 +539,7 @@ export class ProjectController {
     }
 
     const { taskId } = req.params;
+  const existingTask = await (Task as any).findById(taskId).lean().exec();
     const result = await ProjectService.updateTask(taskId, req.body, req.user);
 
     if (!result.success) {
@@ -395,27 +549,142 @@ export class ProjectController {
       });
     }
 
-    // 🔔 Trigger automatic task assignment notification (if assigned_to_user_id changed)
+    let updatedTask: any = existingTask;
     try {
-      if (req.body.assigned_to_user_id) {
-        // Get task details from the task name in request body or use default
-        const taskName = req.body.name || 'Task';
-        const projectId = req.body.project_id || 'unknown';
-        
-        // Get project name for notification
-        const projectResult = await ProjectService.getProjectById(projectId, req.user);
-        const projectName = projectResult.project?.name || 'Unknown Project';
-        
-        await NotificationService.notifyTaskAllocation(
-          req.body.assigned_to_user_id, 
-          taskId, 
-          taskName, 
-          projectName, 
-          req.user.id
-        );
+  const freshTask = await (Task as any).findById(taskId).lean().exec();
+      if (freshTask) {
+        updatedTask = freshTask;
+      }
+    } catch (fetchError) {
+      console.error('Failed to fetch task after update:', fetchError);
+    }
+
+    try {
+      const toIdString = (value: any): string | undefined => {
+        if (!value) {
+          return undefined;
+        }
+        if (typeof value === 'string') {
+          return value;
+        }
+        if (typeof value.toString === 'function') {
+          const strValue = value.toString();
+          return strValue && strValue !== '[object Object]' ? strValue : undefined;
+        }
+        return undefined;
+      };
+
+      const projectId =
+        req.body.project_id ||
+        toIdString(updatedTask?.project_id) ||
+        toIdString(existingTask?.project_id);
+
+      const taskName =
+        (updatedTask?.name) ||
+        req.body.name ||
+        existingTask?.name ||
+        'Task';
+
+      const previousAssigneeId = toIdString(existingTask?.assigned_to_user_id);
+      const updatedAssigneeId =
+        req.body.assigned_to_user_id || toIdString(updatedTask?.assigned_to_user_id);
+
+      const previousStatus = existingTask?.status;
+      const updatedStatus = req.body.status || updatedTask?.status;
+
+      let projectName = 'Project';
+      let projectPrimaryManagerId: string | undefined;
+      let projectMembers: Array<{
+        user_id: string;
+        project_role: string;
+        is_primary_manager: boolean;
+        is_secondary_manager: boolean;
+      }> = [];
+
+      if (projectId) {
+        try {
+          const projectDetails = await ProjectService.getProjectById(projectId, req.user);
+          if (!projectDetails.error && projectDetails.project) {
+            projectName = (projectDetails.project as any)?.name || projectName;
+            projectPrimaryManagerId = toIdString(
+              (projectDetails.project as any)?.primary_manager_id
+            );
+          }
+        } catch (projectFetchError) {
+          console.error('Failed to fetch project for task notification:', projectFetchError);
+        }
+
+        try {
+          const membersResult = await ProjectService.getProjectMembers(projectId, req.user);
+          if (!membersResult.error && membersResult.members) {
+            projectMembers = membersResult.members;
+          }
+        } catch (memberFetchError) {
+          console.error('Failed to fetch project members for task notification:', memberFetchError);
+        }
+      }
+
+      const assignmentChanged =
+        Boolean(updatedAssigneeId) && updatedAssigneeId !== previousAssigneeId;
+
+      if (
+        assignmentChanged &&
+        updatedAssigneeId &&
+        projectId &&
+        updatedAssigneeId !== req.user.id
+      ) {
+        await NotificationService.notifyTaskReceived({
+          recipientIds: [updatedAssigneeId],
+          taskId,
+          taskName,
+          projectName,
+          projectId,
+          assignedById: req.user.id,
+          assignedByName: req.user.full_name
+        });
+      }
+
+      const completedNow =
+        updatedStatus === 'completed' && previousStatus !== 'completed';
+
+      if (completedNow && projectId) {
+        const recipientSet = new Set<string>();
+
+        projectMembers.forEach(member => {
+          if (
+            member.user_id &&
+            (member.project_role === 'manager' ||
+              member.project_role === 'lead' ||
+              member.is_primary_manager ||
+              member.is_secondary_manager)
+          ) {
+            recipientSet.add(member.user_id);
+          }
+        });
+
+        if (projectPrimaryManagerId) {
+          recipientSet.add(projectPrimaryManagerId);
+        }
+
+        recipientSet.delete(req.user.id);
+        if (updatedAssigneeId) {
+          recipientSet.delete(updatedAssigneeId);
+        }
+
+        if (recipientSet.size > 0) {
+          await NotificationService.notifyTaskCompleted({
+            recipientIds: Array.from(recipientSet),
+            taskId,
+            taskName,
+            projectName,
+            projectId,
+            completedById: req.user.id,
+            completedByName: req.user.full_name
+          });
+        }
       }
     } catch (notificationError) {
-      console.error('Failed to send task assignment notification:', notificationError);
+      console.error('Failed to send task notification:', notificationError);
       // Don't fail the main operation if notification fails
     }
 

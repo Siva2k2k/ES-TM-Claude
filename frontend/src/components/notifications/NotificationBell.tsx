@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, X, Check, Clock, AlertCircle } from 'lucide-react';
 import { BackendApiClient } from '../../lib/backendApi';
+import { useNavigate } from 'react-router-dom';
 
 interface Notification {
   _id: string;
@@ -11,6 +12,7 @@ interface Notification {
   read: boolean;
   created_at: string;
   action_url?: string;
+  data?: Record<string, any>;
   sender_id?: {
     full_name: string;
     email: string;
@@ -26,7 +28,8 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className = 
   const [unreadCount, setUnreadCount] = useState(0);
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
-  
+  const navigate = useNavigate();
+
   const apiClient = new BackendApiClient();
 
   useEffect(() => {
@@ -81,29 +84,78 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className = 
 
   const markAllAsRead = async () => {
     try {
-      const response = await fetch('/notifications/mark-all-read', {
-        method: 'PUT',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('accessToken')}`
-        }
-      });
-      
-      if (response.ok) {
-        setNotifications(prev => 
-          prev.map(notif => ({ ...notif, read: true }))
-        );
-        setUnreadCount(0);
-      }
+      await apiClient.put('/notifications/mark-all-read');
+
+      setNotifications(prev => prev.map(notif => ({ ...notif, read: true })));
+      setUnreadCount(0);
+      await fetchUnreadCount();
     } catch (error) {
       console.error('Error marking all as read:', error);
     }
   };
 
+  const resolveNotificationRoute = (notification: Notification): string => {
+    const data = notification.data || {};
+    const projectId = data.project_id as string | undefined;
+
+    switch (notification.type) {
+      case 'timesheet_submission':
+        return '/dashboard/team-review';
+      case 'timesheet_approval':
+        return '/dashboard/timesheets/status';
+      case 'timesheet_rejection':
+        return '/dashboard/timesheets';
+      case 'project_created':
+      case 'project_updated':
+      case 'project_completed':
+      case 'project_allocated':
+        return '/dashboard/projects';
+      case 'task_allocated':
+      case 'task_received':
+      case 'task_completed':
+      case 'task_pending':
+      case 'task_overdue':
+        return projectId ? `/dashboard/projects/${projectId}` : '/dashboard/projects';
+      case 'user_approval':
+      case 'user_rejection':
+        return '/dashboard/users';
+      case 'billing_update':
+        return '/dashboard/billing';
+      case 'system_announcement':
+        return '/dashboard/notifications';
+      default:
+        break;
+    }
+
+    const actionUrl = notification.action_url;
+    if (actionUrl) {
+      if (actionUrl.startsWith('http')) {
+        return actionUrl;
+      }
+
+      if (actionUrl.startsWith('/dashboard')) {
+        return actionUrl;
+      }
+
+      if (actionUrl.startsWith('/')) {
+        return `/dashboard${actionUrl}`.replace(/\/\/+/g, '/');
+      }
+
+      return `/dashboard/${actionUrl}`.replace(/\/\/+/g, '/');
+    }
+
+    return '/dashboard/notifications';
+  };
+
   const handleNotificationClick = async (notification: Notification) => {
     await markAsRead(notification._id);
     
-    if (notification.action_url) {
-      window.location.href = notification.action_url;
+    const target = resolveNotificationRoute(notification);
+
+    if (target.startsWith('http')) {
+      window.open(target, '_blank', 'noopener,noreferrer');
+    } else {
+      navigate(target);
     }
     
     setIsOpen(false);
@@ -241,8 +293,7 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className = 
             <div className="p-3 border-t border-gray-200">
               <button
                 onClick={() => {
-                  // Trigger navigation to notifications page
-                  window.dispatchEvent(new CustomEvent('navigate-to-notifications'));
+                  navigate('/dashboard/notifications');
                   setIsOpen(false);
                 }}
                 className="w-full text-center text-sm text-blue-600 hover:text-blue-800"

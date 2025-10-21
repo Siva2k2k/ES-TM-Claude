@@ -53,6 +53,50 @@ export class NotificationService {
     return notification;
   }
 
+  private static normalizeRecipientId(recipientId: string | mongoose.Types.ObjectId | undefined | null): string | null {
+    if (!recipientId) {
+      return null;
+    }
+
+    if (recipientId instanceof mongoose.Types.ObjectId) {
+      return recipientId.toString();
+    }
+
+    if (typeof recipientId === 'string' && mongoose.Types.ObjectId.isValid(recipientId)) {
+      return new mongoose.Types.ObjectId(recipientId).toString();
+    }
+
+    return null;
+  }
+
+  private static async createForRecipients(
+    recipientIds: Array<string | mongoose.Types.ObjectId | undefined | null>,
+    params: Omit<CreateNotificationParams, 'recipient_id'>
+  ): Promise<INotification[]> {
+    const uniqueRecipientIds = Array.from(
+      new Set(
+        recipientIds
+          .map(id => this.normalizeRecipientId(id))
+          .filter((id): id is string => Boolean(id))
+      )
+    );
+
+    if (uniqueRecipientIds.length === 0) {
+      return [];
+    }
+
+    const notifications: INotification[] = [];
+    for (const recipientId of uniqueRecipientIds) {
+      const notification = await this.create({
+        ...params,
+        recipient_id: recipientId
+      });
+      notifications.push(notification);
+    }
+
+    return notifications;
+  }
+
   /**
    * Get notifications for a user
    */
@@ -236,6 +280,121 @@ export class NotificationService {
     });
   }
 
+  static async notifyTimesheetSubmission(params: {
+    recipientIds: Array<string | mongoose.Types.ObjectId | undefined | null>;
+    timesheetId: string;
+    submittedById?: string | mongoose.Types.ObjectId;
+    submittedByName?: string;
+    weekStartDate?: string | Date;
+    totalHours?: number;
+  }): Promise<INotification[]> {
+    const {
+      recipientIds,
+      timesheetId,
+      submittedById,
+      submittedByName,
+      weekStartDate,
+      totalHours
+    } = params;
+
+    const weekLabel = weekStartDate
+      ? new Date(weekStartDate).toISOString().split('T')[0]
+      : undefined;
+
+    const hoursLabel = typeof totalHours === 'number' && !Number.isNaN(totalHours)
+      ? ` (${totalHours}h logged)`
+      : '';
+
+    const submitterLabel = submittedByName || 'A team member';
+
+    return this.createForRecipients(recipientIds, {
+      sender_id: submittedById,
+      type: NotificationType.TIMESHEET_SUBMISSION,
+      title: 'Timesheet Submitted',
+      message: `${submitterLabel} submitted a timesheet${weekLabel ? ` for week of ${weekLabel}` : ''}${hoursLabel}.`,
+      data: {
+        timesheet_id: timesheetId,
+        week_start_date: weekLabel,
+        total_hours: totalHours
+      },
+      action_url: `/timesheets/${timesheetId}`,
+      priority: NotificationPriority.HIGH
+    });
+  }
+
+  // Project notifications
+  static async notifyProjectCreated(params: {
+    recipientIds: Array<string | mongoose.Types.ObjectId | undefined | null>;
+    projectId: string;
+    projectName: string;
+    createdById?: string | mongoose.Types.ObjectId;
+    createdByName?: string;
+  }): Promise<INotification[]> {
+    const { recipientIds, projectId, projectName, createdById, createdByName } = params;
+
+    return this.createForRecipients(recipientIds, {
+      sender_id: createdById,
+      type: NotificationType.PROJECT_CREATED,
+      title: 'Project Created',
+      message: `Project "${projectName}" was created${createdByName ? ` by ${createdByName}` : ''}.`,
+      data: { project_id: projectId },
+      action_url: `/projects/${projectId}`,
+      priority: NotificationPriority.MEDIUM
+    });
+  }
+
+  static async notifyProjectUpdated(params: {
+    recipientIds: Array<string | mongoose.Types.ObjectId | undefined | null>;
+    projectId: string;
+    projectName: string;
+    updatedById?: string | mongoose.Types.ObjectId;
+    updatedByName?: string;
+    updatedFields?: string[];
+  }): Promise<INotification[]> {
+    const {
+      recipientIds,
+      projectId,
+      projectName,
+      updatedById,
+      updatedByName,
+      updatedFields = []
+    } = params;
+
+    const formattedFields = updatedFields.length > 0
+      ? updatedFields.map(field => field.replace(/_/g, ' ')).join(', ')
+      : 'project details';
+
+    return this.createForRecipients(recipientIds, {
+      sender_id: updatedById,
+      type: NotificationType.PROJECT_UPDATED,
+      title: 'Project Updated',
+      message: `${updatedByName || 'A team member'} updated ${formattedFields} for project "${projectName}".`,
+      data: { project_id: projectId, updated_fields: updatedFields },
+      action_url: `/projects/${projectId}`,
+      priority: NotificationPriority.MEDIUM
+    });
+  }
+
+  static async notifyProjectCompleted(params: {
+    recipientIds: Array<string | mongoose.Types.ObjectId | undefined | null>;
+    projectId: string;
+    projectName: string;
+    completedById?: string | mongoose.Types.ObjectId;
+    completedByName?: string;
+  }): Promise<INotification[]> {
+    const { recipientIds, projectId, projectName, completedById, completedByName } = params;
+
+    return this.createForRecipients(recipientIds, {
+      sender_id: completedById,
+      type: NotificationType.PROJECT_COMPLETED,
+      title: 'Project Completed',
+      message: `Project "${projectName}" has been marked as completed${completedByName ? ` by ${completedByName}` : ''}.`,
+      data: { project_id: projectId },
+      action_url: `/projects/${projectId}`,
+      priority: NotificationPriority.HIGH
+    });
+  }
+
   // Project/Task allocation notifications
   static async notifyProjectAllocation(userId: string, projectId: string, projectName: string, allocatedBy: string): Promise<INotification> {
     return this.create({
@@ -258,6 +417,73 @@ export class NotificationService {
       title: 'New Task Assigned',
       message: `You have been assigned task "${taskName}" in project "${projectName}"`,
       data: { task_id: taskId },
+      action_url: `/tasks/${taskId}`,
+      priority: NotificationPriority.MEDIUM
+    });
+  }
+
+  static async notifyTaskReceived(params: {
+    recipientIds: Array<string | mongoose.Types.ObjectId | undefined | null>;
+    taskId: string;
+    taskName: string;
+    projectName?: string;
+    projectId?: string;
+    assignedById?: string | mongoose.Types.ObjectId;
+    assignedByName?: string;
+  }): Promise<INotification[]> {
+    const {
+      recipientIds,
+      taskId,
+      taskName,
+      projectName,
+      projectId,
+      assignedById,
+      assignedByName
+    } = params;
+
+    const projectLabel = projectName ? ` in project "${projectName}"` : '';
+    const assignedLabel = assignedByName
+      ? `${assignedByName} assigned you task "${taskName}"${projectLabel}.`
+      : `You have been assigned task "${taskName}"${projectLabel}.`;
+
+    return this.createForRecipients(recipientIds, {
+      sender_id: assignedById,
+      type: NotificationType.TASK_RECEIVED,
+      title: 'New Task Assigned',
+      message: assignedLabel,
+      data: { task_id: taskId, project_id: projectId, project_name: projectName },
+      action_url: `/tasks/${taskId}`,
+      priority: NotificationPriority.MEDIUM
+    });
+  }
+
+  static async notifyTaskCompleted(params: {
+    recipientIds: Array<string | mongoose.Types.ObjectId | undefined | null>;
+    taskId: string;
+    taskName: string;
+    projectName?: string;
+    projectId?: string;
+    completedById?: string | mongoose.Types.ObjectId;
+    completedByName?: string;
+  }): Promise<INotification[]> {
+    const {
+      recipientIds,
+      taskId,
+      taskName,
+      projectName,
+      projectId,
+      completedById,
+      completedByName
+    } = params;
+
+    const projectLabel = projectName ? ` in project "${projectName}"` : '';
+
+    return this.createForRecipients(recipientIds, {
+      sender_id: completedById,
+      type: NotificationType.TASK_COMPLETED,
+      title: 'Task Completed',
+      message: `${completedByName || 'A team member'} marked task "${taskName}"${projectLabel} as completed.`,
+      data: { task_id: taskId, project_id: projectId, project_name: projectName },
       action_url: `/tasks/${taskId}`,
       priority: NotificationPriority.MEDIUM
     });

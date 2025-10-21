@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Check, CheckCheck, ArrowLeft } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { backendApi } from '../services/BackendAPI';
 
 interface Notification {
@@ -25,7 +26,6 @@ interface NotificationsResponse {
     unread: number;
   };
 }
-
 const NotificationsPage: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +33,7 @@ const NotificationsPage: React.FC = () => {
   const [total, setTotal] = useState(0);
   const [unread, setUnread] = useState(0);
 
+  const navigate = useNavigate();
   const apiClient = backendApi;
 
   useEffect(() => {
@@ -135,7 +136,7 @@ const NotificationsPage: React.FC = () => {
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
               <button
-                onClick={() => window.dispatchEvent(new CustomEvent('navigate-to-dashboard'))}
+                onClick={() => navigate('/dashboard')}
                 className="flex items-center text-gray-600 hover:text-gray-900"
               >
                 <ArrowLeft className="h-5 w-5 mr-1" />

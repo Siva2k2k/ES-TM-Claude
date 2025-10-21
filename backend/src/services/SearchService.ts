@@ -40,6 +40,26 @@ export class SearchService {
         search_weight: 9,
         allowed_roles: ['super_admin', 'management', 'manager', 'lead', 'employee']
       },
+      {
+        title: 'Notification Center',
+        description: 'Review approvals, timesheet updates, and project alerts',
+        category: SearchCategory.NAVIGATION,
+        type: SearchItemType.PAGE,
+        url: '/notifications',
+        keywords: ['notifications', 'alerts', 'approvals', 'updates'],
+        search_weight: 8,
+        allowed_roles: ['super_admin', 'management', 'manager', 'lead', 'employee']
+      },
+      {
+        title: 'Settings',
+        description: 'Access system configuration and personal preferences',
+        category: SearchCategory.SETTINGS,
+        type: SearchItemType.PAGE,
+        url: '/settings',
+        keywords: ['settings', 'configuration', 'preferences', 'account'],
+        search_weight: 7,
+        allowed_roles: ['super_admin', 'management', 'manager', 'lead', 'employee']
+      },
       
       // Timesheet Management
       {
