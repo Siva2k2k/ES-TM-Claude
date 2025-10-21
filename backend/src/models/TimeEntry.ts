@@ -18,6 +18,11 @@ export interface ITimeEntry extends Document {
   created_at: Date;
   updated_at: Date;
   deleted_at?: Date;
+  is_editable?: boolean;
+  is_rejected?: boolean;
+  rejection_reason?: string;
+  rejected_at?: Date;
+  rejected_by?: mongoose.Types.ObjectId;
 }
 
 const TimeEntrySchema: Schema = new Schema({
@@ -78,6 +83,24 @@ const TimeEntrySchema: Schema = new Schema({
   },
   deleted_at: {
     type: Date,
+    required: false
+  },
+  is_rejected: {
+    type: Boolean,
+    default: false
+  },
+  rejection_reason: {
+    type: String,
+    trim: true,
+    required: false
+  },
+  rejected_at: {
+    type: Date,
+    required: false
+  },
+  rejected_by: {
+    type: Schema.Types.ObjectId,
+    ref: 'User',
     required: false
   }
 }, {

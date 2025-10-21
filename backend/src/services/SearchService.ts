@@ -1,4 +1,4 @@
-import { SearchIndex, SearchCategory, SearchItemType } from '@/models/SearchIndex';
+﻿import { SearchIndex, SearchCategory, SearchItemType } from '@/models/SearchIndex';
 import { User } from '@/models/User';
 import { Project } from '@/models/Project';
 
@@ -580,3 +580,4 @@ export class SearchService {
     return iconMap[category] || 'search';
   }
 }
+

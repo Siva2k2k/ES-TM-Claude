@@ -155,13 +155,15 @@ export class TimesheetApprovalService {
       const enhancedTimesheets: TimesheetWithDetails[] = [];
       
       for (const rawTimesheet of result.timesheets) {
-        // Convert the raw timesheet data to Timesheet type
+        // Use all fields from backend (includes effectiveStatus, project_approvals, editable_project_ids)
+        // The backend already calculated partial rejection logic
         const timesheet: Timesheet = {
+          ...rawTimesheet, // Keep all backend fields including project_approvals, editable_project_ids
           id: rawTimesheet.id,
           user_id: rawTimesheet.user_id,
           week_start_date: rawTimesheet.week_start_date,
           week_end_date: rawTimesheet.week_end_date,
-          status: rawTimesheet.status,
+          status: rawTimesheet.status, // Backend returns effectiveStatus for partial rejections
           total_hours: rawTimesheet.total_hours,
           submitted_at: rawTimesheet.submitted_at,
           approved_by_manager_id: rawTimesheet.approved_by_manager_id,
@@ -196,6 +198,7 @@ export class TimesheetApprovalService {
         const projectBreakdown = Array.isArray(rawTimesheet.projectBreakdown) ? rawTimesheet.projectBreakdown : [];
 
         // Create enhanced timesheet with permissions and existing time_entries
+        // Use backend's can_edit if available (respects partial rejection logic)
         const enhancedTimesheet: TimesheetWithDetails = {
           ...timesheet,
           user_name: rawTimesheet.user_name || '',
@@ -204,7 +207,9 @@ export class TimesheetApprovalService {
           billableHours,
           nonBillableHours,
           projectBreakdown,
-          can_edit: permissions.canEdit,
+          project_approvals: rawTimesheet.project_approvals, // Include project approvals from backend
+          editable_project_ids: rawTimesheet.editable_project_ids, // Include editable projects from backend
+          can_edit: rawTimesheet.can_edit !== undefined ? rawTimesheet.can_edit : permissions.canEdit, // Prefer backend value
           can_submit: permissions.canSubmit,
           can_approve: permissions.canApprove,
           can_reject: permissions.canReject,

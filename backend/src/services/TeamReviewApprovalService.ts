@@ -1,6 +1,6 @@
 /**
  * Phase 7: Team Review Approval Service
- * Handles approve/reject/verify/bill operations with multi-manager logic
+ * Handles approve/reject/verify/freeze/bill operations with multi-manager logic
  * SonarQube compliant - kept under 250 lines
  */
 
@@ -9,8 +9,10 @@ import { Timesheet, TimesheetStatus } from '../models/Timesheet';
 import { TimesheetProjectApproval } from '../models/TimesheetProjectApproval';
 import { ApprovalHistory } from '../models/ApprovalHistory';
 import { Project } from '../models/Project';
+import { TimeEntry } from '../models/TimeEntry';
 import { logger } from '../config/logger';
 import type { BulkProjectWeekApprovalResponse } from '../types/teamReview';
+import { parseLocalDate } from '../utils/dateUtils';
 
 // Allowed timesheet statuses (must match Timesheet model)
 const ALLOWED_STATUSES = new Set([
@@ -113,6 +115,24 @@ export class TeamReviewApprovalService {
 
         await projectApproval.save(queryOpts);
 
+        // Clear rejection flags on time entries for this project
+        await (TimeEntry.updateMany as any)(
+          {
+            timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+            project_id: new mongoose.Types.ObjectId(projectId),
+            is_rejected: true
+          },
+          {
+            $set: {
+              is_rejected: false,
+              rejection_reason: undefined,
+              rejected_at: undefined,
+              rejected_by: undefined
+            }
+          },
+          queryOpts
+        );
+
         // Check if ALL project leads have approved
         const allLeadsApproved = await this.checkAllLeadsApproved(timesheetId, session || undefined);
 
@@ -166,6 +186,24 @@ export class TeamReviewApprovalService {
 
         await projectApproval.save(queryOpts);
 
+        // Clear rejection flags on time entries for this project
+        await (TimeEntry.updateMany as any)(
+          {
+            timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+            project_id: new mongoose.Types.ObjectId(projectId),
+            is_rejected: true
+          },
+          {
+            $set: {
+              is_rejected: false,
+              rejection_reason: undefined,
+              rejected_at: undefined,
+              rejected_by: undefined
+            }
+          },
+          queryOpts
+        );
+
         // Check if ALL managers have approved
         const allManagersApproved = await this.checkAllManagersApproved(timesheetId, session || undefined);
 
@@ -204,6 +242,24 @@ export class TeamReviewApprovalService {
         projectApproval.management_rejection_reason = undefined;
 
         await projectApproval.save(queryOpts);
+
+        // Clear rejection flags on time entries for this project
+        await (TimeEntry.updateMany as any)(
+          {
+            timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+            project_id: new mongoose.Types.ObjectId(projectId),
+            is_rejected: true
+          },
+          {
+            $set: {
+              is_rejected: false,
+              rejection_reason: undefined,
+              rejected_at: undefined,
+              rejected_by: undefined
+            }
+          },
+          queryOpts
+        );
 
         // Freeze timesheet
         newStatus = 'frozen';
@@ -299,6 +355,23 @@ export class TeamReviewApprovalService {
         timesheet.lead_rejection_reason = reason;
         timesheet.lead_rejected_at = new Date();
         await timesheet.save(queryOpts);
+
+        // Flag all time entries for this project as rejected
+        await (TimeEntry.updateMany as any)(
+          {
+            timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+            project_id: new mongoose.Types.ObjectId(projectId)
+          },
+          {
+            $set: {
+              is_rejected: true,
+              rejection_reason: reason,
+              rejected_at: new Date(),
+              rejected_by: new mongoose.Types.ObjectId(approverId)
+            }
+          },
+          queryOpts
+        );
       }
 
       // TIER 2: MANAGER REJECTION
@@ -316,6 +389,23 @@ export class TeamReviewApprovalService {
         timesheet.manager_rejection_reason = reason;
         timesheet.manager_rejected_at = new Date();
         await timesheet.save(queryOpts);
+
+        // Flag all time entries for this project as rejected
+        await (TimeEntry.updateMany as any)(
+          {
+            timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+            project_id: new mongoose.Types.ObjectId(projectId)
+          },
+          {
+            $set: {
+              is_rejected: true,
+              rejection_reason: reason,
+              rejected_at: new Date(),
+              rejected_by: new mongoose.Types.ObjectId(approverId)
+            }
+          },
+          queryOpts
+        );
       }
 
       // TIER 3: MANAGEMENT REJECTION
@@ -333,6 +423,23 @@ export class TeamReviewApprovalService {
         timesheet.management_rejection_reason = reason;
         timesheet.management_rejected_at = new Date();
         await timesheet.save(queryOpts);
+
+        // Flag all time entries for this project as rejected
+        await (TimeEntry.updateMany as any)(
+          {
+            timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+            project_id: new mongoose.Types.ObjectId(projectId)
+          },
+          {
+            $set: {
+              is_rejected: true,
+              rejection_reason: reason,
+              rejected_at: new Date(),
+              rejected_by: new mongoose.Types.ObjectId(approverId)
+            }
+          },
+          queryOpts
+        );
       }
 
       else {
@@ -556,9 +663,9 @@ export class TeamReviewApprovalService {
         throw new Error('Project not found');
       }
 
-      // Find all timesheets for this week
-      const weekStartDate = new Date(weekStart);
-      const weekEndDate = new Date(weekEnd);
+      // Find all timesheets for this week (parse dates correctly to avoid timezone issues)
+      const weekStartDate = parseLocalDate(weekStart);
+      const weekEndDate = parseLocalDate(weekEnd);
 
       const timesheets = await Timesheet.find({
         week_start_date: { $gte: weekStartDate, $lte: weekEndDate },
@@ -776,9 +883,9 @@ export class TeamReviewApprovalService {
         throw new Error('Project not found');
       }
 
-      // Find all timesheets for this week
-      const weekStartDate = new Date(weekStart);
-      const weekEndDate = new Date(weekEnd);
+      // Find all timesheets for this week (parse dates correctly to avoid timezone issues)
+      const weekStartDate = parseLocalDate(weekStart);
+      const weekEndDate = parseLocalDate(weekEnd);
 
       const timesheets = await Timesheet.find({
         week_start_date: { $gte: weekStartDate, $lte: weekEndDate },
@@ -904,9 +1011,9 @@ export class TeamReviewApprovalService {
         throw new Error('Project not found');
       }
 
-      // Find all timesheets for this week
-      const weekStartDate = new Date(weekStart);
-      const weekEndDate = new Date(weekEnd);
+      // Find all timesheets for this week (parse dates correctly to avoid timezone issues)
+      const weekStartDate = parseLocalDate(weekStart);
+      const weekEndDate = parseLocalDate(weekEnd);
 
       const timesheets = await Timesheet.find({
         week_start_date: { $gte: weekStartDate, $lte: weekEndDate },

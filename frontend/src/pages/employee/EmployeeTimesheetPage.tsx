@@ -63,6 +63,7 @@ type CalendarEntry = TimeEntry & {
   _id?: string;
   timesheet_id?: string;
   project_name?: string;
+  is_editable?: boolean;
 };
 
 type CalendarDayAggregate = {
@@ -211,9 +212,20 @@ export const  EmployeeTimesheetPage: React.FC = () => {
         setWeekStartDate(enhancedDetail.week_start_date);
       }
 
-      // Force view mode for submitted/approved timesheets (draft and rejected are editable)
+      // Check if timesheet should be editable
       const status = detail.status?.toLowerCase();
-      const isEditable = !status || status === 'draft' || status === 'rejected' || status === 'manager_rejected' || status === 'management_rejected';
+      const hasRejectedProjects = projectApprovals?.some((pa: any) => pa?.lead_status === 'rejected');
+      
+      // Timesheet is editable if:
+      // 1. Status is draft, lead_rejected, manager_rejected, or management_rejected
+      // 2. Status is submitted but has rejected projects (partial rejections)
+      const isEditable = !status || 
+                        status === 'draft' || 
+                        status === 'lead_rejected' || 
+                        status === 'manager_rejected' || 
+                        status === 'management_rejected' ||
+                        (status === 'submitted' && hasRejectedProjects);
+                        
       const finalMode = isEditable ? mode : 'view';
 
       setDetailMode(finalMode);
@@ -421,6 +433,8 @@ export const  EmployeeTimesheetPage: React.FC = () => {
             projects={projects}
             tasks={tasks}
             projectApprovals={editingProjectApprovals}
+            timesheetStatus={editingTimesheetDetail.status}
+            leadRejectionReason={editingTimesheetDetail.lead_rejection_reason}
             onSuccess={handleEditSuccess}
             onCancel={closeEditModal}
           />
@@ -462,7 +476,8 @@ function normalizeEntries(entries: any[], timesheetId?: string): CalendarEntry[]
       description: entry.description || entry.note || '',
       is_billable: entry.is_billable !== undefined ? Boolean(entry.is_billable) : true,
       entry_type: (entry.entry_type as TimeEntry['entry_type']) || 'project_task',
-      project_name: entry.project_name || entry.project?.name || entry.projectName || ''
+      project_name: entry.project_name || entry.project?.name || entry.projectName || '',
+      is_editable: entry.is_editable !== undefined ? Boolean(entry.is_editable) : undefined
     } as CalendarEntry;
   });
 }
@@ -646,7 +661,7 @@ function getCurrentWeekMonday(): string {
 function getWeekEndDate(weekStartDate: string): string {
   const startDate = new Date(weekStartDate);
   const endDate = new Date(startDate);
-  endDate.setDate(startDate.getDate() + 4); // Friday (4 days after Monday)
+  endDate.setDate(startDate.getDate() + 6); // Sunday (6 days after Monday)
   return endDate.toISOString().split('T')[0];
 }
 

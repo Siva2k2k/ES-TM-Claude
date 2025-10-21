@@ -24,7 +24,7 @@ function isWeekendDate(dateStr: string): boolean {
 
 function prepareEntriesForPersistence(entries: Array<TimeEntry | (TimeEntry & { _uid?: string })>): TimeEntry[] {
   return (entries || []).map((entry) => {
-    const { _uid, ...rest } = entry as TimeEntry & { _uid?: string };
+    const { _uid, is_editable, project_name, ...rest } = entry as TimeEntry & { _uid?: string; is_editable?: boolean; project_name?: string };
     const coercedHours =
       typeof rest.hours === 'number'
         ? rest.hours
@@ -171,12 +171,49 @@ export function useTimesheetForm(
           const isValid = await form.trigger();
           if (!isValid) {
             const errors = form.formState.errors;
-            const errorMessages = Object.values(errors)
-              .map((error) => error?.message)
-              .filter(Boolean) as string[];
+            
+            // Collect all error messages including nested entry errors
+            const errorMessages: string[] = [];
+            
+            // Check for entry-level errors
+            if (errors.entries && Array.isArray(errors.entries)) {
+              errors.entries.forEach((entryError, index) => {
+                if (entryError) {
+                  const entryNum = index + 1;
+                  if (entryError.task_id?.message) {
+                    errorMessages.push(`Entry ${entryNum}: ${entryError.task_id.message}`);
+                  }
+                  if (entryError.hours?.message) {
+                    errorMessages.push(`Entry ${entryNum}: ${entryError.hours.message}`);
+                  }
+                  if (entryError.project_id?.message) {
+                    errorMessages.push(`Entry ${entryNum}: ${entryError.project_id.message}`);
+                  }
+                  if (entryError.custom_task_description?.message) {
+                    errorMessages.push(`Entry ${entryNum}: ${entryError.custom_task_description.message}`);
+                  }
+                  if (entryError.date?.message) {
+                    errorMessages.push(`Entry ${entryNum}: ${entryError.date.message}`);
+                  }
+                }
+              });
+            }
+            
+            // Add other form-level errors
+            Object.entries(errors).forEach(([key, error]) => {
+              if (key !== 'entries' && error?.message) {
+                errorMessages.push(String(error.message));
+              }
+            });
 
             setValidationWarnings(errorMessages);
-            toast.error('Please fix validation errors');
+            
+            // Show detailed toast message
+            if (errorMessages.length > 0) {
+              toast.error(`Validation failed: ${errorMessages[0]}${errorMessages.length > 1 ? ` (+${errorMessages.length - 1} more)` : ''}`);
+            } else {
+              toast.error('Please fix validation errors before submitting');
+            }
             return;
           }
         }

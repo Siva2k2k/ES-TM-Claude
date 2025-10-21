@@ -15,13 +15,14 @@ export const timeEntrySchema = z.object({
   task_id: z.string().optional(),
   date: z.string().min(1, 'Date is required'),
   hours: z.number()
-    .min(0.5, 'Minimum 0.5 hours')
+    .min(0.5, 'Minimum 0.5 hours required')
     .max(24, 'Maximum 24 hours per day'),
   // Description is optional in the UI; make it optional here to avoid blocking submissions
   description: z.string().max(500, 'Description too long').optional(),
   is_billable: z.boolean().default(true),
   entry_type: entryTypeSchema.default('project_task'),
   custom_task_description: z.string().optional(),
+  is_editable: z.boolean().optional(),
 }).refine(
   (data) => {
     // Project tasks require project_id and task_id
@@ -34,8 +35,32 @@ export const timeEntrySchema = z.object({
     return true;
   },
   {
-    message: 'Project and task are required for project tasks',
+    message: 'Task is required',
+    path: ['task_id'],
+  }
+).refine(
+  (data) => {
+    // Check project_id separately for better error message
+    if (data.entry_type === 'project_task') {
+      return !!data.project_id;
+    }
+    return true;
+  },
+  {
+    message: 'Project is required',
     path: ['project_id'],
+  }
+).refine(
+  (data) => {
+    // Custom task description is required for custom tasks
+    if (data.entry_type === 'custom_task') {
+      return !!data.custom_task_description?.trim();
+    }
+    return true;
+  },
+  {
+    message: 'Custom task description is required',
+    path: ['custom_task_description'],
   }
 ).refine(
   (data) => {

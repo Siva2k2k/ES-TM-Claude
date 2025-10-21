@@ -178,6 +178,10 @@ export interface TimeEntry {
   created_at: string;
   updated_at: string;
   deleted_at?: string;
+  is_rejected?: boolean;
+  rejection_reason?: string;
+  rejected_at?: string;
+  rejected_by?: string;
 }
 
 // ==========================================================================

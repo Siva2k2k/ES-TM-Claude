@@ -28,34 +28,42 @@ import {
 import { AuditLogService } from '@/services/AuditLogService';
 import { ValidationUtils } from '@/utils/validation';
 import { NotificationService } from '@/services/NotificationService';
+import { parseLocalDate, getMondayOfWeek, toISODateString } from '@/utils/dateUtils';
 
 const WEEKDAY_MIN_HOURS = 8;
 const WEEKDAY_MAX_HOURS = 10;
 const WEEKLY_MAX_HOURS = 56;
 
 function normalizeWeekStartDateInput(dateInput: string | Date): Date {
-  const date = new Date(dateInput);
+  // Use the utility function to parse dates correctly in local timezone
+  const date = parseLocalDate(dateInput);
+  
   if (Number.isNaN(date.getTime())) {
     throw new ValidationError('Invalid week start date');
   }
-  const normalized = new Date(date);
-  normalized.setHours(0, 0, 0, 0);
-  const day = normalized.getDay();
-  const diff = normalized.getDate() - day + (day === 0 ? -6 : 1);
-  normalized.setDate(diff);
-  normalized.setHours(0, 0, 0, 0);
+  
+  // Get Monday of the week
+  const normalized = getMondayOfWeek(date);
   return normalized;
-}
-
-function toISODateString(date: Date): string {
-  const normalized = new Date(date);
-  normalized.setHours(0, 0, 0, 0);
-  return normalized.toISOString().split('T')[0];
 }
 
 function isWeekendDay(date: Date): boolean {
   const day = date.getDay();
   return day === 0 || day === 6;
+}
+export interface TimesheetProjectApprovalSummary {
+  project_id?: string;
+  project_name?: string;
+  lead_id?: string;
+  lead_name?: string;
+  lead_status?: string;
+  lead_rejection_reason?: string;
+  manager_id?: string;
+  manager_name?: string;
+  manager_status?: string;
+  manager_rejection_reason?: string;
+  management_status?: string;
+  management_rejection_reason?: string;
 }
 
 export interface TimesheetWithDetails extends ITimesheet {
@@ -70,6 +78,8 @@ export interface TimesheetWithDetails extends ITimesheet {
   user?: IUser;
   billableHours?: number;
   nonBillableHours?: number;
+  project_approvals?: TimesheetProjectApprovalSummary[];
+  editable_project_ids?: string[];
 }
 
 export interface TimeEntryForm {
@@ -294,14 +304,68 @@ export class TimesheetService {
         const user = ts.user[0];
 
         // Map project approvals (if any) to a simple shape
-        const projectApprovals = (ts.project_approvals || []).map((pa: any) => ({
+        const projectApprovalsRaw = ts.project_approvals || [];
+        const projectApprovals: TimesheetProjectApprovalSummary[] = projectApprovalsRaw.map((pa: any) => ({
           project_id: pa.project_id?.toString(),
           project_name: pa.project?.[0]?.name || undefined,
+          lead_id: pa.lead?.[0]?._id?.toString() || pa.lead_id?.toString(),
+          lead_name: pa.lead?.[0]?.full_name || undefined,
+          lead_status: pa.lead_status,
+          lead_rejection_reason: pa.lead_rejection_reason,
           manager_id: pa.manager?.[0]?._id?.toString() || pa.manager_id?.toString(),
           manager_name: pa.manager?.[0]?.full_name || undefined,
           manager_status: pa.manager_status,
-          manager_rejection_reason: pa.manager_rejection_reason
+          manager_rejection_reason: pa.manager_rejection_reason,
+          management_status: pa.management_status,
+          management_rejection_reason: pa.management_rejection_reason
         }));
+
+        // Determine editable status based on rejections
+        const baseEditable = ['draft', 'manager_rejected', 'management_rejected'].includes(ts.status);
+        
+        // Collect rejected project IDs from project approvals
+        const leadRejectedProjectIds = new Set(
+          projectApprovals
+            .filter(pa => pa.lead_status === 'rejected' && pa.project_id)
+            .map(pa => pa.project_id as string)
+        );
+
+        // Handle partial rejections: if timesheet is 'submitted' but has rejected projects
+        const hasPartialRejection = ts.status === 'submitted' && leadRejectedProjectIds.size > 0;
+        
+        // Allow editing if:
+        // 1. Timesheet is in baseEditable states (draft, manager_rejected, management_rejected)
+        // 2. Entire timesheet rejected by lead (status = 'lead_rejected')
+        // 3. Partial rejection (status = 'submitted' but some projects rejected)
+        const allowLeadEdit = (ts.status === 'lead_rejected' || hasPartialRejection) && leadRejectedProjectIds.size > 0;
+
+        // Determine effective display status for frontend
+        // If submitted but has partial rejections, treat as 'lead_rejected' for UI purposes
+        const effectiveStatus = hasPartialRejection ? 'lead_rejected' : ts.status;
+
+        const enhancedEntries = entries.map((entry: any) => {
+          const projectId =
+            entry.project_id && typeof entry.project_id.toString === 'function'
+              ? entry.project_id.toString()
+              : entry.project_id
+                ? String(entry.project_id)
+                : undefined;
+
+          // Entry is editable if:
+          // - Timesheet is in base editable state, OR
+          // - Lead edit allowed AND this entry belongs to a rejected project
+          const entryEditable = baseEditable
+            ? true
+            : allowLeadEdit && projectId ? leadRejectedProjectIds.has(projectId) : false;
+
+          return {
+            ...entry,
+            is_editable: entryEditable
+          };
+        });
+
+        const timesheetCanEdit = baseEditable || (allowLeadEdit && enhancedEntries.some((entry: any) => entry.is_editable));
+        const editableProjectIds = allowLeadEdit ? Array.from(leadRejectedProjectIds) : undefined;
 
         return {
           ...ts,
@@ -309,16 +373,18 @@ export class TimesheetService {
           user_id: ts.user_id.toString(),
           user_name: user?.full_name || 'Unknown User',
           user_email: user?.email,
-          time_entries: entries,
+          time_entries: enhancedEntries,
           user: user,
           billableHours,
           nonBillableHours,
           project_approvals: projectApprovals,
-          can_edit: ['draft', 'manager_rejected', 'management_rejected'].includes(ts.status),
+          status: effectiveStatus, // Use effective status for display
+          can_edit: timesheetCanEdit,
           can_submit: ts.status === 'draft' && ts.total_hours > 0,
           can_approve: false, // Determined by role in component
           can_reject: false, // Determined by role in component
-          next_action: this.getNextAction(ts.status, currentUser, ts.user_id.toString())
+          next_action: this.getNextAction(effectiveStatus, currentUser, ts.user_id.toString()),
+          editable_project_ids: editableProjectIds
         };
       });
 
@@ -431,11 +497,14 @@ export class TimesheetService {
       // Validate access permissions
       validateTimesheetAccess(currentUser, userId, 'view');
 
+      // Parse the date correctly to avoid timezone issues
+      const parsedWeekStart = normalizeWeekStartDateInput(weekStartDate);
+
       const pipeline = [
         {
           $match: {
             user_id: new mongoose.Types.ObjectId(userId),
-            week_start_date: new Date(weekStartDate),
+            week_start_date: parsedWeekStart,
             deleted_at: null
           }
         },
@@ -448,6 +517,43 @@ export class TimesheetService {
             pipeline: [
               { $match: { deleted_at: null } },
               { $sort: { date: 1 } }
+            ]
+          }
+        },
+        {
+          $lookup: {
+            from: 'timesheetprojectapprovals',
+            localField: '_id',
+            foreignField: 'timesheet_id',
+            as: 'project_approvals',
+            pipeline: [
+              {
+                $lookup: {
+                  from: 'projects',
+                  localField: 'project_id',
+                  foreignField: '_id',
+                  as: 'project',
+                  pipeline: [{ $project: { name: 1 } }]
+                }
+              },
+              {
+                $lookup: {
+                  from: 'users',
+                  localField: 'manager_id',
+                  foreignField: '_id',
+                  as: 'manager',
+                  pipeline: [{ $project: { full_name: 1 } }]
+                }
+              },
+              {
+                $lookup: {
+                  from: 'users',
+                  localField: 'lead_id',
+                  foreignField: '_id',
+                  as: 'lead',
+                  pipeline: [{ $project: { full_name: 1 } }]
+                }
+              }
             ]
           }
         },
@@ -478,6 +584,69 @@ export class TimesheetService {
         .filter((e: ITimeEntry) => !e.is_billable)
         .reduce((sum: number, e: ITimeEntry) => sum + e.hours, 0);
 
+      const projectApprovalsRaw = timesheet.project_approvals || [];
+      const projectApprovals: TimesheetProjectApprovalSummary[] = projectApprovalsRaw.map((pa: any) => ({
+        project_id: pa.project_id?.toString(),
+        project_name: pa.project?.[0]?.name || undefined,
+        lead_id: pa.lead?.[0]?._id?.toString() || pa.lead_id?.toString(),
+        lead_name: pa.lead?.[0]?.full_name || undefined,
+        lead_status: pa.lead_status,
+        lead_rejection_reason: pa.lead_rejection_reason,
+        manager_id: pa.manager?.[0]?._id?.toString() || pa.manager_id?.toString(),
+        manager_name: pa.manager?.[0]?.full_name || undefined,
+        manager_status: pa.manager_status,
+        manager_rejection_reason: pa.manager_rejection_reason,
+        management_status: pa.management_status,
+        management_rejection_reason: pa.management_rejection_reason
+      }));
+
+      // Determine editable status based on rejections
+      const baseEditable = ['draft', 'manager_rejected', 'management_rejected'].includes(timesheet.status);
+      
+      // Collect rejected project IDs from project approvals
+      const leadRejectedProjectIds = new Set(
+        projectApprovals
+          .filter(pa => pa.lead_status === 'rejected' && pa.project_id)
+          .map(pa => pa.project_id as string)
+      );
+
+      // Handle partial rejections: if timesheet is 'submitted' but has rejected projects
+      const hasPartialRejection = timesheet.status === 'submitted' && leadRejectedProjectIds.size > 0;
+      
+      // Allow editing if:
+      // 1. Timesheet is in baseEditable states (draft, manager_rejected, management_rejected)
+      // 2. Entire timesheet rejected by lead (status = 'lead_rejected')
+      // 3. Partial rejection (status = 'submitted' but some projects rejected)
+      const allowLeadEdit = (timesheet.status === 'lead_rejected' || hasPartialRejection) && leadRejectedProjectIds.size > 0;
+
+      // Determine effective display status for frontend
+      // If submitted but has partial rejections, treat as 'lead_rejected' for UI purposes
+      const effectiveStatus = hasPartialRejection ? 'lead_rejected' : timesheet.status;
+
+      const enhancedEntries = entries.map((entry: any) => {
+        const projectId =
+          entry.project_id && typeof entry.project_id.toString === 'function'
+            ? entry.project_id.toString()
+            : entry.project_id
+              ? String(entry.project_id)
+              : undefined;
+
+        // Entry is editable if:
+        // - Timesheet is in base editable state, OR
+        // - Lead edit allowed AND this entry belongs to a rejected project
+        const entryEditable = baseEditable
+          ? true
+          : allowLeadEdit && projectId ? leadRejectedProjectIds.has(projectId) : false;
+
+        return {
+          ...entry,
+          is_editable: entryEditable
+        };
+      });
+
+      const timesheetCanEdit = baseEditable || (allowLeadEdit && enhancedEntries.some((entry: any) => entry.is_editable));
+      const editableProjectIds = allowLeadEdit ? Array.from(leadRejectedProjectIds) : undefined;
+
       const user = timesheet.user[0];
       const enhancedTimesheet: TimesheetWithDetails = {
         ...timesheet,
@@ -485,21 +654,171 @@ export class TimesheetService {
         user_id: timesheet.user_id.toString(),
         user_name: user?.full_name || 'Unknown User',
         user_email: user?.email,
-        time_entries: entries,
+        time_entries: enhancedEntries,
         user: user,
         billableHours,
         nonBillableHours,
-        can_edit: ['draft', 'manager_rejected', 'management_rejected'].includes(timesheet.status),
+        project_approvals: projectApprovals,
+        status: effectiveStatus, // Use effective status for display
+        can_edit: timesheetCanEdit,
         can_submit: timesheet.status === 'draft' && timesheet.total_hours > 0,
         can_approve: false,
         can_reject: false,
-        next_action: this.getNextAction(timesheet.status, currentUser, timesheet.user_id.toString())
+        next_action: this.getNextAction(effectiveStatus, currentUser, timesheet.user_id.toString()),
+        editable_project_ids: editableProjectIds
       };
 
       return { timesheet: enhancedTimesheet };
     } catch (error) {
       console.error('Error in getTimesheetByUserAndWeek:', error);
       return { error: error instanceof Error ? error.message : 'Failed to fetch timesheet' };
+    }
+  }
+
+  /**
+   * Validate if a Lead can submit their timesheet
+   * Checks if Lead has completed all employee reviews for projects they're submitting time for
+   */
+  static async validateLeadCanSubmit(
+    timesheetId: string,
+    userId: string
+  ): Promise<{
+    canSubmit: boolean;
+    pendingReviews: Array<{
+      projectName: string;
+      employeeName: string;
+      employeeId: string;
+    }>;
+    message: string;
+  }> {
+    try {
+      // 1. Get timesheet and its time entries
+      const timesheet = await (Timesheet.findById as any)(timesheetId).exec();
+      if (!timesheet) {
+        throw new Error('Timesheet not found');
+      }
+
+      const entries = await (TimeEntry.find as any)({
+        timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+        deleted_at: null
+      }).lean().exec();
+
+      // 2. Get unique project IDs from time entries
+      const projectIds = [...new Set(entries.map((e: any) => e.project_id?.toString()).filter(Boolean))];
+
+      if (projectIds.length === 0) {
+        return { canSubmit: true, pendingReviews: [], message: '' };
+      }
+
+      // 3. Check if user is a Lead on any of these projects
+      const { ProjectMember } = require('@/models/Project');
+      const leadRoles = await (ProjectMember.find as any)({
+        project_id: { $in: projectIds.map(id => new mongoose.Types.ObjectId(id)) },
+        user_id: new mongoose.Types.ObjectId(userId),
+        project_role: 'lead',
+        deleted_at: null,
+        removed_at: null
+      }).lean().exec();
+
+      if (leadRoles.length === 0) {
+        // User is not a Lead on any project they're submitting for
+        return { canSubmit: true, pendingReviews: [], message: '' };
+      }
+
+      // 4. For each project where user is Lead, check ALL employees have submitted AND been approved
+      const pendingReviews: Array<{ projectName: string; employeeName: string; employeeId: string }> = [];
+
+      for (const leadRole of leadRoles) {
+        const projectId = leadRole.project_id.toString();
+        const { Project } = require('@/models/Project');
+        const { User } = require('@/models/User');
+        const project = await (Project.findById as any)(projectId).lean().exec();
+
+        // Get all employees for this project
+        const employeeMembers = await (ProjectMember.find as any)({
+          project_id: leadRole.project_id,
+          user_id: { $ne: new mongoose.Types.ObjectId(userId) }, // Exclude lead
+          project_role: 'employee',
+          deleted_at: null,
+          removed_at: null
+        }).populate('user_id').lean().exec();
+
+        if (employeeMembers.length === 0) {
+          continue; // No employees to check for this project
+        }
+
+        // Check each employee individually
+        for (const empMember of employeeMembers) {
+          const empUserId = empMember.user_id._id || empMember.user_id;
+
+          // Find employee's timesheet for this week
+          const empTimesheet = await (Timesheet.findOne as any)({
+            user_id: empUserId,
+            week_start_date: timesheet.week_start_date,
+            week_end_date: timesheet.week_end_date,
+            deleted_at: null
+          }).lean().exec();
+
+          // Case 1: Employee hasn't submitted a timesheet yet
+          if (!empTimesheet || empTimesheet.status === 'draft') {
+            pendingReviews.push({
+              projectName: project?.name || 'Unknown Project',
+              employeeName: empMember.user_id.full_name || 'Unknown Employee',
+              employeeId: empUserId.toString()
+            });
+            continue;
+          }
+
+          // Case 2: Check if employee has entries for THIS specific project
+          const empProjectEntries = await (TimeEntry.find as any)({
+            timesheet_id: empTimesheet._id,
+            project_id: new mongoose.Types.ObjectId(projectId),
+            deleted_at: null
+          }).lean().exec();
+
+          // Employee submitted timesheet but has NO entries for this project
+          if (empProjectEntries.length === 0) {
+            pendingReviews.push({
+              projectName: project?.name || 'Unknown Project',
+              employeeName: empMember.user_id.full_name || 'Unknown Employee',
+              employeeId: empUserId.toString()
+            });
+            continue;
+          }
+
+          // Case 3: Employee has entries for this project but Lead hasn't approved yet
+          if (empTimesheet.status === 'submitted' || empTimesheet.status === 'lead_rejected') {
+            const approval = await (TimesheetProjectApproval.findOne as any)({
+              timesheet_id: empTimesheet._id,
+              project_id: new mongoose.Types.ObjectId(projectId)
+            }).lean().exec();
+
+            if (approval && approval.lead_status === 'pending') {
+              pendingReviews.push({
+                projectName: project?.name || 'Unknown Project',
+                employeeName: empMember.user_id.full_name || 'Unknown Employee',
+                employeeId: empUserId.toString()
+              });
+            }
+          }
+        }
+      }
+
+      // 5. Return validation result
+      if (pendingReviews.length > 0) {
+        const projectNames = [...new Set(pendingReviews.map(r => r.projectName))];
+        return {
+          canSubmit: false,
+          pendingReviews,
+          message: `You have ${pendingReviews.length} employee(s) who haven't submitted time entries for ${projectNames.join(', ')} or haven't been reviewed yet. All employees must submit entries for this project and be approved before you can submit your own timesheet.`
+        };
+      }
+
+      return { canSubmit: true, pendingReviews: [], message: '' };
+    } catch (error) {
+      console.error('Error in validateLeadCanSubmit:', error);
+      // On error, allow submission (validation will happen on backend anyway)
+      return { canSubmit: true, pendingReviews: [], message: '' };
     }
   }
 
@@ -535,6 +854,16 @@ export class TimesheetService {
       // Check if timesheet has entries
       if (timesheet.total_hours === 0) {
         throw new TimesheetError('Cannot submit timesheet with zero hours');
+      }
+
+      // Check if Lead has pending employee reviews for projects they're submitting for
+      const validationResult = await this.validateLeadCanSubmit(
+        timesheetId,
+        currentUser.id
+      );
+
+      if (!validationResult.canSubmit) {
+        throw new TimesheetError(validationResult.message);
       }
 
       let nextStatus: TimesheetStatus = 'submitted';

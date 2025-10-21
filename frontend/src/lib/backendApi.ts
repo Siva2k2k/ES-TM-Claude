@@ -211,6 +211,24 @@ export class BackendApiClient {
   }
 
   /**
+   * Check if timesheet can be submitted (Lead validation)
+   */
+  async checkCanSubmit(timesheetId: string): Promise<{
+    success: boolean;
+    canSubmit: boolean;
+    message: string;
+    pendingReviews: Array<{
+      projectName: string;
+      employeeName: string;
+      employeeId: string;
+    }>;
+  }> {
+    return this.request(`/timesheets/${timesheetId}/can-submit`, {
+      method: 'GET'
+    });
+  }
+
+  /**
    * Submit timesheet for approval
    */
   async submitTimesheet(timesheetId: string): Promise<{ success: boolean; message?: string }> {

@@ -30,7 +30,7 @@ export interface Timesheet {
   week_start_date: string;
   week_end_date: string;
   total_hours: number;
-  status: 'draft' | 'submitted' | 'approved' | 'rejected';
+  status: 'draft' | 'submitted' | 'approved' | 'rejected' | 'lead_rejected' | 'manager_rejected';
   submitted_at?: string;
   approved_at?: string;
   approved_by?: string;
@@ -42,11 +42,15 @@ export interface Timesheet {
     project_name?: string;
     manager_name?: string;
     manager_status?: 'approved' | 'rejected' | 'pending' | 'not_required';
+    lead_status?: 'approved' | 'rejected' | 'pending' | 'not_required';
     manager_rejection_reason?: string;
+    lead_rejection_reason?: string;
   }>;
   // Additional fields used by pages
   entries?: any[];
   user_id?: string;
+  can_edit?: boolean;
+  editable_project_ids?: string[];
 }
 
 export interface TimesheetListProps {
@@ -80,6 +84,8 @@ const STATUS_OPTIONS: SelectOption[] = [
   { value: 'submitted', label: 'Submitted' },
   { value: 'approved', label: 'Approved' },
   { value: 'rejected', label: 'Rejected' },
+  { value: 'lead_rejected', label: 'Lead Rejected' },
+  { value: 'manager_rejected', label: 'Manager Rejected' },
 ];
 
 const SORT_OPTIONS: SelectOption[] = [
@@ -459,12 +465,36 @@ const TimesheetListItem: React.FC<TimesheetListItemProps> = ({
                   <div className="truncate">
                     <strong className="text-sm">{pa.project_name || 'Project'}</strong>
                     <span className="ml-2">{pa.manager_name ? `${pa.manager_name} — ` : ''}</span>
-                    {pa.manager_status === 'approved' && <span className="text-green-600">Approved</span>}
-                    {pa.manager_status === 'pending' && <span className="text-yellow-600">Pending</span>}
-                    {pa.manager_status === 'rejected' && <span className="text-red-600">Rejected</span>}
+                    {/* Show lead status if available and different from manager status */}
+                    {pa.lead_status && pa.lead_status !== 'not_required' && (
+                      <>
+                        <span className="text-xs text-gray-500">Lead: </span>
+                        {pa.lead_status === 'approved' && <span className="text-green-600">Approved</span>}
+                        {pa.lead_status === 'pending' && <span className="text-yellow-600">Pending</span>}
+                        {pa.lead_status === 'rejected' && <span className="text-red-600">Rejected</span>}
+                        {pa.manager_status && pa.manager_status !== 'not_required' && <span className="mx-1">|</span>}
+                      </>
+                    )}
+                    {/* Show manager status */}
+                    {pa.manager_status && pa.manager_status !== 'not_required' && (
+                      <>
+                        {pa.lead_status && pa.lead_status !== 'not_required' && <span className="text-xs text-gray-500">Manager: </span>}
+                        {pa.manager_status === 'approved' && <span className="text-green-600">Approved</span>}
+                        {pa.manager_status === 'pending' && <span className="text-yellow-600">Pending</span>}
+                        {pa.manager_status === 'rejected' && <span className="text-red-600">Rejected</span>}
+                      </>
+                    )}
                   </div>
-                  {pa.manager_status === 'rejected' && pa.manager_rejection_reason && (
-                    <div className="text-xs text-red-600 ml-4 truncate">{pa.manager_rejection_reason}</div>
+                  {/* Show rejection reason */}
+                  {(pa.lead_status === 'rejected' && pa.lead_rejection_reason) && (
+                    <div className="text-xs text-red-600 ml-4 truncate" title={pa.lead_rejection_reason}>
+                      {pa.lead_rejection_reason}
+                    </div>
+                  )}
+                  {(pa.manager_status === 'rejected' && pa.manager_rejection_reason) && (
+                    <div className="text-xs text-red-600 ml-4 truncate" title={pa.manager_rejection_reason}>
+                      {pa.manager_rejection_reason}
+                    </div>
                   )}
                 </div>
               ))}
@@ -486,16 +516,16 @@ const TimesheetListItem: React.FC<TimesheetListItemProps> = ({
         {(showActions || showApprovalHistory) && (
           <div className="flex gap-1 sm:gap-2 justify-end flex-shrink-0" onClick={(e) => e.stopPropagation()}>
             {/* Submit button (only for draft timesheets) */}
-            {showActions && (timesheet.status === 'draft' || timesheet.status === 'rejected') && onSubmit && (
+            {showActions && (timesheet.status === 'draft' || timesheet.status === 'rejected' || timesheet.status === 'lead_rejected' || timesheet.status === 'manager_rejected') && onSubmit && (
               <Button
                 variant="default"
                 size="sm"
                 onClick={onSubmit}
                 className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2"
-                title="Submit for Approval"
+                title={timesheet.status === 'draft' ? 'Submit for Approval' : 'Resubmit for Approval'}
               >
                 <Send className="h-3 w-3 sm:h-4 sm:w-4 sm:mr-1" />
-                <span className="hidden sm:inline">Submit</span>
+                <span className="hidden sm:inline">{timesheet.status === 'draft' ? 'Submit' : 'Resubmit'}</span>
               </Button>
             )}
 
@@ -513,16 +543,16 @@ const TimesheetListItem: React.FC<TimesheetListItemProps> = ({
               </Button>
             )}
 
-            {/* Edit button (icon only on mobile) - Enabled for draft and rejected timesheets */}
+            {/* Edit button - Enabled for draft and rejected timesheets (including lead_rejected and manager_rejected) */}
             {showActions && onEdit && (
               <Button
                 variant="outline"
                 size="sm"
                 onClick={onEdit}
-                disabled={timesheet.status !== 'draft' && timesheet.status !== 'rejected'}
+                disabled={!['draft', 'rejected', 'lead_rejected', 'manager_rejected'].includes(timesheet.status) && !timesheet.can_edit}
                 className="text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2"
                 title={
-                  timesheet.status === 'draft' || timesheet.status === 'rejected'
+                  ['draft', 'rejected', 'lead_rejected', 'manager_rejected'].includes(timesheet.status) || timesheet.can_edit
                     ? 'Edit Timesheet'
                     : 'Only draft and rejected timesheets can be edited'
                 }
@@ -599,16 +629,16 @@ const TimesheetTableRow: React.FC<TimesheetTableRowProps> = ({
       {(showActions || showApprovalHistory) && (
         <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
           <div className="flex justify-end gap-2">
-            {/* Submit button (only for draft timesheets) */}
-            {showActions && timesheet.status === 'draft' && onSubmit && (
+            {/* Submit button (for draft and rejected timesheets) */}
+            {showActions && ['draft', 'rejected', 'lead_rejected', 'manager_rejected'].includes(timesheet.status) && onSubmit && (
               <Button
                 variant="default"
                 size="sm"
                 onClick={onSubmit}
-                title="Submit for Approval"
+                title={timesheet.status === 'draft' ? 'Submit for Approval' : 'Resubmit for Approval'}
               >
                 <Send className="h-4 w-4 mr-1" />
-                Submit
+                {timesheet.status === 'draft' ? 'Submit' : 'Resubmit'}
               </Button>
             )}
 
@@ -631,9 +661,9 @@ const TimesheetTableRow: React.FC<TimesheetTableRowProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={onEdit}
-                disabled={timesheet.status !== 'draft' && timesheet.status !== 'rejected'}
+                disabled={!['draft', 'rejected', 'lead_rejected', 'manager_rejected'].includes(timesheet.status) && !timesheet.can_edit}
                 title={
-                  timesheet.status === 'draft' || timesheet.status === 'rejected'
+                  ['draft', 'rejected', 'lead_rejected', 'manager_rejected'].includes(timesheet.status) || timesheet.can_edit
                     ? 'Edit Timesheet'
                     : 'Only draft and rejected timesheets can be edited'
                 }

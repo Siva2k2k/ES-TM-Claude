@@ -121,6 +121,26 @@ export class TimesheetController {
   });
 
   /**
+   * Check if timesheet can be submitted (Lead validation)
+   */
+  static checkCanSubmit = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const currentUser = req.user!;
+    const { timesheetId } = req.params;
+
+    const validationResult = await TimesheetService.validateLeadCanSubmit(
+      timesheetId,
+      currentUser.id
+    );
+
+    res.json({
+      success: true,
+      canSubmit: validationResult.canSubmit,
+      message: validationResult.message,
+      pendingReviews: validationResult.pendingReviews
+    });
+  });
+
+  /**
    * Submit timesheet
    */
   static submitTimesheet = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {

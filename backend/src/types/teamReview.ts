@@ -32,6 +32,7 @@ export interface ProjectWeekGroup {
   reopened_at?: string; // When the reopening occurred
   reopened_by_submission?: string; // User who submitted late
   original_approval_count?: number; // How many were approved before reopening
+  reopening_type?: 'employee_late_submission' | 'lead_late_submission'; // Type of reopening
 }
 
 export interface ProjectWeekUser {

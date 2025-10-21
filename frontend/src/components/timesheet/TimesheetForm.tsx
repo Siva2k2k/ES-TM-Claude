@@ -29,6 +29,8 @@ import { Badge } from '../ui/Badge';
 import { formatDate, formatDuration } from '../../utils/formatting';
 import { cn } from '../../utils/cn';
 import type { TimeEntry } from '../../types/timesheet.schemas';
+import { backendApi } from '../../lib/backendApi';
+import type { TimesheetProjectApproval, TimesheetStatus } from '../../types/timesheetApprovals';
 
 // Helper: check if a date string (YYYY-MM-DD) is a weekend (module scope)
 function isWeekend(dateStr: string) {
@@ -47,26 +49,9 @@ function generateUid() {
 }
 
 // Project approval type used to determine per-project locking
-export type ProjectApproval = {
+export type ProjectApproval = Partial<TimesheetProjectApproval> & {
   project_id: string;
   project_name?: string;
-  // lead fields (optional)
-  lead_id?: string;
-  lead_name?: string;
-  lead_status?: 'approved' | 'rejected' | 'pending' | 'not_required';
-  lead_approved_at?: string | Date;
-  lead_rejection_reason?: string;
-
-  // manager fields
-  manager_id?: string;
-  manager_name?: string;
-  manager_status: 'approved' | 'rejected' | 'pending' | 'not_required';
-  manager_approved_at?: string | Date;
-  manager_rejection_reason?: string;
-
-  // project time tracking
-  entries_count?: number;
-  total_hours?: number;
 };
 
 export interface TimesheetFormProps {
@@ -87,6 +72,12 @@ export interface TimesheetFormProps {
   tasks?: Array<{ id: string; name: string; project_id: string }>;
   /** Optional project approvals (used to lock entries per-project) */
   projectApprovals?: ProjectApproval[];
+  /** Projects explicitly editable due to lead rejection */
+  editableProjectIds?: string[];
+  /** Current timesheet status */
+  timesheetStatus?: TimesheetStatus;
+  /** Lead rejection reason for entire timesheet */
+  leadRejectionReason?: string;
   /** Callback when form is successfully submitted */
   onSuccess?: (result: TimesheetSubmitResult) => void;
   /** Callback when form is cancelled */
@@ -114,11 +105,18 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
   projects = [],
   tasks = [],
   projectApprovals = [],
+  editableProjectIds = [],
+  timesheetStatus,
+  leadRejectionReason,
   onSuccess,
   onCancel
 }) => {
   const [selectedProject, setSelectedProject] = useState<string>('');
   const [expandedEntry, setExpandedEntry] = useState<number | null>(null);
+  const [leadValidationError, setLeadValidationError] = useState<{
+    message: string;
+    pendingReviews: Array<{ projectName: string; employeeName: string }>;
+  } | null>(null);
   const isViewMode = mode === 'view';
 
   const {
@@ -146,7 +144,12 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
       try {
         // Ensure each entry has a stable client-side UID to keep Controller bindings stable
         const entriesWithUid = Array.isArray(initialData.entries)
-          ? initialData.entries.map(e => ({ ...(e as any), _uid: (e as any)._uid || generateUid() }))
+          ? initialData.entries.map(entry => {
+              const normalized = { ...(entry as any) };
+              normalized.is_editable = normalized.is_editable !== undefined ? Boolean(normalized.is_editable) : true;
+              normalized._uid = normalized._uid || generateUid();
+              return normalized;
+            })
           : [];
 
         form.reset({
@@ -166,15 +169,52 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
       setSelectedProject('');
     }
   }, [initialData, initialWeekStartDate, form, mode]);
+  
   // Build quick lookup map for project approvals
   const projectApprovalMap = useMemo<Record<string, ProjectApproval>>(() => {
     const map: Record<string, ProjectApproval> = {};
     (projectApprovals || []).forEach((p) => {
-      map[p.project_id] = p as ProjectApproval;
+      if (!p) return;
+      const projectId = (p as any).project_id;
+      if (!projectId) return;
+      map[projectId] = { project_id: projectId, ...p };
     });
     return map;
   }, [projectApprovals]);
 
+  const leadRejectedProjects = useMemo(() => (projectApprovals || []).filter(pa => pa?.lead_status === 'rejected'), [projectApprovals]);
+  
+  // Check if timesheet has rejections that need editing
+  const hasRejections = useMemo(() => {
+    // Case 1: Entire timesheet rejected by lead (status explicitly set to lead_rejected)
+    if (timesheetStatus === 'lead_rejected') return true;
+    
+    // Case 2: Manager rejected
+    if (timesheetStatus === 'manager_rejected') return true;
+    
+    return false;
+  }, [timesheetStatus]);
+  
+  // Determine if this is a partial rejection scenario
+  // Partial rejection = status is 'lead_rejected' BUT not all projects are rejected
+  // (i.e., some projects are approved/pending while others are rejected)
+  const isPartialRejection = useMemo(() => {
+    if (timesheetStatus !== 'lead_rejected') return false;
+    
+    // If we have project approvals, check if there's a mix of rejected and non-rejected
+    if (projectApprovals && projectApprovals.length > 0) {
+      const rejectedCount = projectApprovals.filter(pa => pa?.lead_status === 'rejected').length;
+      const totalCount = projectApprovals.length;
+      
+      // Partial rejection if some (but not all) are rejected
+      return rejectedCount > 0 && rejectedCount < totalCount;
+    }
+    
+    return false;
+  }, [timesheetStatus, projectApprovals]);
+  
+  // Allow editing if timesheet has rejections (either full or partial)
+  const allowRejectionEdit = hasRejections;
   const { control, watch, setValue, formState: { errors } } = form;
   const entries = watch('entries') || [];
   const weekStartDate = watch('week_start_date');
@@ -235,7 +275,8 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
       description: '',
       is_billable: true,
       entry_type: 'project_task',
-      custom_task_description: ''
+      custom_task_description: '',
+      is_editable: true
     };
     // Add a small client-side UID so React keys stay stable and Controllers bind correctly
     const entryWithUid = { ...newEntry, _uid: `e_${Date.now()}_${Math.floor(Math.random() * 10000)}` } as any;
@@ -274,10 +315,10 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
         date: targetDate,
         // Weekend copies should default to non-billable
         is_billable: isWeekend(targetDate) ? false : !!entry.is_billable,
-        _uid: `e_${Date.now()}_${Math.floor(Math.random() * 10000)}`
-      } as any;
+        is_editable: entry.is_editable !== undefined ? entry.is_editable : true
+      };
 
-      newEntries.push(duplicate);
+      newEntries.push({ ...duplicate, _uid: `e_${Date.now()}_${Math.floor(Math.random() * 10000)}` } as any);
     });
 
     // If anything new was added, set entries once to avoid races and ensure validation runs once
@@ -287,6 +328,28 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
   };
 
   const handleSubmit = async (status: 'draft' | 'submitted') => {
+    // Only check for 'submitted' status
+    if (status === 'submitted' && timesheetId) {
+      // Pre-check if Lead can submit
+      try {
+        const canSubmitCheck = await backendApi.checkCanSubmit(timesheetId);
+
+        if (!canSubmitCheck.canSubmit) {
+          setLeadValidationError({
+            message: canSubmitCheck.message,
+            pendingReviews: canSubmitCheck.pendingReviews
+          });
+          return; // Block submission
+        }
+      } catch (error) {
+        console.error('Error checking submission eligibility:', error);
+        // Continue anyway - validation will happen on backend
+      }
+    }
+
+    // Clear any previous validation errors
+    setLeadValidationError(null);
+
     try {
       await submitTimesheet(status);
     } catch {
@@ -376,12 +439,75 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
 
       <CardContent className="space-y-6">
         {/* View Mode Alert */}
-        {isViewMode && (
+        {isViewMode && !allowRejectionEdit && (
           <Alert variant="info">
             <AlertTitle>View Only Mode</AlertTitle>
             <AlertDescription>
               This timesheet is read-only and cannot be edited. Only draft and rejected timesheets can be modified.
             </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Lead Validation Error */}
+        {leadValidationError && (
+          <Alert variant="error" className="mb-4">
+            <div className="flex gap-3">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <AlertTitle className="font-semibold text-red-800 mb-2">
+                  Cannot Submit Timesheet
+                </AlertTitle>
+                <AlertDescription className="text-red-700 mb-3">
+                  {leadValidationError.message}
+                </AlertDescription>
+
+                {leadValidationError.pendingReviews.length > 0 && (
+                  <div className="bg-red-50 rounded-md p-3 mb-3">
+                    <p className="text-sm font-medium text-red-800 mb-2">
+                      Pending Employee Reviews:
+                    </p>
+                    <ul className="list-disc list-inside space-y-1 text-sm text-red-700">
+                      {leadValidationError.pendingReviews.map((review, idx) => (
+                        <li key={idx}>
+                          <span className="font-medium">{review.employeeName}</span>
+                          {' - '}
+                          <span>{review.projectName}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                <p className="text-sm text-red-600 mb-3">
+                  Please go to <strong>Team Review</strong> and complete all pending employee
+                  approvals before submitting your own timesheet.
+                </p>
+
+                <button
+                  onClick={() => setLeadValidationError(null)}
+                  className="px-4 py-2 bg-red-100 text-red-800 rounded-md hover:bg-red-200 transition-colors text-sm font-medium"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </Alert>
+        )}
+
+        {/* Partial Rejections Banner */}
+        {hasRejections && (
+          <Alert variant="warning" className="mb-4">
+            <div className="flex gap-3">
+              <div className="flex-1">
+                <AlertTitle className="font-semibold text-orange-800 mb-2">
+                  {timesheetStatus === 'lead_rejected' ? 'Timesheet Rejected' : 'Some Entries Have Been Rejected'}
+                </AlertTitle>
+
+                <p className="text-sm text-orange-700">
+                  Please review and update the rejected entries, then submit again for approval.
+                </p>
+              </div>
+            </div>
           </Alert>
         )}
 
@@ -581,7 +707,7 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
                     <ArrowRight />
                   </button>
                   <div className="ml-3 text-sm text-gray-500">
-                    {formatDate(field.value || weekStartDate)} - {formatDate(new Date((new Date(field.value || weekStartDate)).setDate(new Date(field.value || weekStartDate).getDate() + 4)))}
+                    {formatDate(field.value || weekStartDate)} - {formatDate(new Date((new Date(field.value || weekStartDate)).setDate(new Date(field.value || weekStartDate).getDate() + 6)))}
                   </div>
                 </div>
                 {errors.week_start_date?.message && (
@@ -612,8 +738,9 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
           })}
         </div>
 
-        {/* Add Entry Section - Hidden in view mode */}
-        {!isViewMode && (
+        {/* Add Entry Section - Hidden in view mode and partial rejections */}
+        {/* For partial rejections, users can only edit existing rejected entries, not add new ones */}
+        {(!isViewMode || allowRejectionEdit) && !isPartialRejection && (
           <div className="border-t pt-6">
             <div className="flex gap-4 items-end mb-4">
               <div className="flex-1">
@@ -634,6 +761,13 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
               </Button>
             </div>
           </div>
+        )}
+
+        {/* Info message for partial rejections */}
+        {isPartialRejection && (
+          <Alert variant="info" className="mt-4">
+            <AlertTitle>Partial Rejection - Limited Editing</AlertTitle>
+          </Alert>
         )}
 
         {/* Entries List */}
@@ -660,7 +794,9 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
                 tasks={taskOptions}
                 weekOptions={weekOptions}
                 onCopyEntry={handleCopyEntry}
-                isViewMode={isViewMode}
+                isViewMode={isViewMode && !allowRejectionEdit}
+                timesheetStatus={timesheetStatus}
+                isPartialRejection={isPartialRejection}
               />
             ))}
           </div>
@@ -669,9 +805,9 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
 
       <CardFooter className="flex justify-between border-t pt-6">
         <Button variant="outline" onClick={onCancel}>
-          {isViewMode ? 'Close' : 'Cancel'}
+          {isViewMode && !allowRejectionEdit ? 'Close' : 'Cancel'}
         </Button>
-        {!isViewMode && (
+        {(!isViewMode || allowRejectionEdit) && (
           <div className="flex gap-3">
             <Button
               variant="secondary"
@@ -686,7 +822,7 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
               onClick={() => handleSubmit('submitted')}
               disabled={isSubmitting || !canSubmit}
             >
-              Submit for Approval
+              {allowRejectionEdit ? 'Resubmit for Approval' : 'Submit for Approval'}
             </Button>
           </div>
         )}
@@ -725,11 +861,11 @@ function generateWeekOptions(): SelectOption[] {
     const monday = new Date(currentMonday);
     monday.setDate(currentMonday.getDate() + (i * 7));
 
-    const friday = new Date(monday);
-    friday.setDate(monday.getDate() + 4);
+    const sunday = new Date(monday);
+    sunday.setDate(monday.getDate() + 6);
 
     const mondayStr = monday.toISOString().split('T')[0];
-    const label = `Week of ${formatDate(mondayStr)} - ${formatDate(friday.toISOString().split('T')[0])}`;
+    const label = `Week of ${formatDate(mondayStr)} - ${formatDate(sunday.toISOString().split('T')[0])}`;
 
     options.push({
       value: mondayStr,
@@ -763,6 +899,8 @@ interface TimesheetEntryRowProps {
   };
   projectApprovalsMap?: Record<string, ProjectApproval>;
   isViewMode?: boolean;
+  timesheetStatus?: TimesheetStatus;
+  isPartialRejection?: boolean;
 }
 
 const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
@@ -779,17 +917,51 @@ const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
   onCopyEntry,
   errors,
   projectApprovalsMap,
-  isViewMode = false
+  isViewMode = false,
+  timesheetStatus,
+  isPartialRejection = false
 }) => {
   const projectName = projects.find(p => p.value === entry.project_id)?.label || 'Unknown';
-  const projectApproval = (projectApprovalsMap || {})[entry.project_id];
+  const projectApproval = entry.project_id ? (projectApprovalsMap || {})[entry.project_id] : undefined;
   const isProjectApproved = projectApproval && projectApproval.manager_status === 'approved';
+  const isProjectRejected = projectApproval && projectApproval.lead_status === 'rejected';
+  const isEntryRejected = entry.is_rejected || false;
   const projectTasks = tasks.filter(task => task.projectId === entry.project_id);
   const entryType = entry.entry_type || 'project_task';
   const copyOptions = weekOptions.filter(option => option.value !== entry.date);
 
-  // Entry is locked if project is approved OR in view mode
-  const entryLocked = isProjectApproved || isViewMode;
+  // Entry locking logic for partial rejections:
+  // 1. If timesheet is fully rejected by lead -> all entries are editable
+  // 2. If project is specifically rejected -> this entry is editable  
+  // 3. If in create/edit mode -> all entries are editable
+  // 4. If in view mode BUT project is rejected -> this entry is editable
+  // 5. If in view mode AND project is not rejected -> this entry is locked
+  // 6. PARTIAL REJECTION: If partial rejection, ONLY rejected project entries are editable
+  const isTimesheetRejected = timesheetStatus === 'lead_rejected';
+  
+  // Entry is editable if:
+  // - In create/edit mode (not view mode) AND NOT a partial rejection, OR
+  // - In create/edit mode AND partial rejection AND project is rejected, OR
+  // - Project is specifically rejected, OR 
+  // - Entire timesheet is rejected by lead (but not partial)
+  let entryEditable: boolean;
+  
+  if (isPartialRejection) {
+    // For partial rejections, only rejected project entries can be edited
+    entryEditable = isProjectRejected;
+  } else if (!isViewMode) {
+    // For regular edit/create mode (no partial rejection), all entries editable
+    entryEditable = true;
+  } else {
+    // For view mode, check if project is rejected or timesheet is rejected
+    entryEditable = isProjectRejected || isTimesheetRejected;
+  }
+  
+  const entryLocked = !entryEditable;
+
+  // For partial rejections, disable copy and remove for non-rejected projects
+  const canCopy = !isPartialRejection || isProjectRejected;
+  const canRemove = !isPartialRejection || isProjectRejected;
 
   const [isCopyOpen, setIsCopyOpen] = useState(false);
   const [copySelection, setCopySelection] = useState<string[]>([]);
@@ -809,7 +981,12 @@ const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
   };
 
   return (
-    <div className={cn('border rounded-lg p-4 hover:shadow-md transition-shadow', isProjectApproved && 'opacity-80')}>
+    <div className={cn(
+      'border rounded-lg p-4 hover:shadow-md transition-shadow',
+      isProjectApproved && 'opacity-80',
+      (isProjectRejected || isEntryRejected) && 'border-red-200 bg-red-50',
+      isTimesheetRejected && !isProjectRejected && !isEntryRejected && 'border-orange-200 bg-orange-50'
+    )}>
       <div className="flex items-center justify-between cursor-pointer" onClick={onToggle}>
         <div className="flex-1">
           <div className="flex items-center gap-3">
@@ -818,6 +995,9 @@ const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
             <span className="font-semibold">{entry.hours}h</span>
             {entry.is_billable && <Badge variant="success" size="sm">Billable</Badge>}
             {entryType === 'custom_task' && <Badge variant="outline" size="sm">Custom</Badge>}
+            {isEntryRejected && <Badge variant="danger" size="sm">Entry Rejected</Badge>}
+            {isProjectRejected && !isEntryRejected && <Badge variant="danger" size="sm">Project Rejected</Badge>}
+            {isProjectApproved && <Badge variant="success" size="sm">Approved</Badge>}
           </div>
           {entry.description && (
             <p className="text-sm text-gray-600 mt-1 truncate">{entry.description}</p>
@@ -827,80 +1007,106 @@ const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
               Custom Task: {entry.custom_task_description}
             </p>
           )}
+          {isEntryRejected && entry.rejection_reason && (
+            <p className="text-sm text-red-600 mt-1 truncate">
+              Entry Rejection: {entry.rejection_reason}
+            </p>
+          )}
+          {isProjectRejected && projectApproval?.lead_rejection_reason && (
+            <p className="text-sm text-red-600 mt-1 truncate">
+              Project Rejection: {projectApproval.lead_rejection_reason}
+            </p>
+          )}
         </div>
         {!entryLocked ? (
           <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-            <div className="relative">
-              <Button
-                variant="ghost"
-                size="icon"
-                type="button"
-                onClick={() => setIsCopyOpen(prev => !prev)}
-                aria-label="Copy entry to other days"
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-              {isCopyOpen && (
-                <div className="absolute right-0 top-full z-20 mt-2 w-60 rounded-lg border border-slate-200 bg-white shadow-lg">
-                  <div className="p-3">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      Copy to days
-                    </p>
-                    <div className="space-y-2">
-                      {copyOptions.length === 0 ? (
-                        <p className="text-xs text-slate-400">No other days available this week.</p>
-                      ) : (
-                        copyOptions.map(option => (
-                          <label key={option.value} className="flex items-center gap-2 text-sm text-slate-600">
-                            <input
-                              type="checkbox"
-                              className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                              checked={copySelection.includes(option.value)}
-                              onChange={() => toggleCopySelection(option.value)}
-                            />
-                            <span>{option.label}</span>
-                          </label>
-                        ))
-                      )}
-                    </div>
-                    <div className="mt-3 flex justify-end gap-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        onClick={() => {
-                          setCopySelection([]);
-                          setIsCopyOpen(false);
-                        }}
-                      >
-                        Cancel
-                      </Button>
-                      <Button
-                        size="sm"
-                        type="button"
-                        onClick={applyCopySelection}
-                        disabled={copySelection.length === 0}
-                      >
-                        Copy
-                      </Button>
+            {/* Copy button - disabled for partial rejections on non-rejected projects */}
+            {canCopy && (
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  onClick={() => setIsCopyOpen(prev => !prev)}
+                  aria-label="Copy entry to other days"
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+                {isCopyOpen && (
+                  <div className="absolute right-0 top-full z-20 mt-2 w-60 rounded-lg border border-slate-200 bg-white shadow-lg">
+                    <div className="p-3">
+                      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Copy to days
+                      </p>
+                      <div className="space-y-2">
+                        {copyOptions.length === 0 ? (
+                          <p className="text-xs text-slate-400">No other days available this week.</p>
+                        ) : (
+                          copyOptions.map(option => (
+                            <label key={option.value} className="flex items-center gap-2 text-sm text-slate-600">
+                              <input
+                                type="checkbox"
+                                className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                checked={copySelection.includes(option.value)}
+                                onChange={() => toggleCopySelection(option.value)}
+                              />
+                              <span>{option.label}</span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                      <div className="mt-3 flex justify-end gap-2">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          onClick={() => {
+                            setCopySelection([]);
+                            setIsCopyOpen(false);
+                          }}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          size="sm"
+                          type="button"
+                          onClick={applyCopySelection}
+                          disabled={copySelection.length === 0}
+                        >
+                          Copy
+                        </Button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              )}
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              onClick={() => onRemove()}
-            >
-              Remove
-            </Button>
+                )}
+              </div>
+            )}
+            {/* Remove button - disabled for partial rejections on non-rejected projects */}
+            {canRemove && (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                onClick={() => onRemove()}
+              >
+                Remove
+              </Button>
+            )}
+            {/* Info message when actions are disabled */}
+            {(!canCopy || !canRemove) && (
+              <span className="text-xs text-gray-500 ml-2">
+                {isProjectRejected ? 'Can edit' : 'Approved/Pending - View only'}
+              </span>
+            )}
           </div>
         ) : (
           <div className="flex items-center text-sm text-gray-500">
             <Lock className="w-4 h-4 mr-1" />
-            <span>{isViewMode ? 'View Only' : 'Locked'}</span>
+            <span>
+              {isViewMode ? 'View Only' : 
+               isProjectRejected ? 'Rejected - Can Edit' :
+               isTimesheetRejected ? 'Timesheet Rejected - Can Edit' : 'Locked'}
+            </span>
           </div>
         )}
       </div>
@@ -960,12 +1166,14 @@ const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
                 <Controller
                   name={`entries.${index}.task_id`}
                   control={control}
+                  rules={{ required: 'Task is required' }}
                   render={({ field }) => (
                     <Select
                       {...field}
                       label="Task"
+                      required
                       options={projectTasks.map(task => ({ value: task.value, label: task.label }))}
-                      placeholder={projectTasks.length === 0 ? 'No tasks assigned' : 'Select a task'}
+                      placeholder={projectTasks.length === 0 ? 'Select a project first' : 'Select a task'}
                       disabled={projectTasks.length === 0}
                       error={errors?.task_id?.message}
                     />
@@ -1030,6 +1238,11 @@ const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
               <Controller
                 name={`entries.${index}.hours`}
                 control={control}
+                rules={{ 
+                  required: 'Hours is required',
+                  min: { value: 0.5, message: 'Minimum 0.5 hours required' },
+                  max: { value: 24, message: 'Maximum 24 hours per day' }
+                }}
                 render={({ field }) => (
                   <Input
                     type="number"
@@ -1037,6 +1250,7 @@ const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
                     min="0.5"
                     max="24"
                     label="Hours"
+                    required
                     error={errors?.hours?.message}
                     value={field.value as any}
                     onChange={(e: React.ChangeEvent<HTMLInputElement>) => {

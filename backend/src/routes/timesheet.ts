@@ -149,6 +149,16 @@ router.get('/:userId/:weekStartDate', [
 ], TimesheetController.getTimesheetByUserAndWeek);
 
 /**
+ * @route GET /api/v1/timesheets/:timesheetId/can-submit
+ * @desc Check if timesheet can be submitted (Lead validation)
+ * @access Private
+ */
+router.get('/:timesheetId/can-submit', [
+  param('timesheetId').isMongoId().withMessage('Invalid timesheet ID'),
+  validate
+], TimesheetController.checkCanSubmit);
+
+/**
  * @route POST /api/v1/timesheets/:timesheetId/submit
  * @desc Submit timesheet for approval
  * @access Private

@@ -24,7 +24,8 @@ dotenv.config();
 configurePassport();
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const DEFAULT_PORT = Number(process.env.PORT) || 5000;
+const MAX_PORT_RETRIES = Number(process.env.PORT_RETRIES || 5);
 
 // Security middleware
 app.use(helmet());
@@ -125,11 +126,33 @@ const startServer = async () => {
       logger.warn('Failed to initialize search index:', searchError);
     }
     
-    app.listen(PORT, () => {
-      logger.info(`Server is running on port ${PORT}`);
-      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      logger.info(`Health check available at http://localhost:${PORT}/health`);
-    });
+    const listenWithRetry = (port: number, attempt: number = 0): void => {
+      const server = app.listen(port, () => {
+        process.env.PORT = String(port);
+        logger.info(`Server is running on port ${port}`);
+        logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+        logger.info(`Health check available at http://localhost:${port}/health`);
+      });
+
+      server.on('error', (err: NodeJS.ErrnoException) => {
+        if (err.code === 'EADDRINUSE') {
+          if (attempt >= MAX_PORT_RETRIES) {
+            logger.error(`Port ${port} is already in use and maximum retry attempts reached.`);
+            process.exit(1);
+          }
+
+          const nextPort = port + 1;
+          logger.warn(`Port ${port} is in use. Attempting to start on port ${nextPort} (attempt ${attempt + 1}/${MAX_PORT_RETRIES}).`);
+
+          setTimeout(() => listenWithRetry(nextPort, attempt + 1), 250);
+        } else {
+          logger.error('Failed to start server:', err);
+          process.exit(1);
+        }
+      });
+    };
+
+    listenWithRetry(DEFAULT_PORT);
   } catch (error) {
     logger.error('Failed to start server:', error);
     process.exit(1);

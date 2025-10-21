@@ -12,6 +12,7 @@ import { Project, ProjectMember } from '../models/Project';
 import { User } from '../models/User';
 import Task from '../models/Task';
 import { logger } from '../config/logger';
+import { parseLocalDate } from '../utils/dateUtils';
 import type {
   ProjectWeekGroup,
   ProjectWeekFilters,
@@ -51,8 +52,9 @@ export class TeamReviewServiceV2 {
       defaultStartDate.setMonth(defaultStartDate.getMonth() - 2);
       defaultStartDate.setHours(0, 0, 0, 0);
 
-      const dateStart = week_start ? new Date(week_start) : defaultStartDate;
-      const dateEnd = week_end ? new Date(week_end) : defaultEndDate;
+      // Parse dates correctly to avoid timezone issues
+      const dateStart = week_start ? parseLocalDate(week_start) : defaultStartDate;
+      const dateEnd = week_end ? parseLocalDate(week_end) : defaultEndDate;
 
       // Get projects based on role
       const projectQuery = await this.buildProjectQuery(approverId, approverRole, project_id, search);
@@ -187,6 +189,71 @@ export class TeamReviewServiceV2 {
             approverRole
           );
           if (statusResult.status === null) continue; // Skip if doesn't match filter
+
+          // FOR MANAGER VIEW: Hide groups where Lead hasn't completed all employee reviews
+          if (approverRole === 'manager' || approverRole === 'super_admin') {
+            // Check if this project has a Lead
+            const hasLead = leadInfo?.id ? true : false;
+
+            if (hasLead) {
+              // Check if any employees have pending lead approvals
+              const hasIncompleteLeadReviews = projectWeekApprovals.some(approval => {
+                const ts = weekTimesheets.find(t => t._id.toString() === approval.timesheet_id.toString());
+                const userRole = ts?.user_id?.role;
+
+                // Employee timesheet with pending lead approval
+                return (
+                  userRole === 'employee' &&
+                  approval.lead_status === 'pending' &&
+                  (ts.status === 'submitted' || ts.status === 'lead_approved' || ts.status === 'manager_approved')
+                );
+              });
+
+              // Skip this project-week group if Lead has incomplete reviews
+              if (hasIncompleteLeadReviews) {
+                continue; // Move to next iteration, don't add to projectWeekMap
+              }
+            }
+          }
+
+          // FOR LEAD VIEW: Hide groups where not all employees have submitted entries for THIS project
+          if (approverRole === 'lead') {
+            // Get all employee members for this project (excluding the Lead themselves)
+            const employeeMembers = projectMembersForProject.filter(
+              pm => pm.project_role === 'employee' && pm.user_id.toString() !== approverId
+            );
+
+            // If there are no OTHER employees (Lead might be the only team member), allow the group to show
+            if (employeeMembers.length > 0) {
+              // Check if all employees have submitted entries for THIS project
+              const allEmployeesHaveProjectEntries = employeeMembers.every(empMember => {
+                // Find employee's timesheet for this week - search in ALL timesheets, not just weekTimesheets
+                const empTimesheet = timesheets.find(
+                  ts => ts.user_id?._id?.toString() === empMember.user_id.toString() &&
+                        ts.week_start_date?.getTime() === weekStart.getTime()
+                );
+
+                // Employee must have a submitted timesheet (not null and not draft)
+                if (!empTimesheet || empTimesheet.status === 'draft') {
+                  return false; // Employee hasn't submitted
+                }
+
+                // Check if employee has entries for THIS specific project
+                const empProjectEntries = entries.filter(
+                  e => e.timesheet_id.toString() === empTimesheet._id.toString() &&
+                       e.project_id.toString() === project._id.toString()
+                );
+
+                // Employee must have at least one entry for this project
+                return empProjectEntries.length > 0;
+              });
+
+              // Skip this project-week group if not all employees have submitted entries for this project
+              if (!allEmployeesHaveProjectEntries) {
+                continue; // Move to next iteration, don't add to projectWeekMap
+              }
+            }
+          }
 
           // Build users for this project-week
           const users: ProjectWeekUser[] = [];
@@ -440,8 +507,8 @@ export class TeamReviewServiceV2 {
 
     // TIER 1: LEAD
     if (approverRole === 'lead') {
-      // Lead can only see Employee timesheets with status 'submitted'
-      return userRole === 'employee' && timesheetStatus === 'submitted';
+      // Lead can see Employee timesheets with status 'submitted' OR 'lead_approved'
+      return userRole === 'employee' && (timesheetStatus === 'submitted' || timesheetStatus === 'lead_approved');
     }
 
     // TIER 2: MANAGER
@@ -655,7 +722,7 @@ export class TeamReviewServiceV2 {
       });
 
       if (lateSubmissions.length > 0) {
-        // This project-week has been reopened
+        // This project-week has been reopened by employee late submission
         const firstLateSubmission = lateSubmissions[0];
         const timesheetId = firstLateSubmission.timesheet_id as any;
 
@@ -665,6 +732,27 @@ export class TeamReviewServiceV2 {
           reopened_by_submission: timesheetId.user_id?.toString(),
           original_approval_count: countAtLastBulkApproval
         };
+      }
+
+      // ADDITIONAL CHECK: Lead submitted late (after employees were already approved)
+      if (approverRole === 'manager' || approverRole === 'super_admin') {
+        const leadTimesheet = validApprovals.find(a => {
+          const ts = a.timesheet_id as any;
+          return ts?.user_id?.role === 'lead';
+        });
+
+        if (leadTimesheet && lastBulkApprovalTime) {
+          const leadCreatedAt = (leadTimesheet.timesheet_id as any)?.created_at;
+
+          if (leadCreatedAt && new Date(leadCreatedAt) > lastBulkApprovalTime) {
+            return {
+              is_reopened: true,
+              reopened_at: new Date(leadCreatedAt).toISOString(),
+              reopened_by_submission: (leadTimesheet.timesheet_id as any).user_id?.toString(),
+              original_approval_count: countAtLastBulkApproval
+            };
+          }
+        }
       }
 
       return { is_reopened: false };
