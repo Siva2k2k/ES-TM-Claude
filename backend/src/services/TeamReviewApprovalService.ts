@@ -8,7 +8,7 @@ import mongoose from 'mongoose';
 import { Timesheet, TimesheetStatus } from '../models/Timesheet';
 import { TimesheetProjectApproval } from '../models/TimesheetProjectApproval';
 import { ApprovalHistory } from '../models/ApprovalHistory';
-import { Project } from '../models/Project';
+import { Project, ProjectMember } from '../models/Project';
 import { TimeEntry } from '../models/TimeEntry';
 import { logger } from '../config/logger';
 import type { BulkProjectWeekApprovalResponse } from '../types/teamReview';
@@ -133,26 +133,37 @@ export class TeamReviewApprovalService {
           queryOpts
         );
 
-        // Check if ALL project leads have approved
-        const allLeadsApproved = await this.checkAllLeadsApproved(timesheetId, session || undefined);
+        // Check if ANY project lead has rejected
+        const anyLeadRejected = await this.checkAnyLeadRejected(timesheetId, session || undefined);
 
-        if (allLeadsApproved) {
-          if (autoEscalate) {
-            // Check if ALL managers auto-approved
-            const allManagersApproved = await this.checkAllManagersApproved(timesheetId, session || undefined);
-            if (allManagersApproved) {
-              newStatus = 'manager_approved';
-              timesheet.approved_by_manager_id = new mongoose.Types.ObjectId(approverId);
-              timesheet.approved_by_manager_at = new Date();
-            }
-          } else {
-            // Move to lead_approved status (waiting for manager)
-            newStatus = 'lead_approved';
-            timesheet.approved_by_lead_id = new mongoose.Types.ObjectId(approverId);
-            timesheet.approved_by_lead_at = new Date();
-          }
+        if (anyLeadRejected) {
+          // If any lead has rejected, mark timesheet as lead_rejected
+          newStatus = 'lead_rejected';
           timesheet.status = newStatus;
           await timesheet.save(queryOpts);
+          logger.info(`Timesheet ${timesheetId} marked as lead_rejected because at least one project was rejected`);
+        } else {
+          // Check if ALL project leads have approved
+          const allLeadsApproved = await this.checkAllLeadsApproved(timesheetId, session || undefined);
+
+          if (allLeadsApproved) {
+            if (autoEscalate) {
+              // Check if ALL managers auto-approved
+              const allManagersApproved = await this.checkAllManagersApproved(timesheetId, session || undefined);
+              if (allManagersApproved) {
+                newStatus = 'manager_approved';
+                timesheet.approved_by_manager_id = new mongoose.Types.ObjectId(approverId);
+                timesheet.approved_by_manager_at = new Date();
+              }
+            } else {
+              // Move to lead_approved status (waiting for manager)
+              newStatus = 'lead_approved';
+              timesheet.approved_by_lead_id = new mongoose.Types.ObjectId(approverId);
+              timesheet.approved_by_lead_at = new Date();
+            }
+            timesheet.status = newStatus;
+            await timesheet.save(queryOpts);
+          }
         }
       }
 
@@ -204,23 +215,34 @@ export class TeamReviewApprovalService {
           queryOpts
         );
 
-        // Check if ALL managers have approved
-        const allManagersApproved = await this.checkAllManagersApproved(timesheetId, session || undefined);
+        // Check if ANY manager has rejected
+        const anyManagerRejected = await this.checkAnyManagerRejected(timesheetId, session || undefined);
 
-        if (allManagersApproved) {
-          // Check if this is a Manager's own timesheet
-          if (timesheetUserRole === 'manager') {
-            // Manager's timesheet goes to management_pending
-            newStatus = 'management_pending';
-          } else {
-            // Employee/Lead timesheets go to manager_approved
-            newStatus = 'manager_approved';
-          }
-
+        if (anyManagerRejected) {
+          // If any manager has rejected, mark timesheet as manager_rejected
+          newStatus = 'manager_rejected';
           timesheet.status = newStatus;
-          timesheet.approved_by_manager_id = new mongoose.Types.ObjectId(approverId);
-          timesheet.approved_by_manager_at = new Date();
           await timesheet.save(queryOpts);
+          logger.info(`Timesheet ${timesheetId} marked as manager_rejected because at least one project was rejected`);
+        } else {
+          // Check if ALL managers have approved
+          const allManagersApproved = await this.checkAllManagersApproved(timesheetId, session || undefined);
+
+          if (allManagersApproved) {
+            // Check if this is a Manager's own timesheet
+            if (timesheetUserRole === 'manager') {
+              // Manager's timesheet goes to management_pending
+              newStatus = 'management_pending';
+            } else {
+              // Employee/Lead timesheets go to manager_approved
+              newStatus = 'manager_approved';
+            }
+
+            timesheet.status = newStatus;
+            timesheet.approved_by_manager_id = new mongoose.Types.ObjectId(approverId);
+            timesheet.approved_by_manager_at = new Date();
+            await timesheet.save(queryOpts);
+          }
         }
       }
 
@@ -498,6 +520,48 @@ export class TeamReviewApprovalService {
   }
 
   /**
+   * Check if any lead has rejected (for employee timesheets)
+   */
+  private static async checkAnyLeadRejected(
+    timesheetId: string,
+    session: any
+  ): Promise<boolean> {
+    const approvals = await TimesheetProjectApproval.find({
+      timesheet_id: new mongoose.Types.ObjectId(timesheetId)
+    }).session(session);
+
+    for (const approval of approvals) {
+      // Check if any lead has rejected
+      if (approval.lead_id && approval.lead_status === 'rejected') {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if any manager has rejected
+   */
+  private static async checkAnyManagerRejected(
+    timesheetId: string,
+    session: any
+  ): Promise<boolean> {
+    const approvals = await TimesheetProjectApproval.find({
+      timesheet_id: new mongoose.Types.ObjectId(timesheetId)
+    }).session(session);
+
+    for (const approval of approvals) {
+      // Check if any manager has rejected
+      if (approval.manager_status === 'rejected') {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Check if all managers have approved
    */
   private static async checkAllManagersApproved(
@@ -756,44 +820,64 @@ export class TeamReviewApprovalService {
         let newStatus = timesheet.status;
 
         if (approverRole === 'lead') {
-          const allLeadsApproved = await this.checkAllLeadsApproved(
+          // Check if ANY lead has rejected first
+          const anyLeadRejected = await this.checkAnyLeadRejected(
             approval.timesheet_id.toString(),
             session || undefined
           );
 
-          if (allLeadsApproved) {
-            if (autoEscalate) {
-              const allManagersApproved = await this.checkAllManagersApproved(
-                approval.timesheet_id.toString(),
-                session || undefined
-              );
-              if (allManagersApproved) {
-                newStatus = 'manager_approved';
-                timesheet.approved_by_manager_id = new mongoose.Types.ObjectId(approverId);
-                timesheet.approved_by_manager_at = new Date();
+          if (anyLeadRejected) {
+            newStatus = 'lead_rejected';
+          } else {
+            const allLeadsApproved = await this.checkAllLeadsApproved(
+              approval.timesheet_id.toString(),
+              session || undefined
+            );
+
+            if (allLeadsApproved) {
+              if (autoEscalate) {
+                const allManagersApproved = await this.checkAllManagersApproved(
+                  approval.timesheet_id.toString(),
+                  session || undefined
+                );
+                if (allManagersApproved) {
+                  newStatus = 'manager_approved';
+                  timesheet.approved_by_manager_id = new mongoose.Types.ObjectId(approverId);
+                  timesheet.approved_by_manager_at = new Date();
+                }
+              } else {
+                newStatus = 'lead_approved';
+                timesheet.approved_by_lead_id = new mongoose.Types.ObjectId(approverId);
+                timesheet.approved_by_lead_at = new Date();
               }
-            } else {
-              newStatus = 'lead_approved';
-              timesheet.approved_by_lead_id = new mongoose.Types.ObjectId(approverId);
-              timesheet.approved_by_lead_at = new Date();
             }
           }
         }
 
         else if (approverRole === 'manager' || approverRole === 'super_admin') {
-          const allManagersApproved = await this.checkAllManagersApproved(
+          // Check if ANY manager has rejected first
+          const anyManagerRejected = await this.checkAnyManagerRejected(
             approval.timesheet_id.toString(),
             session || undefined
           );
 
-          if (allManagersApproved) {
-            if (timesheetUserRole === 'manager') {
-              newStatus = 'management_pending';
-            } else {
-              newStatus = 'manager_approved';
+          if (anyManagerRejected) {
+            newStatus = 'manager_rejected';
+          } else {
+            const allManagersApproved = await this.checkAllManagersApproved(
+              approval.timesheet_id.toString(),
+              session || undefined
+            );
+
+            if (allManagersApproved) {
+              if (timesheetUserRole === 'manager') {
+                newStatus = 'management_pending';
+              } else {
+                newStatus = 'manager_approved';
+              }
+              timesheet.approved_by_manager_id = new mongoose.Types.ObjectId(approverId);
+              timesheet.approved_by_manager_at = new Date();
             }
-            timesheet.approved_by_manager_id = new mongoose.Types.ObjectId(approverId);
-            timesheet.approved_by_manager_at = new Date();
           }
         }
 
@@ -1130,6 +1214,146 @@ export class TeamReviewApprovalService {
       return `${startMonth} ${startDay}-${endDay}, ${year}`;
     } else {
       return `${startMonth} ${startDay} - ${endMonth} ${endDay}, ${year}`;
+    }
+  }
+
+  /**
+   * Validate if lead can submit their timesheet
+   * Lead can only submit after reviewing all employees on their projects for that week
+   */
+  static async validateLeadCanSubmit(
+    leadId: string,
+    weekStartDate: Date
+  ): Promise<{ canSubmit: boolean; reason?: string; pendingEmployees?: string[] }> {
+    try {
+      // Find all projects where user is a lead
+      const leadProjects = await (ProjectMember.find as any)({
+        user_id: new mongoose.Types.ObjectId(leadId),
+        role: 'lead',
+        deleted_at: null
+      }).populate('project_id');
+
+      if (leadProjects.length === 0) {
+        // Not a lead on any project, can submit
+        return { canSubmit: true };
+      }
+
+      const pendingEmployees: string[] = [];
+
+      // For each project, check if all employees have been reviewed
+      for (const leadProject of leadProjects) {
+        const project = leadProject.project_id as any;
+        if (!project) continue;
+
+        // Find all employees on this project
+        const employees = await (ProjectMember.find as any)({
+          project_id: project._id,
+          role: 'employee',
+          deleted_at: null
+        }).populate('user_id');
+
+        // Check each employee's timesheet for this week
+        for (const employee of employees) {
+          const user = employee.user_id as any;
+          if (!user) continue;
+
+          // Find employee's timesheet for this week
+          const employeeTimesheet = await Timesheet.findOne({
+            user_id: user._id,
+            week_start_date: weekStartDate,
+            status: { $in: ['submitted', 'lead_approved', 'lead_rejected'] },
+            deleted_at: null
+          });
+
+          if (employeeTimesheet && employeeTimesheet.status === 'submitted') {
+            // Check if this timesheet has been reviewed by lead
+            const approval = await TimesheetProjectApproval.findOne({
+              timesheet_id: employeeTimesheet._id,
+              project_id: project._id,
+              lead_id: new mongoose.Types.ObjectId(leadId),
+              lead_status: 'pending'
+            });
+
+            if (approval) {
+              pendingEmployees.push(`${user.full_name} (${project.name})`);
+            }
+          }
+        }
+      }
+
+      if (pendingEmployees.length > 0) {
+        return {
+          canSubmit: false,
+          reason: `You must review pending employee timesheets before submitting your own: ${pendingEmployees.join(', ')}`,
+          pendingEmployees
+        };
+      }
+
+      return { canSubmit: true };
+    } catch (error) {
+      logger.error('Error validating lead submission:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update billable adjustment for a project approval
+   * Manager and Management can adjust billable hours (+/-)
+   */
+  static async updateBillableAdjustment(
+    timesheetId: string,
+    projectId: string,
+    adjustment: number,
+    userId: string,
+    userRole?: string
+  ): Promise<{ success: boolean; approval?: any; error?: string }> {
+    try {
+      const approval = await TimesheetProjectApproval.findOne({
+        timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+        project_id: new mongoose.Types.ObjectId(projectId)
+      });
+
+      if (!approval) {
+        return {
+          success: false,
+          error: 'Project approval record not found'
+        };
+      }
+
+      // Verify permission
+      // Management and Super Admin can adjust any timesheet
+      // Managers can only adjust timesheets for their own projects
+      const isManagement = userRole === 'management' || userRole === 'super_admin';
+      const isProjectManager = approval.manager_id.toString() === userId;
+
+      if (!isManagement && !isProjectManager) {
+        return {
+          success: false,
+          error: 'You do not have permission to adjust this timesheet'
+        };
+      }
+
+      // Update adjustment
+      approval.billable_adjustment = adjustment;
+      approval.billable_hours = approval.worked_hours + adjustment;
+      await approval.save();
+
+      logger.info(`User ${userId} (${userRole || 'manager'}) adjusted billable hours for timesheet ${timesheetId}, project ${projectId}: ${adjustment}h`);
+
+      return {
+        success: true,
+        approval: {
+          worked_hours: approval.worked_hours,
+          billable_adjustment: approval.billable_adjustment,
+          billable_hours: approval.billable_hours
+        }
+      };
+    } catch (error) {
+      logger.error('Error updating billable adjustment:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to update adjustment'
+      };
     }
   }
 }

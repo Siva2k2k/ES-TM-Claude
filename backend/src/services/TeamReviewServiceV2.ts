@@ -141,12 +141,16 @@ export class TeamReviewServiceV2 {
           const isVisible = this.isTimesheetVisibleToRole(ts, approval, approverRole, approverId, leadInfo);
 
           // Debug logging for management role
-          if (approverRole === 'management' && ts.status === 'manager_approved') {
+          if (approverRole === 'management' && (ts.status === 'manager_approved' || ts.status === 'management_pending')) {
             logger.info(`Checking timesheet visibility for Management:`, {
               timesheet_id: ts._id.toString(),
               timesheet_status: ts.status,
               user: ts.user_id?.full_name,
+              user_role: ts.user_id?.role,
               project: project.name,
+              approval_lead: approval.lead_status,
+              approval_manager: approval.manager_status,
+              approval_management: approval.management_status,
               isVisible
             });
           }
@@ -188,14 +192,37 @@ export class TeamReviewServiceV2 {
             status,
             approverRole
           );
+          
+          // Debug logging for management role
+          if (approverRole === 'management') {
+            logger.info(`Project-week status result:`, {
+              project: project.name,
+              week: weekStart.toISOString().split('T')[0],
+              weekTimesheetsCount: weekTimesheets.length,
+              users: weekTimesheets.map(ts => ({
+                name: ts.user_id?.full_name,
+                role: ts.user_id?.role,
+                status: ts.status
+              })),
+              statusResult: statusResult,
+              statusFilter: status
+            });
+          }
+          
           if (statusResult.status === null) continue; // Skip if doesn't match filter
 
           // FOR MANAGER VIEW: Hide groups where Lead hasn't completed all employee reviews
+          // BUT show the group if Lead has submitted their own timesheet (even if employees are pending)
           if (approverRole === 'manager' || approverRole === 'super_admin') {
             // Check if this project has a Lead
             const hasLead = leadInfo?.id ? true : false;
 
             if (hasLead) {
+              // Check if lead has submitted their own timesheet for this week
+              const leadTimesheet = weekTimesheets.find(
+                t => t.user_id?.role === 'lead' || t.user_id?._id?.toString() === leadInfo.id
+              );
+              
               // Check if any employees have pending lead approvals
               const hasIncompleteLeadReviews = projectWeekApprovals.some(approval => {
                 const ts = weekTimesheets.find(t => t._id.toString() === approval.timesheet_id.toString());
@@ -209,8 +236,11 @@ export class TeamReviewServiceV2 {
                 );
               });
 
-              // Skip this project-week group if Lead has incomplete reviews
-              if (hasIncompleteLeadReviews) {
+              // Skip this project-week group ONLY if:
+              // 1. Lead has incomplete employee reviews AND
+              // 2. Lead has NOT submitted their own timesheet
+              // (If lead submitted their timesheet, manager should see it even if some employees are pending)
+              if (hasIncompleteLeadReviews && !leadTimesheet) {
                 continue; // Move to next iteration, don't add to projectWeekMap
               }
             }
@@ -315,7 +345,10 @@ export class TeamReviewServiceV2 {
               timesheet_status: ts.status,
               total_hours_for_project: userHours,
               entries: entryDetails,
-              approval_status: approvalStatusForUser
+              approval_status: approvalStatusForUser,
+              worked_hours: approval.worked_hours || 0,
+              billable_hours: approval.billable_hours || 0,
+              billable_adjustment: approval.billable_adjustment || 0
             });
 
             totalHours += userHours;
@@ -514,12 +547,14 @@ export class TeamReviewServiceV2 {
     // TIER 2: MANAGER
     if (approverRole === 'manager' || approverRole === 'super_admin') {
       // Manager can see:
-      // 1. lead_approved (recommended path)
+      // 1. lead_approved (recommended path - needs manager approval)
       // 2. submitted employees (direct approval path)
       // 3. submitted leads/managers (their own timesheets)
-      // 4. management_rejected (resubmitted)
+      // 4. management_rejected (resubmitted after management rejection)
+      // 5. manager_approved (timesheets they have already approved - for viewing in "Approved" tab)
       return (
         timesheetStatus === 'lead_approved' ||
+        timesheetStatus === 'manager_approved' || // ADDED: Manager can see their approved timesheets
         (timesheetStatus === 'submitted' && ['employee', 'lead', 'manager'].includes(userRole)) ||
         timesheetStatus === 'management_rejected'
       );
@@ -528,11 +563,13 @@ export class TeamReviewServiceV2 {
     // TIER 3: MANAGEMENT
     if (approverRole === 'management') {
       // Management can see:
-      // 1. manager_approved (for verification/freezing)
-      // 2. management_pending (manager's own timesheets)
+      // 1. manager_approved (for verification/freezing) - shown in "Pending" tab
+      // 2. management_pending (manager's own timesheets) - shown in "Pending" tab
+      // 3. frozen (verified timesheets) - shown in "Approved" tab
       const visible = (
         timesheetStatus === 'manager_approved' ||
-        timesheetStatus === 'management_pending'
+        timesheetStatus === 'management_pending' ||
+        timesheetStatus === 'frozen'
       );
 
       // Debug logging
@@ -631,11 +668,15 @@ export class TeamReviewServiceV2 {
 
     // Apply filter
     // For 'pending' filter, include both 'pending' and 'partially_processed'
+    // For 'approved' filter, include both 'approved' and 'partially_processed' (some approved)
     let shouldInclude = false;
     if (statusFilter === 'all') {
       shouldInclude = true;
     } else if (statusFilter === 'pending') {
       shouldInclude = status === 'pending' || status === 'partially_processed';
+    } else if (statusFilter === 'approved') {
+      // Include fully approved OR partially approved (at least some approved)
+      shouldInclude = status === 'approved' || (status === 'partially_processed' && approvedCount > 0);
     } else {
       shouldInclude = status === statusFilter;
     }

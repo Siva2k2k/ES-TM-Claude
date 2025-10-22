@@ -954,17 +954,38 @@ export class TimesheetService {
           // Calculate hours and entries for this project
           const projectEntries = entries.filter((e: any) => e.project_id?.toString() === projectId);
           const totalHours = projectEntries.reduce((sum: number, e: any) => sum + (e.hours || 0), 0);
+          
+          // Calculate worked hours (sum of billable entries only)
+          const workedHours = projectEntries
+            .filter((e: any) => e.is_billable)
+            .reduce((sum: number, e: any) => sum + (e.hours || 0), 0);
+
+          // Determine approval statuses based on submitter role
+          let leadStatus = leadMember ? 'pending' : 'not_required';
+          let managerStatus = 'pending';
+          let managementStatus = 'not_required';
+
+          // If submitter is a manager, skip lead and manager approval, go straight to management
+          if (currentUser.role === 'manager') {
+            leadStatus = 'not_required';
+            managerStatus = 'not_required'; // Manager doesn't approve their own timesheet
+            managementStatus = 'pending'; // Goes to Management for verification
+          }
 
           // Create approval record
           await TimesheetProjectApproval.create({
             timesheet_id: new mongoose.Types.ObjectId(timesheetId),
             project_id: new mongoose.Types.ObjectId(projectId),
             lead_id: leadMember ? leadMember.user_id : null,
-            lead_status: leadMember ? 'pending' : 'not_required',
+            lead_status: leadStatus,
             manager_id: project.primary_manager_id,
-            manager_status: 'pending',
+            manager_status: managerStatus,
+            management_status: managementStatus,
             entries_count: projectEntries.length,
             total_hours: totalHours,
+            worked_hours: workedHours,
+            billable_hours: workedHours, // Initially same as worked hours
+            billable_adjustment: 0, // No adjustment initially
             user_not_in_project: !userIsMember
           });
 

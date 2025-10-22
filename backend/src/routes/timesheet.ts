@@ -138,6 +138,18 @@ router.post('/project-week/freeze', [
 ], TeamReviewController.freezeProjectWeek);
 
 /**
+ * @route PUT /api/v1/timesheets/billable-adjustment
+ * @desc Update billable adjustment for a project approval (Manager only)
+ * @access Private (Manager/Super Admin)
+ */
+router.put('/billable-adjustment', [
+  body('timesheet_id').isMongoId().withMessage('Valid timesheet ID is required'),
+  body('project_id').isMongoId().withMessage('Valid project ID is required'),
+  body('adjustment').isNumeric().withMessage('Adjustment must be a number'),
+  validate
+], TeamReviewController.updateBillableAdjustment);
+
+/**
  * @route GET /api/v1/timesheets/:userId/:weekStartDate
  * @desc Get timesheet by user and week
  * @access Private

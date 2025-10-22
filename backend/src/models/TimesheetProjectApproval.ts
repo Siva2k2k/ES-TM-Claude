@@ -34,6 +34,11 @@ export interface ITimesheetProjectApproval extends Document {
   // Time tracking for this project
   entries_count: number;
   total_hours: number;
+  
+  // Worked hours vs Billable hours (Manager can adjust)
+  worked_hours: number; // Sum of hours from billable entries
+  billable_hours: number; // worked_hours + billable_adjustment
+  billable_adjustment: number; // Manager adjustment (+/-)
 
   // Edge case: User submitted timesheet but is not a project member
   user_not_in_project?: boolean;
@@ -127,6 +132,25 @@ const TimesheetProjectApprovalSchema: Schema = new Schema({
     type: Number,
     default: 0,
     min: 0
+  },
+
+  // Worked hours vs Billable hours with adjustment
+  worked_hours: {
+    type: Number,
+    default: 0,
+    min: 0,
+    required: false
+  },
+  billable_hours: {
+    type: Number,
+    default: 0,
+    min: 0,
+    required: false
+  },
+  billable_adjustment: {
+    type: Number,
+    default: 0,
+    required: false
   },
 
   // Edge case flag

@@ -511,6 +511,57 @@ export class TeamReviewController {
       });
     }
   }
+
+  /**
+   * Update billable adjustment for a project approval (Manager only)
+   * PUT /api/v1/timesheets/billable-adjustment
+   */
+  static async updateBillableAdjustment(req: AuthRequest, res: Response): Promise<void> {
+    try {
+      const userId = req.user?.id;
+      const userRole = req.user?.role;
+
+      if (!userId || !userRole) {
+        res.status(401).json({ error: 'Unauthorized' });
+        return;
+      }
+
+      // Manager, Management, and Super Admin can adjust billable hours
+      if (!['manager', 'management', 'super_admin'].includes(userRole)) {
+        res.status(403).json({ error: 'Only Managers and Management can adjust billable hours' });
+        return;
+      }
+
+      const { timesheet_id, project_id, adjustment } = req.body;
+
+      if (!timesheet_id || !project_id || adjustment === undefined) {
+        res.status(400).json({
+          error: 'timesheet_id, project_id, and adjustment are required'
+        });
+        return;
+      }
+
+      const result = await TeamReviewApprovalService.updateBillableAdjustment(
+        timesheet_id,
+        project_id,
+        adjustment,
+        userId,
+        userRole // Pass role to allow Management to adjust any timesheet
+      );
+
+      if (!result.success) {
+        res.status(400).json({ error: result.error });
+        return;
+      }
+
+      res.status(200).json(result);
+    } catch (error) {
+      logger.error('Error updating billable adjustment:', error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : 'Failed to update billable adjustment'
+      });
+    }
+  }
 }
 
 export default TeamReviewController;
