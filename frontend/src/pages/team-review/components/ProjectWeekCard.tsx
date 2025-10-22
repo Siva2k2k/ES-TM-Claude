@@ -129,7 +129,7 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
     ? projectWeek.users.filter(u => u.user_role !== 'manager')
     : projectWeek.users;
   
-  const managerApprovedUsers = teamMembers.filter(u => u.timesheet_status === 'manager_approved');
+  const managerApprovedUsers = teamMembers.filter(u => u.timesheet_status !== 'management_pending');
   const allManagerApproved = managerApprovedUsers.length === teamMembers.length && teamMembers.length > 0;
   const hasManagerApproved = managerApprovedUsers.length > 0;
 
@@ -386,6 +386,7 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
 
               <div className="divide-y divide-gray-200">
                 {projectWeek.users.map(user => (
+                  console.log("User Timesheet Details:", user.approval_status),
                   <UserTimesheetDetails
                     key={user.user_id}
                     user={user}

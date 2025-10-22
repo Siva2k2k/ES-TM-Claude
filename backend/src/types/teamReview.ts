@@ -46,6 +46,9 @@ export interface ProjectWeekUser {
   total_hours_for_project: number;
   entries: TimeEntryDetail[];
   approval_status: 'pending' | 'approved' | 'rejected';
+  lead_status?: 'pending' | 'approved' | 'rejected' | 'not_required';
+  manager_status?: 'pending' | 'approved' | 'rejected' | 'not_required';
+  management_status?: 'pending' | 'approved' | 'rejected' | 'not_required';
   worked_hours: number;
   billable_hours: number;
   billable_adjustment: number;

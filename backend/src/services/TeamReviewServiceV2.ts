@@ -371,6 +371,9 @@ export class TeamReviewServiceV2 {
               total_hours_for_project: userHours,
               entries: entryDetails,
               approval_status: approvalStatusForUser,
+              lead_status: approval.lead_status,
+              manager_status: approval.manager_status,
+              management_status: approval.management_status,
               worked_hours: approval.worked_hours || 0,
               billable_hours: approval.billable_hours || 0,
               billable_adjustment: approval.billable_adjustment || 0
