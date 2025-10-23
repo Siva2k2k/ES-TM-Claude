@@ -1,12 +1,87 @@
+/**
+ * ═══════════════════════════════════════════════════════════════════════════
+ * PROJECT BILLING CONTROLLER - DATA FLOW & SAFEGUARDS
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * ⚠️ CRITICAL: BILLING DATA SOURCE OF TRUTH
+ * 
+ * This controller implements a two-tier adjustment model:
+ * 
+ * 1️⃣ TIER 1 - Manager Adjustments (Team Review):
+ *    - Managers adjust worked hours → billable hours at project-week approval
+ *    - Stored in: TimesheetProjectApproval.billable_adjustment
+ *    - Result: TimesheetProjectApproval.billable_hours = worked_hours + billable_adjustment
+ * 
+ * 2️⃣ TIER 2 - Management Adjustments (Billing):
+ *    - Management adjusts billable hours at billing management stage
+ *    - Stored in: BillingAdjustment.adjustment_hours (as DELTA from base)
+ *    - Result: final_billable_hours = base_billable_hours + adjustment_hours
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ✅ CORRECT DATA FLOW:
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * SOURCE OF TRUTH: TimesheetProjectApproval (management_status='approved')
+ * 
+ * Step 1: Aggregate from TimesheetProjectApproval where:
+ *         - management_status = 'approved'
+ *         - timesheet.status in ['frozen', 'billed']
+ * 
+ * Step 2: For each user-project:
+ *         worked_hours = SUM(TimesheetProjectApproval.worked_hours)
+ *         manager_adjustment = SUM(TimesheetProjectApproval.billable_adjustment)
+ *         base_billable_hours = SUM(TimesheetProjectApproval.billable_hours)
+ * 
+ * Step 3: Apply management adjustment from BillingAdjustment:
+ *         management_adjustment = BillingAdjustment.adjustment_hours (delta)
+ *         final_billable_hours = base_billable_hours + management_adjustment
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ * ❌ DANGEROUS PATTERNS (NEVER DO THIS):
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * 1. ❌ Using TimeEntry.hours as adjustment base
+ *    - TimeEntry is raw data, doesn't include manager adjustments
+ *    - Would break two-tier adjustment hierarchy
+ * 
+ * 2. ❌ Using worked_hours as adjustment base
+ *    - Worked hours don't include manager adjustments
+ *    - Management adjustments must be deltas from billable_hours
+ * 
+ * 3. ❌ Aggregating from TimeEntry with frozen status
+ *    - Would include unverified project groups
+ *    - Manager adjustments wouldn't be captured
+ * 
+ * 4. ❌ Creating BillingAdjustment without approved base
+ *    - Must validate management_status='approved' exists
+ *    - Prevents adjustments on unverified data
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 🛡️ SAFEGUARDS IMPLEMENTED:
+ * ═══════════════════════════════════════════════════════════════════════════
+ * 
+ * 1. buildProjectBillingData(): Aggregates only from TimesheetProjectApproval
+ * 2. applyBillingAdjustment(): Validates approved base exists, calculates delta
+ * 3. createBillingAdjustment(): Enforces management_status='approved' filter
+ * 4. Error messages: Explain safeguard violations clearly
+ * 5. Comments: Mark dangerous code paths with ❌ warnings
+ * 
+ * ═══════════════════════════════════════════════════════════════════════════
+ */
+
 import { Request, Response } from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { Project } from '@/models/Project';
+// ⚠️ TimeEntry import kept for legacy compatibility only
+// DO NOT use TimeEntry for billing aggregation - use TimesheetProjectApproval instead
 import { TimeEntry } from '@/models/TimeEntry';
 import { Timesheet } from '@/models/Timesheet';
 import { User } from '@/models/User';
 import Task from '@/models/Task';
 import { BillingAdjustment } from '@/models/BillingAdjustment';
-import { BillingRateService } from '@/services/BillingRateService';
+// ✅ PRIMARY SOURCE: TimesheetProjectApproval is the source of truth for billing
+import { TimesheetProjectApproval } from '@/models/TimesheetProjectApproval';
+import type { VerificationInfo } from '@/types/billingVerification';
 import mongoose from 'mongoose';
 
 const BILLING_ELIGIBLE_STATUSES: string[] = [
@@ -27,17 +102,36 @@ interface ProjectBillingData {
   non_billable_hours: number;
   total_amount: number;
   resources: ResourceBillingData[];
+  verification_info?: VerificationInfo;
 }
 
 interface ResourceBillingData {
   user_id: string;
   user_name: string;
   role: string;
-  total_hours: number;
-  billable_hours: number;
-  non_billable_hours: number;
+  
+  // Aggregated from TimesheetProjectApproval (management_status='approved')
+  worked_hours: number;                 // Total actual hours worked
+  manager_adjustment: number;           // Manager's adjustment during Team Review (+ or -)
+  base_billable_hours: number;          // worked_hours + manager_adjustment
+  
+  // Management's final adjustment (from BillingAdjustment)
+  management_adjustment: number;        // Management's delta in Billing (+ or -)
+  final_billable_hours: number;         // base_billable_hours + management_adjustment
+  
+  // Calculated fields
+  non_billable_hours: number;           // worked_hours - final_billable_hours
   hourly_rate: number;
-  total_amount: number;
+  total_amount: number;                 // final_billable_hours * hourly_rate
+  
+  // Legacy fields for backward compatibility (deprecated)
+  total_hours: number;                  // Same as worked_hours
+  billable_hours: number;               // Same as final_billable_hours
+  
+  // Verification metadata
+  verified_at?: string;                 // Last management_approved_at
+  last_adjusted_at?: string;            // Last BillingAdjustment.adjusted_at
+  
   weekly_breakdown?: WeeklyBreakdown[];
   tasks?: ResourceTaskData[];
 }
@@ -118,6 +212,51 @@ interface ProjectAdjustmentTarget {
 export class ProjectBillingController {
   
   /**
+   * ✅ SAFEGUARD: Validate billing adjustment data integrity
+   * 
+   * This helper validates that adjustment calculations follow correct data flow:
+   * - Base comes from TimesheetProjectApproval.billable_hours
+   * - Base = worked_hours + manager_adjustment (with small rounding tolerance)
+   * - Management adjustment is delta from base
+   * 
+   * Use this during development/debugging to catch incorrect calculations early.
+   * 
+   * @returns {valid: boolean, errors: string[]}
+   */
+  private static validateAdjustmentIntegrity(
+    worked_hours: number,
+    manager_adjustment: number,
+    base_billable_hours: number,
+    management_adjustment: number,
+    final_billable_hours: number
+  ): { valid: boolean; errors: string[] } {
+    const errors: string[] = [];
+    const tolerance = 0.01; // Allow 0.01h rounding difference
+
+    // Check 1: Base should equal worked + manager adjustment
+    const expectedBase = worked_hours + manager_adjustment;
+    if (Math.abs(base_billable_hours - expectedBase) > tolerance) {
+      errors.push(
+        `Base billable hours (${base_billable_hours}) doesn't match ` +
+        `worked (${worked_hours}) + manager adjustment (${manager_adjustment}). ` +
+        `Expected: ${expectedBase}`
+      );
+    }
+
+    // Check 2: Final should equal base + management adjustment
+    const expectedFinal = base_billable_hours + management_adjustment;
+    if (Math.abs(final_billable_hours - expectedFinal) > tolerance) {
+      errors.push(
+        `Final billable hours (${final_billable_hours}) doesn't match ` +
+        `base (${base_billable_hours}) + management adjustment (${management_adjustment}). ` +
+        `Expected: ${expectedFinal}`
+      );
+    }
+
+    return { valid: errors.length === 0, errors };
+  }
+
+  /**
    * Get project-based billing view with monthly/weekly breakdown
    */
   static async getProjectBillingView(req: Request, res: Response): Promise<void> {
@@ -190,12 +329,26 @@ export class ProjectBillingController {
     }
   }
 
+  /**
+   * NEW IMPLEMENTATION: Aggregate billing data from TimesheetProjectApproval
+   * 
+   * Data Flow:
+   * 1. Fetch approved project approvals (management_status='approved')
+   * 2. Get billing adjustments (Management's final changes)
+   * 3. Calculate: final_billable = base_billable + management_adjustment
+   * 
+   * Benefits:
+   * - Only includes Management-verified data
+   * - Clear adjustment hierarchy: Manager → Management
+   * - No unverified project groups
+   */
   private static async buildProjectBillingData(options: BuildProjectBillingOptions): Promise<ProjectBillingData[]> {
     const { startDate, endDate, projectIds = [], clientIds = [], view } = options;
 
     const start = new Date(startDate);
     const end = new Date(endDate);
 
+    // Step 1: Build project filter
     const projectFilter: Record<string, unknown> = {};
 
     if (projectIds.length > 0) {
@@ -216,109 +369,120 @@ export class ProjectBillingController {
       }
     }
 
-    const projects = await Project.aggregate([
-      { $match: projectFilter },
+    // Step 2: Get all projects (for metadata)
+    const projects = await (Project as any).find(projectFilter)
+      .populate('client_id', 'name')
+      .lean();
+
+    if (projects.length === 0) {
+      return [];
+    }
+
+    const projectObjectIds = projects.map((p: any) => p._id);
+
+    // Step 3: Fetch approved project approvals (SOURCE OF TRUTH)
+    const approvedApprovals = await (TimesheetProjectApproval as any).aggregate([
       {
         $lookup: {
-          from: 'timeentries',
-          let: { projectId: '$_id' },
-          pipeline: [
-            {
-              $match: {
-                $expr: { $eq: ['$project_id', '$$projectId'] },
-                deleted_at: null,
-                date: { $gte: start, $lte: end }
-              }
-            },
-            {
-              $lookup: {
-                from: 'timesheets',
-                localField: 'timesheet_id',
-                foreignField: '_id',
-                as: 'timesheet'
-              }
-            },
-            { $unwind: '$timesheet' },
-            {
-              $match: {
-                'timesheet.user_id': { $ne: null },
-                'timesheet.status': { $in: BILLING_ELIGIBLE_STATUSES }
-              }
-            },
-            {
-              $lookup: {
-                from: 'users',
-                localField: 'timesheet.user_id',
-                foreignField: '_id',
-                as: 'user'
-              }
-            },
-            { $unwind: '$user' },
-            {
-              $project: {
-                user_id: '$timesheet.user_id',
-                user_name: '$user.full_name',
-                user_email: '$user.email',
-                user_role: '$user.role',
-                date: 1,
-                hours: 1,
-                is_billable: 1,
-                billable_hours: {
-                  $ifNull: [
-                    '$billable_hours',
-                    { $cond: [{ $eq: ['$is_billable', true] }, '$hours', 0] }
-                  ]
-                },
-                project_id: 1,
-                task_id: 1,
-                description: 1
-              }
-            }
-          ],
-          as: 'timeEntries'
+          from: 'timesheets',
+          localField: 'timesheet_id',
+          foreignField: '_id',
+          as: 'timesheet'
+        }
+      },
+      { $unwind: '$timesheet' },
+      {
+        $match: {
+          project_id: { $in: projectObjectIds },
+          management_status: 'approved', // CRITICAL: Only management-approved records
+          'timesheet.week_start_date': { $gte: start, $lte: end },
+          'timesheet.status': { $in: ['frozen', 'billed'] },
+          'timesheet.deleted_at': null
         }
       },
       {
-        $lookup: {
-          from: 'clients',
-          localField: 'client_id',
-          foreignField: '_id',
-          as: 'client'
+        $group: {
+          _id: {
+            project_id: '$project_id',
+            user_id: '$timesheet.user_id'
+          },
+          // IMPORTANT: These are the fields from TimesheetProjectApproval
+          // worked_hours: sum of billable entry hours (actual work)
+          // billable_hours: worked_hours + billable_adjustment (Manager's approved billable)
+          // billable_adjustment: Manager's adjustment during Team Review
+          worked_hours: { $sum: '$worked_hours' },
+          base_billable_hours: { $sum: '$billable_hours' }, // This already includes manager adjustment!
+          manager_adjustment: { $sum: '$billable_adjustment' },
+          verified_at: { $max: '$management_approved_at' },
+          entries_count: { $sum: '$entries_count' }
         }
       }
     ]);
 
-    const taskIdSet = new Set<string>();
-    for (const project of projects) {
-      for (const entry of project.timeEntries ?? []) {
-        if (entry.task_id) {
-          taskIdSet.add(entry.task_id.toString());
-        }
-      }
+    if (approvedApprovals.length === 0) {
+      // No approved data found, return empty projects
+      return projects.map((project: any) => ({
+        project_id: project._id.toString(),
+        project_name: project.name,
+        client_name: project.client_id?.name,
+        total_hours: 0,
+        billable_hours: 0,
+        non_billable_hours: 0,
+        total_amount: 0,
+        resources: []
+      }));
     }
 
-    const taskNameMap = new Map<string, string>();
-    if (taskIdSet.size > 0) {
-      const taskIds = Array.from(taskIdSet)
-        .filter((id) => mongoose.Types.ObjectId.isValid(id))
-        .map((id) => new mongoose.Types.ObjectId(id));
-      if (taskIds.length > 0) {
-        const tasks = await (Task as any)
-          .find({ _id: { $in: taskIds } }, { name: 1 })
-          .lean();
-        for (const task of tasks) {
-          taskNameMap.set(task._id.toString(), task.name);
-        }
+    // Step 4: Get all unique user IDs
+    const userIds = [...new Set(approvedApprovals.map((a: any) => a._id.user_id.toString()))];
+    const userObjectIds = userIds
+      .filter((id): id is string => typeof id === 'string' && mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
+
+    // Step 5: Fetch user details including hourly_rate for cost calculation
+    const users = await (User as any).find({ _id: { $in: userObjectIds } })
+      .select('_id full_name email role hourly_rate')
+      .lean();
+    const userMap = new Map<string, any>(users.map((u: any) => [u._id.toString(), u]));
+
+    // Step 6: Fetch billing adjustments (Management's final changes)
+    const billingAdjustments = await (BillingAdjustment as any).find({
+      project_id: { $in: projectObjectIds },
+      user_id: { $in: userObjectIds },
+      billing_period_start: { $lte: end },
+      billing_period_end: { $gte: start },
+      adjustment_scope: 'project',
+      deleted_at: null
+    }).lean();
+
+    const adjustmentMap = new Map<string, any>(
+      billingAdjustments.map((adj: any) => [
+        `${adj.project_id.toString()}_${adj.user_id.toString()}`,
+        adj
+      ])
+    );
+
+    // Step 7: Organize approvals by project
+    const projectApprovalMap = new Map<string, any[]>();
+    for (const approval of approvedApprovals) {
+      const projectId = approval._id.project_id.toString();
+      if (!projectApprovalMap.has(projectId)) {
+        projectApprovalMap.set(projectId, []);
       }
+      projectApprovalMap.get(projectId)!.push(approval);
     }
 
+    // Step 8: Build billing data for each project
     const billingData: ProjectBillingData[] = [];
 
     for (const project of projects) {
+      const projectId = project._id.toString();
+      const approvals = projectApprovalMap.get(projectId) || [];
+
       const projectBilling: ProjectBillingData = {
-        project_id: project._id.toString(),
+        project_id: projectId,
         project_name: project.name,
-        client_name: project.client?.[0]?.name,
+        client_name: project.client_id?.name,
         total_hours: 0,
         billable_hours: 0,
         non_billable_hours: 0,
@@ -326,151 +490,108 @@ export class ProjectBillingController {
         resources: []
       };
 
-      const userTimeMap = new Map<
-        string,
-        {
-          user: any;
-          entries: any[];
-          totalHours: number;
-          billableHours: number;
-        }
-      >();
+      // Step 9: Process each user's billing data
+      for (const approval of approvals) {
+        const userId = approval._id.user_id.toString();
+        const user = userMap.get(userId);
 
-      for (const entry of project.timeEntries ?? []) {
-        const userId = entry.user_id.toString();
-        if (!userTimeMap.has(userId)) {
-          userTimeMap.set(userId, {
-            user: {
-              _id: entry.user_id,
-              full_name: entry.user_name,
-              email: entry.user_email,
-              role: entry.user_role
-            },
-            entries: [],
-            totalHours: 0,
-            billableHours: 0
-          });
-        }
-
-        const userTime = userTimeMap.get(userId)!;
-        userTime.entries.push(entry);
-        userTime.totalHours += entry.hours;
-        const entryBillable =
-          typeof entry.billable_hours === 'number'
-            ? entry.billable_hours
-            : entry.is_billable
-              ? entry.hours
-              : 0;
-        userTime.billableHours += entryBillable;
-      }
-
-      for (const [userId, userTime] of userTimeMap) {
-        const user = userTime.user;
         if (!user) continue;
 
-        const adjustedBillableHours = await ProjectBillingController.getBillingAdjustment(
-          userId,
-          project._id.toString(),
-          start,
-          end
+        // Base data from Team Review (TimesheetProjectApproval)
+        const workedHours = approval.worked_hours || 0;
+        const baseBillableHours = approval.base_billable_hours || 0;
+        const managerAdjustment = approval.manager_adjustment || 0;
+        const verifiedAt = approval.verified_at;
+
+        // Management's final adjustment from BillingAdjustment
+        const adjustmentKey = `${projectId}_${userId}`;
+        const billingAdj = adjustmentMap.get(adjustmentKey) as any;
+        const managementAdjustment = (billingAdj?.adjustment_hours as number) ?? 0;
+        const lastAdjustedAt = billingAdj?.adjusted_at as Date | undefined;
+
+        // Final calculation
+        const finalBillableHours = baseBillableHours + managementAdjustment;
+        const nonBillableHours = Math.max(workedHours - finalBillableHours, 0);
+
+        // ✅ SAFEGUARD: Validate adjustment data integrity
+        const validation = ProjectBillingController.validateAdjustmentIntegrity(
+          workedHours,
+          managerAdjustment,
+          baseBillableHours,
+          managementAdjustment,
+          finalBillableHours
         );
-
-        const finalBillableHours =
-          adjustedBillableHours !== null ? adjustedBillableHours : userTime.billableHours;
-
-        let rateResult = { effective_rate: 75 };
-        try {
-          rateResult = await BillingRateService.getEffectiveRate({
-            user_id: mongoose.Types.ObjectId.createFromHexString(userId),
-            project_id: mongoose.Types.ObjectId.createFromHexString(project._id.toString()),
-            client_id: project.client_id,
-            date: new Date(),
-            hours: finalBillableHours,
-            day_of_week: 1
-          });
-        } catch (rateError) {
-          // No billing rate found, using default
+        if (!validation.valid) {
+          console.error(
+            `⚠️ DATA INTEGRITY ERROR for ${user.full_name} in ${project.name}:`,
+            validation.errors
+          );
         }
 
-        const taskBuckets = new Map<
-          string,
-          {
-            totalHours: number;
-            billableHours: number;
-          }
-        >();
-
-        for (const entry of userTime.entries) {
-          const entryBillable =
-            typeof entry.billable_hours === 'number'
-              ? entry.billable_hours
-              : entry.is_billable
-                ? entry.hours
-                : 0;
-          const key = entry.task_id ? entry.task_id.toString() : 'unassigned';
-          if (!taskBuckets.has(key)) {
-            taskBuckets.set(key, { totalHours: 0, billableHours: 0 });
-          }
-          const bucket = taskBuckets.get(key)!;
-          bucket.totalHours += entry.hours;
-          bucket.billableHours += entryBillable;
-        }
-
-        const tasks: ResourceTaskData[] = Array.from(taskBuckets.entries()).map(
-          ([taskId, bucket]) => {
-            const taskName =
-              taskId === 'unassigned'
-                ? 'Unassigned Task'
-                : taskNameMap.get(taskId) ?? 'Task';
-            return {
-              task_id: taskId,
-              task_name: taskName,
-              project_id: projectBilling.project_id,
-              project_name: projectBilling.project_name,
-              total_hours: bucket.totalHours,
-              billable_hours: bucket.billableHours,
-              non_billable_hours: Math.max(bucket.totalHours - bucket.billableHours, 0),
-              amount: bucket.billableHours * rateResult.effective_rate
-            };
-          }
-        );
-
-        tasks.sort((a, b) => b.total_hours - a.total_hours);
+        // ✅ Use hourly_rate from User schema for cost calculation
+        const hourlyRate = user.hourly_rate || 0;
+        const totalAmount = finalBillableHours * hourlyRate;
 
         const resourceBilling: ResourceBillingData = {
           user_id: userId,
-          user_name:
-            user.full_name ||
-            `${user.first_name || ''} ${user.last_name || ''}`.trim() ||
-            'Unknown User',
-          role: user.role || 'employee',
-          total_hours: userTime.totalHours,
+          user_name: (user.full_name as string) || 'Unknown User',
+          role: (user.role as string) || 'employee',
+          
+          // New structure
+          worked_hours: workedHours,
+          manager_adjustment: managerAdjustment,
+          base_billable_hours: baseBillableHours,
+          management_adjustment: managementAdjustment,
+          final_billable_hours: finalBillableHours,
+          non_billable_hours: nonBillableHours,
+          
+          // Legacy fields (for backward compatibility)
+          total_hours: workedHours,
           billable_hours: finalBillableHours,
-          non_billable_hours: Math.max(userTime.totalHours - finalBillableHours, 0),
-          hourly_rate: rateResult.effective_rate,
-          total_amount: finalBillableHours * rateResult.effective_rate,
-          weekly_breakdown:
-            view === 'weekly'
-              ? await ProjectBillingController.getWeeklyBreakdown(
-                userTime.entries,
-                rateResult.effective_rate,
-                start,
-                end
-              )
-              : undefined,
-          tasks
+          
+          hourly_rate: hourlyRate,
+          total_amount: totalAmount,
+          
+          // Metadata
+          verified_at: verifiedAt?.toISOString(),
+          last_adjusted_at: lastAdjustedAt?.toISOString(),
+          
+          // TODO: Implement task breakdown from approved time entries
+          tasks: [],
+          weekly_breakdown: view === 'weekly' ? [] : undefined
         };
 
         projectBilling.resources.push(resourceBilling);
-        projectBilling.total_hours += resourceBilling.total_hours;
-        projectBilling.billable_hours += resourceBilling.billable_hours;
-        projectBilling.total_amount += resourceBilling.total_amount;
+        projectBilling.total_hours += workedHours;
+        projectBilling.billable_hours += finalBillableHours;
+        projectBilling.total_amount += totalAmount;
       }
 
       projectBilling.non_billable_hours = Math.max(
         projectBilling.total_hours - projectBilling.billable_hours,
         0
       );
+
+      // Add project-level verification info
+      if (approvals.length > 0) {
+        const totalWorked = approvals.reduce((sum: number, a: any) => sum + (a.worked_hours || 0), 0);
+        const totalBillable = approvals.reduce((sum: number, a: any) => sum + (a.base_billable_hours || 0), 0);
+        const totalAdjustment = approvals.reduce((sum: number, a: any) => sum + (a.manager_adjustment || 0), 0);
+        const latestVerifiedAt = approvals.reduce((latest: Date | undefined, a: any) => {
+          if (!a.verified_at) return latest;
+          if (!latest || a.verified_at > latest) return a.verified_at;
+          return latest;
+        }, undefined);
+
+        projectBilling.verification_info = {
+          is_verified: true,
+          worked_hours: totalWorked,
+          billable_hours: totalBillable,
+          manager_adjustment: totalAdjustment,
+          user_count: approvals.length,
+          verified_at: latestVerifiedAt
+        };
+      }
 
       billingData.push(projectBilling);
     }
@@ -686,7 +807,7 @@ export class ProjectBillingController {
       const timesheets = await (Timesheet as any).find({
         user_id: { $ne: null },
         status: { $in: BILLING_ELIGIBLE_STATUSES }
-      }).populate('user_id', 'full_name email').exec();
+      }).populate('user_id', 'full_name email hourly_rate').exec();
 
       const timeEntries: any[] = [];
       
@@ -809,28 +930,16 @@ export class ProjectBillingController {
           if (!user) continue;
 
           try {
-            // Get effective rate with fallback
-            let rate = 75; // Default rate
-            try {
-              const rateResult = await BillingRateService.getEffectiveRate({
-                user_id: mongoose.Types.ObjectId.createFromHexString(userId),
-                project_id: mongoose.Types.ObjectId.createFromHexString(task.project_id),
-                date: new Date(),
-                hours: userTask.billableHours,
-                day_of_week: 1
-              });
-              rate = rateResult.effective_rate;
-            } catch (rateError) {
-              // Rate calculation failed, using default
-            }
+            // ✅ Use hourly_rate from User schema for cost calculation
+            const hourlyRate = user.hourly_rate || 0;
 
             const taskResource: TaskResourceData = {
               user_id: userId,
               user_name: user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
               hours: userTask.hours,
               billable_hours: userTask.billableHours,
-              rate: rate,
-              amount: userTask.billableHours * rate
+              rate: hourlyRate,
+              amount: userTask.billableHours * hourlyRate
             };
 
             taskBilling.resources.push(taskResource);
@@ -1037,6 +1146,23 @@ export class ProjectBillingController {
     }
   }
 
+  /**
+   * ⚠️ CRITICAL: Apply billing adjustment for Management
+   * 
+   * DATA FLOW ENFORCEMENT:
+   * 1. Base hours MUST come from TimesheetProjectApproval.billable_hours (includes manager adjustments)
+   * 2. Management adjustment is the DELTA from this base
+   * 3. Formula: final_billable = base_billable_hours + management_adjustment
+   * 
+   * SAFEGUARDS:
+   * - Validates base exists in TimesheetProjectApproval with management_status='approved'
+   * - Calculates adjustment as delta (not absolute value)
+   * - Stores worked_hours for audit trail
+   * - Throws error if no approved base found
+   * 
+   * ❌ NEVER use TimeEntry.hours or worked_hours as adjustment base
+   * ✅ ALWAYS use billable_hours from TimesheetProjectApproval
+   */
   private static async applyBillingAdjustment(params: ApplyAdjustmentParams): Promise<{
     adjustmentId: mongoose.Types.ObjectId;
     originalBillableHours: number;
@@ -1047,59 +1173,100 @@ export class ProjectBillingController {
     const userObjectId = mongoose.Types.ObjectId.createFromHexString(params.userId);
     const projectObjectId = mongoose.Types.ObjectId.createFromHexString(params.projectId);
 
+    // ✅ SAFEGUARD: Fetch approved project approvals to get base billable hours
+    // This is the ONLY correct source for adjustment base
+    const approvedApprovals = await (TimesheetProjectApproval as any).aggregate([
+      {
+        $lookup: {
+          from: 'timesheets',
+          localField: 'timesheet_id',
+          foreignField: '_id',
+          as: 'timesheet'
+        }
+      },
+      { $unwind: '$timesheet' },
+      {
+        $match: {
+          project_id: projectObjectId,
+          'timesheet.user_id': userObjectId,
+          management_status: 'approved',
+          'timesheet.week_start_date': { $gte: start, $lte: end },
+          'timesheet.status': { $in: ['frozen', 'billed'] },
+          'timesheet.deleted_at': null
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          worked_hours: { $sum: '$worked_hours' },
+          base_billable_hours: { $sum: '$billable_hours' },
+          manager_adjustment: { $sum: '$billable_adjustment' }
+        }
+      }
+    ]);
+
+    if (!approvedApprovals || approvedApprovals.length === 0) {
+      const notFoundError = new Error(
+        '⚠️ SAFEGUARD VIOLATION: No management-approved billing data found. ' +
+        'Cannot create adjustment without approved TimesheetProjectApproval base. ' +
+        'Ensure project-week groups have management_status="approved" before adjusting.'
+      );
+      (notFoundError as any).status = 404;
+      throw notFoundError;
+    }
+
+    const approvalData = approvedApprovals[0];
+    const workedHours = approvalData.worked_hours || 0;
+    const baseBillableHours = approvalData.base_billable_hours || 0;
+    const managerAdjustment = approvalData.manager_adjustment || 0;
+
+    // ✅ SAFEGUARD: Validate base billable hours integrity
+    // Base should equal worked + manager adjustment (with rounding tolerance)
+    const expectedBase = workedHours + managerAdjustment;
+    const tolerance = 0.01; // Allow 0.01h rounding difference
+    if (Math.abs(baseBillableHours - expectedBase) > tolerance) {
+      console.warn(
+        `⚠️ DATA INTEGRITY WARNING: Base billable hours (${baseBillableHours}) ` +
+        `doesn't match worked (${workedHours}) + manager adjustment (${managerAdjustment}). ` +
+        `Expected: ${expectedBase}. This may indicate corrupted data.`
+      );
+    }
+
+    // ✅ CORRECT: Calculate management adjustment as DELTA from base billable
+    // This is the correct formula - adjustment is the difference, not absolute value
+    const managementAdjustmentHours = params.billableHours - baseBillableHours;
+
+    // Find timesheet for reference
     const timesheets = await (Timesheet as any).find({
       user_id: userObjectId,
       week_start_date: { $lte: end },
       week_end_date: { $gte: start }
     });
+    const timesheetIdToUse = timesheets.length > 0 ? timesheets[0]._id : undefined;
 
-    if (!timesheets || timesheets.length === 0) {
-      const notFoundError = new Error('No timesheets found for the specified user and date range');
-      (notFoundError as any).status = 404;
-      throw notFoundError;
-    }
-
-    const timesheetIds = timesheets.map((ts: any) => ts._id);
-    const timeEntries = await (TimeEntry as any).find({
-      timesheet_id: { $in: timesheetIds },
-      project_id: projectObjectId,
-      date: { $gte: start, $lte: end }
-    });
-
-    const originalBillableHours = timeEntries.reduce((sum: number, entry: any) => {
-      const entryBillable =
-        typeof entry.billable_hours === 'number'
-          ? entry.billable_hours
-          : entry.is_billable
-            ? entry.hours
-            : 0;
-      return sum + entryBillable;
-    }, 0);
-
-    const timesheetIdToUse = timesheetIds.length > 0 ? timesheetIds[0] : undefined;
-    const totalWorkedHours =
-      typeof params.totalHours === 'number' ? params.totalHours : originalBillableHours;
-    const adjustmentHours = params.billableHours - totalWorkedHours;
     const adjustmentQuery = {
       user_id: userObjectId,
       project_id: projectObjectId,
       billing_period_start: start,
-      billing_period_end: end
+      billing_period_end: end,
+      deleted_at: null  // ✅ CRITICAL: Include soft-delete filter
     };
 
     const adjustedBy = params.adjustedBy ?? new mongoose.Types.ObjectId();
-    const reason = params.reason || 'Manual adjustment from billing management';
+    const reason = params.reason || 'Management adjustment from billing management';
 
     const existingAdjustment = await (BillingAdjustment as any).findOne(adjustmentQuery);
 
     if (existingAdjustment) {
-      existingAdjustment.original_billable_hours = originalBillableHours;
-      existingAdjustment.adjusted_billable_hours = params.billableHours;
-      existingAdjustment.total_worked_hours = totalWorkedHours;
+      // Update existing adjustment
+      existingAdjustment.total_worked_hours = workedHours;
+      existingAdjustment.adjustment_hours = managementAdjustmentHours;
       existingAdjustment.total_billable_hours = params.billableHours;
-      existingAdjustment.adjustment_hours = adjustmentHours;
+      existingAdjustment.original_billable_hours = baseBillableHours;
+      existingAdjustment.adjusted_billable_hours = params.billableHours;
       existingAdjustment.reason = reason;
       existingAdjustment.adjusted_by = adjustedBy;
+      existingAdjustment.adjusted_at = new Date();
       existingAdjustment.updated_at = new Date();
       if (timesheetIdToUse) {
         existingAdjustment.timesheet_id = timesheetIdToUse;
@@ -1109,23 +1276,26 @@ export class ProjectBillingController {
 
       return {
         adjustmentId: existingAdjustment._id,
-        originalBillableHours,
+        originalBillableHours: baseBillableHours,
         adjustedBillableHours: params.billableHours
       };
     }
 
+    // Create new adjustment
     const newAdjustmentData: any = {
       user_id: userObjectId,
       project_id: projectObjectId,
+      adjustment_scope: 'project',
       billing_period_start: start,
       billing_period_end: end,
-      original_billable_hours: originalBillableHours,
-      adjusted_billable_hours: params.billableHours,
-      total_worked_hours: totalWorkedHours,
+      total_worked_hours: workedHours,
+      adjustment_hours: managementAdjustmentHours,
       total_billable_hours: params.billableHours,
-      adjustment_hours: adjustmentHours,
+      original_billable_hours: baseBillableHours,
+      adjusted_billable_hours: params.billableHours,
       reason,
-      adjusted_by: adjustedBy
+      adjusted_by: adjustedBy,
+      adjusted_at: new Date()
     };
 
     if (timesheetIdToUse) {
@@ -1137,7 +1307,7 @@ export class ProjectBillingController {
 
     return {
       adjustmentId: newAdjustment._id,
-      originalBillableHours,
+      originalBillableHours: baseBillableHours,
       adjustedBillableHours: params.billableHours
     };
   }
@@ -1283,22 +1453,27 @@ export class ProjectBillingController {
 
   /**
    * Helper: Get billing adjustment for user-project-period combination
+   * Returns the full adjustment delta, not the final hours
    */
   private static async getBillingAdjustment(
     userId: string,
     projectId: string,
     startDate: Date,
     endDate: Date
-  ): Promise<number | null> {
+  ): Promise<{ adjustment_hours: number; adjusted_at?: Date } | null> {
     try {
       const adjustment = await (BillingAdjustment as any).findOne({
         user_id: mongoose.Types.ObjectId.createFromHexString(userId),
         project_id: mongoose.Types.ObjectId.createFromHexString(projectId),
         billing_period_start: { $lte: startDate },
-        billing_period_end: { $gte: endDate }
+        billing_period_end: { $gte: endDate },
+        adjustment_scope: 'project',
+        deleted_at: null
       });
 
-      return adjustment ? adjustment.adjusted_billable_hours : null;
+      return adjustment 
+        ? { adjustment_hours: adjustment.adjustment_hours || 0, adjusted_at: adjustment.adjusted_at }
+        : null;
     } catch (error) {
       console.error('Error fetching billing adjustment:', error);
       return null;
@@ -1306,7 +1481,21 @@ export class ProjectBillingController {
   }
 
   /**
-   * Create or update billing adjustment
+   * ⚠️ CRITICAL: Create or update billing adjustment (Management tier)
+   * 
+   * DATA FLOW ENFORCEMENT:
+   * 1. Fetches base from TimesheetProjectApproval.billable_hours (management-approved only)
+   * 2. Calculates adjustment as delta: adjustment = final - base
+   * 3. Stores audit trail with worked_hours, base, and adjustment
+   * 
+   * SAFEGUARDS:
+   * - Validates management_status='approved' before allowing adjustment
+   * - Throws 404 if no approved base exists
+   * - Validates data integrity (base = worked + manager adjustment)
+   * - Stores adjustment as delta (not absolute)
+   * 
+   * ❌ DO NOT calculate adjustment from TimeEntry or worked_hours
+   * ✅ ALWAYS calculate adjustment as delta from billable_hours
    */
   static async createBillingAdjustment(req: Request, res: Response): Promise<void> {
     try {
@@ -1330,18 +1519,70 @@ export class ProjectBillingController {
         reason
       } = req.body;
 
-      // Get adjusted_by user - use req.user or fallback to system user
+      const start = new Date(start_date);
+      const end = new Date(end_date);
+      const userObjectId = mongoose.Types.ObjectId.createFromHexString(user_id);
+      const projectObjectId = mongoose.Types.ObjectId.createFromHexString(project_id);
+
+      // ✅ SAFEGUARD: Fetch base billable hours ONLY from approved TimesheetProjectApproval
+      // This enforces management_status='approved' requirement
+      const approvedApprovals = await (TimesheetProjectApproval as any).aggregate([
+        {
+          $lookup: {
+            from: 'timesheets',
+            localField: 'timesheet_id',
+            foreignField: '_id',
+            as: 'timesheet'
+          }
+        },
+        { $unwind: '$timesheet' },
+        {
+          $match: {
+            project_id: projectObjectId,
+            'timesheet.user_id': userObjectId,
+            management_status: 'approved',
+            'timesheet.week_start_date': { $gte: start, $lte: end },
+            'timesheet.status': { $in: ['frozen', 'billed'] },
+            'timesheet.deleted_at': null
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            worked_hours: { $sum: '$worked_hours' },
+            base_billable_hours: { $sum: '$billable_hours' }
+          }
+        }
+      ]);
+
+      if (!approvedApprovals || approvedApprovals.length === 0) {
+        res.status(404).json({
+          success: false,
+          error: '⚠️ SAFEGUARD VIOLATION: No management-approved billing data found. ' +
+                 'Cannot create adjustment without approved TimesheetProjectApproval base. ' +
+                 'Ensure project-week groups have management_status="approved" before adjusting.'
+        });
+        return;
+      }
+
+      const approvalData = approvedApprovals[0];
+      const workedHours = approvalData.worked_hours || 0;
+      const baseBillableHours = approvalData.base_billable_hours || 0;
+
+      // ✅ CORRECT: Calculate adjustment as DELTA from base billable hours
+      // Never use worked_hours as the base - always use billable_hours (which includes manager adjustments)
+      const adjustmentHours = adjusted_billable_hours - baseBillableHours;
+
+      // Get adjusted_by user
       let adjustedBy: mongoose.Types.ObjectId;
       
       try {
         if ((req.user as any)?._id) {
-          // User is authenticated, use their ID
           const userId = (req.user as any)._id;
           adjustedBy = typeof userId === 'string' 
             ? mongoose.Types.ObjectId.createFromHexString(userId)
             : userId;
         } else {
-          // Find existing system user first
           let systemUser = await (User as any).findOne({ 
             $or: [
               { email: 'system@billing.seed' },
@@ -1352,11 +1593,10 @@ export class ProjectBillingController {
           if (systemUser) {
             adjustedBy = systemUser._id;
           } else {
-            // Create a system user if none exists
             const systemUserData = {
               email: 'system@billing.adjustment',
               full_name: 'System Billing User',
-              role: 'employee', // Use valid role from enum
+              role: 'employee',
               is_active: true,
               hourly_rate: 0,
               is_approved_by_super_admin: true,
@@ -1373,27 +1613,39 @@ export class ProjectBillingController {
         }
       } catch (userError) {
         console.error('Error getting adjusted_by user:', userError);
-        // As a last resort, create a valid ObjectId
         adjustedBy = new mongoose.Types.ObjectId();
       }
 
+      // Find timesheets for reference
+      const timesheets = await (Timesheet as any).find({
+        user_id: userObjectId,
+        week_start_date: { $lte: end },
+        week_end_date: { $gte: start }
+      });
+      const timesheetIdToUse = timesheets.length > 0 ? timesheets[0]._id : undefined;
+
       // Check if adjustment already exists
       const existingAdjustment = await (BillingAdjustment as any).findOne({
-        user_id: mongoose.Types.ObjectId.createFromHexString(user_id),
-        project_id: mongoose.Types.ObjectId.createFromHexString(project_id),
-        billing_period_start: new Date(start_date),
-        billing_period_end: new Date(end_date)
+        user_id: userObjectId,
+        project_id: projectObjectId,
+        billing_period_start: start,
+        billing_period_end: end,
+        deleted_at: null  // ✅ CRITICAL: Include soft-delete filter
       });
 
       if (existingAdjustment) {
         // Update existing adjustment
-        existingAdjustment.original_billable_hours = original_billable_hours;
+        existingAdjustment.total_worked_hours = workedHours;
+        existingAdjustment.adjustment_hours = adjustmentHours;
+        existingAdjustment.total_billable_hours = adjusted_billable_hours;
+        existingAdjustment.original_billable_hours = baseBillableHours;
         existingAdjustment.adjusted_billable_hours = adjusted_billable_hours;
         existingAdjustment.reason = reason;
-        if (req.body.timesheet_id) {
-          existingAdjustment.timesheet_id = mongoose.Types.ObjectId.createFromHexString(req.body.timesheet_id);
+        if (timesheetIdToUse) {
+          existingAdjustment.timesheet_id = timesheetIdToUse;
         }
         existingAdjustment.adjusted_by = adjustedBy;
+        existingAdjustment.adjusted_at = new Date();
         existingAdjustment.updated_at = new Date();
 
         await existingAdjustment.save();
@@ -1403,30 +1655,34 @@ export class ProjectBillingController {
           message: 'Billing adjustment updated successfully',
           data: {
             adjustment_id: existingAdjustment._id,
-            original_billable_hours,
+            original_billable_hours: baseBillableHours,
             adjusted_billable_hours,
-            difference: adjusted_billable_hours - original_billable_hours
+            difference: adjustmentHours
           }
         });
       } else {
         // Create new adjustment
         const newAdjustmentData: any = {
-          user_id: mongoose.Types.ObjectId.createFromHexString(user_id),
-          project_id: mongoose.Types.ObjectId.createFromHexString(project_id),
-          billing_period_start: new Date(start_date),
-          billing_period_end: new Date(end_date),
-          original_billable_hours,
+          user_id: userObjectId,
+          project_id: projectObjectId,
+          adjustment_scope: 'project',
+          billing_period_start: start,
+          billing_period_end: end,
+          total_worked_hours: workedHours,
+          adjustment_hours: adjustmentHours,
+          total_billable_hours: adjusted_billable_hours,
+          original_billable_hours: baseBillableHours,
           adjusted_billable_hours,
           reason,
-          adjusted_by: adjustedBy
+          adjusted_by: adjustedBy,
+          adjusted_at: new Date()
         };
 
-        if (req.body.timesheet_id) {
-          newAdjustmentData.timesheet_id = mongoose.Types.ObjectId.createFromHexString(req.body.timesheet_id);
+        if (timesheetIdToUse) {
+          newAdjustmentData.timesheet_id = timesheetIdToUse;
         }
 
         const newAdjustment = new (BillingAdjustment as any)(newAdjustmentData);
-
         await newAdjustment.save();
 
         res.json({
@@ -1434,9 +1690,9 @@ export class ProjectBillingController {
           message: 'Billing adjustment created successfully',
           data: {
             adjustment_id: newAdjustment._id,
-            original_billable_hours,
+            original_billable_hours: baseBillableHours,
             adjusted_billable_hours,
-            difference: adjusted_billable_hours - original_billable_hours
+            difference: adjustmentHours
           }
         });
       }

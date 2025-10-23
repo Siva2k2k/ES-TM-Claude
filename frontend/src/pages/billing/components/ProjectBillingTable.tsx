@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Edit3, Lock } from 'lucide-react';
+import { ChevronDown, ChevronRight, Edit3, Lock, CheckCircle } from 'lucide-react';
 import type { ProjectBillingRecord, ProjectBillingResponse } from '../../../types/billing';
 
 interface ProjectBillingTableProps {
@@ -11,6 +11,10 @@ interface ProjectBillingTableProps {
     userName: string;
     currentBillable: number;
     totalHours: number;
+    verifiedWorkedHours?: number;
+    verifiedBillableHours?: number;
+    managerAdjustment?: number;
+    verifiedAt?: string;
   }) => void;
   onProjectAdjust?: (project: ProjectBillingRecord) => void;
   lockedProjects?: Set<string>;
@@ -128,6 +132,12 @@ export function ProjectBillingTable({
                         )}
                         <span className="flex items-center gap-2">
                           {project.project_name}
+                          {project.verification_info?.is_verified && (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-green-300 bg-green-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-green-700 dark:border-green-500/40 dark:bg-green-500/10 dark:text-green-300">
+                              <CheckCircle className="h-3 w-3" />
+                              Verified {project.verification_info.verified_at ? new Date(project.verification_info.verified_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''}
+                            </span>
+                          )}
                           {isLocked && (
                             <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-200">
                               <Lock className="h-3 w-3" />
@@ -202,11 +212,31 @@ export function ProjectBillingTable({
                                 const workedHours = resource.total_hours;
                                 const billableHours = resource.billable_hours ?? workedHours;
                                 const cost = resource.total_amount ?? billableHours * resource.hourly_rate;
+                                const hasVerification = resource.verified_worked_hours !== undefined;
 
                                 return (
-                                  <tr key={resource.user_id}>
-                                    <td className="px-4 py-2 text-sm font-medium text-slate-900 dark:text-slate-100">
-                                      {resource.user_name}
+                                  <tr key={resource.user_id} className={hasVerification ? 'bg-green-50/30 dark:bg-green-900/10' : ''}>
+                                    <td className="px-4 py-2">
+                                      <div className="flex flex-col">
+                                        <span className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                                          {resource.user_name}
+                                        </span>
+                                        {hasVerification && (
+                                          <div className="mt-1 flex items-center gap-2 text-xs">
+                                            <span className="text-slate-500 dark:text-slate-400">
+                                              Verified: {resource.verified_worked_hours}h worked
+                                            </span>
+                                            {resource.manager_adjustment !== 0 && resource.manager_adjustment !== undefined && (
+                                              <span className={`font-medium ${resource.manager_adjustment > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-red-600 dark:text-red-400'}`}>
+                                                {resource.manager_adjustment > 0 ? '+' : ''}{resource.manager_adjustment}h adj
+                                              </span>
+                                            )}
+                                            <span className="font-medium text-green-600 dark:text-green-400">
+                                              = {resource.verified_billable_hours}h billable
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
                                     </td>
                                     <td className="px-4 py-2 text-sm text-slate-500 dark:text-slate-400">
                                       {resource.role}
@@ -214,8 +244,17 @@ export function ProjectBillingTable({
                                     <td className="px-4 py-2 text-right text-sm text-slate-600 dark:text-slate-300">
                                       {workedHours.toFixed(1)}h
                                     </td>
-                                    <td className="px-4 py-2 text-right text-sm font-semibold text-slate-900 dark:text-slate-100">
-                                      {billableHours.toFixed(1)}h
+                                    <td className="px-4 py-2 text-right">
+                                      <div className="flex flex-col items-end">
+                                        <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                          {billableHours.toFixed(1)}h
+                                        </span>
+                                        {hasVerification && resource.verified_billable_hours !== billableHours && (
+                                          <span className="text-xs text-slate-500 dark:text-slate-400">
+                                            (was {resource.verified_billable_hours}h)
+                                          </span>
+                                        )}
+                                      </div>
                                     </td>
                                     <td className="px-4 py-2 text-right text-sm text-slate-600 dark:text-slate-300">
                                       ${resource.hourly_rate.toFixed(2)}
@@ -232,7 +271,11 @@ export function ProjectBillingTable({
                                             userId: resource.user_id,
                                             userName: resource.user_name,
                                             currentBillable: billableHours,
-                                            totalHours: workedHours
+                                            totalHours: workedHours,
+                                            verifiedWorkedHours: resource.verified_worked_hours,
+                                            verifiedBillableHours: resource.verified_billable_hours,
+                                            managerAdjustment: resource.manager_adjustment,
+                                            verifiedAt: resource.verified_at
                                           })
                                         }
                                         disabled={isLocked}

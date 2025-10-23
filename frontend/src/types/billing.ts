@@ -1,5 +1,16 @@
 export type BillingPeriodView = 'weekly' | 'monthly' | 'custom';
 
+export interface VerificationInfo {
+  is_verified: boolean;
+  verified_at?: string;
+  verified_by?: string;
+  verified_by_name?: string;
+  worked_hours: number;
+  billable_hours: number;
+  manager_adjustment: number;
+  user_count: number;
+}
+
 export interface BillingDashboardMetrics {
   totalRevenue: number;
   weeklyRevenue: number;
@@ -53,6 +64,10 @@ export interface ProjectBillingResource {
     amount: number;
   }>;
   tasks?: ProjectBillingResourceTask[];
+  verified_worked_hours?: number;
+  verified_billable_hours?: number;
+  manager_adjustment?: number;
+  verified_at?: string;
 }
 
 export interface ProjectBillingResourceTask {
@@ -75,6 +90,7 @@ export interface ProjectBillingRecord {
   non_billable_hours: number;
   total_amount: number;
   resources: ProjectBillingResource[];
+  verification_info?: VerificationInfo;
 }
 
 export interface ProjectBillingSummary {

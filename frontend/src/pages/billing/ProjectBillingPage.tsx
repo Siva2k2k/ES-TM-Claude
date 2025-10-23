@@ -24,6 +24,22 @@ const VIEW_OPTIONS: Array<{ value: ViewMode; label: string }> = [
   { value: 'timeline', label: 'Project timeline' }
 ];
 
+interface EditingState {
+  project: ProjectBillingRecord;
+  userId: string;
+  userName: string;
+  currentBillable: number;
+  totalHours: number;
+  verifiedWorkedHours?: number;
+  verifiedBillableHours?: number;
+  managerAdjustment?: number;
+  verifiedAt?: string;
+}
+
+interface ProjectAdjustmentState {
+  project: ProjectBillingRecord;
+}
+
 function normalizeProjectId(project: Project): string {
   return project._id ?? project.id ?? '';
 }
@@ -386,6 +402,10 @@ export function ProjectBillingPage() {
         initialHours={editingMember?.currentBillable ?? 0}
         originalHours={editingMember?.currentBillable}
         workedHours={editingMember?.totalHours}
+        verifiedWorkedHours={editingMember?.verifiedWorkedHours}
+        verifiedBillableHours={editingMember?.verifiedBillableHours}
+        managerAdjustment={editingMember?.managerAdjustment}
+        verifiedAt={editingMember?.verifiedAt}
         confirmLabel="Update Hours"
         onClose={() => setEditingMember(null)}
         onSave={handleMemberSave}

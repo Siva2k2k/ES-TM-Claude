@@ -162,6 +162,17 @@ BillingAdjustmentSchema.index({ user_id: 1, adjusted_at: -1 }); // User's adjust
 BillingAdjustmentSchema.index({ billing_period_start: 1, billing_period_end: 1 }); // Date range queries
 BillingAdjustmentSchema.index({ adjusted_by: 1 }); // Who made adjustments
 
+// ✅ CRITICAL: Partial unique index for active records only
+// This prevents duplicate active adjustments but allows new adjustments when old ones are soft-deleted
+BillingAdjustmentSchema.index(
+  { user_id: 1, project_id: 1, billing_period_start: 1, billing_period_end: 1 },
+  { 
+    name: 'user_project_period_unique_active',
+    unique: true, 
+    partialFilterExpression: { deleted_at: null }
+  }
+);
+
 // Validation: project_id required if scope='project'
 BillingAdjustmentSchema.pre('save', function(next) {
   if (this.adjustment_scope === 'project' && !this.project_id) {
