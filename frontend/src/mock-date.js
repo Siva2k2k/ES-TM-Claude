@@ -1,9 +1,10 @@
 // Mock date script for frontend development
+
 (function () {
   "use strict";
 
-  const mockDate = (typeof process !== 'undefined' && process.env && process.env.MOCK_DATE) || "2025-02-15T09:00:00Z";
-  const mockTZ = (typeof process !== 'undefined' && process.env && process.env.MOCK_TZ) || "America/New_York";
+  const mockDate = import.meta.env.VITE_MOCK_DATE;;
+  const mockTZ = import.meta.env.VITE_MOCK_TZ;
   const OriginalDate = Date;
 
   class MockDate extends OriginalDate {
