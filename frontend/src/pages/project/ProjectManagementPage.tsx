@@ -54,7 +54,7 @@ export const ProjectManagementPage: React.FC = () => {
   const [projects, setProjects] = useState<Project[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [clients, setClients] = useState<Array<{ id: string; name: string }>>([]);
-  const [users, setUsers] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [users, setUsers] = useState<Array<{ id: string; name: string; email: string; role: string }>>([]);
   const [selectedProject, setSelectedProject] = useState<Project | null>(null);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -321,7 +321,7 @@ export const ProjectManagementPage: React.FC = () => {
       >
         <ProjectForm
           clients={clients}
-          managers={users.filter(u => ['manager', 'management', 'super_admin'].includes(u.role))}
+          managers={users.filter(u => ['manager', 'management'].includes(u.role))}
           onSuccess={handleProjectSuccess}
           onCancel={createProjectModal.close}
         />

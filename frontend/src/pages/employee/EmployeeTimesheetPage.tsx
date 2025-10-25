@@ -682,7 +682,8 @@ function getWeekMondayFromDate(date: Date): string {
   const diff = temp.getDate() - day + (day === 0 ? -6 : 1);
   temp.setDate(diff);
   temp.setHours(0, 0, 0, 0);
-  return toISODate(temp);
+  const weekStart = `${temp.getFullYear()}-${String(temp.getMonth()+1).padStart(2,'0')}-${String(temp.getDate()).padStart(2,'0')}`;
+  return weekStart;
 }
 
 function startOfMonth(date: Date): Date {

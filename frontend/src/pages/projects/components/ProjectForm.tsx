@@ -190,6 +190,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               label="Client"
               type="select"
               required
+              placeholder="Select a client"
               options={
                   clients && clients.length > 0
                     ? clients.map((c) => ({ value: (c as any).id || (c as any)._id || '', label: c.name }))
@@ -203,6 +204,7 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
               label="Primary Manager"
               type="select"
               required
+              placeholder="Select a manager"
               options={managers.map((m) => ({ value: m.id, label: m.full_name }))}
             />
           </div>

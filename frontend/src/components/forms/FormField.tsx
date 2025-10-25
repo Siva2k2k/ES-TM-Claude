@@ -87,18 +87,9 @@ export function FormField<TFieldValues extends FieldValues>({
           {...commonProps}
           {...field}
           value={field.value || ''}
-        >
-          {props.placeholder && (
-            <option value="" disabled>
-              {props.placeholder}
-            </option>
-          )}
-          {options.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </Select>
+          options={options.map(opt => ({ value: String(opt.value), label: opt.label }))}
+          placeholder={props.placeholder}
+        />
       );
 
     case 'checkbox':
