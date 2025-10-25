@@ -89,18 +89,6 @@ export const formatProjectDate = (dateString: string | Date | undefined): string
 };
 
 /**
- * Format currency value for display
- */
-export const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(amount);
-};
-
-/**
  * Filter projects based on search term
  * Searches in project name and description
  */

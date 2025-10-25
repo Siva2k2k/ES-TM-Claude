@@ -21,26 +21,26 @@ export function formatDate(
 
   const options: Intl.DateTimeFormatOptions = {
     short: {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric'
+      year: 'numeric' as const,
+      month: 'short' as const,
+      day: 'numeric' as const
     },
     long: {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      weekday: 'long'
+      year: 'numeric' as const,
+      month: 'long' as const,
+      day: 'numeric' as const,
+      weekday: 'long' as const
     },
     time: {
-      hour: '2-digit',
-      minute: '2-digit'
+      hour: '2-digit' as const,
+      minute: '2-digit' as const
     },
     datetime: {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
+      year: 'numeric' as const,
+      month: 'short' as const,
+      day: 'numeric' as const,
+      hour: '2-digit' as const,
+      minute: '2-digit' as const
     }
   }[format];
 

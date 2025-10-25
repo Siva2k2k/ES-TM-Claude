@@ -6,7 +6,6 @@ import { useAuth } from './store/contexts/AuthContext';
 
 // Layouts
 import { AppLayout } from './layouts/AppLayout';
-import { AuthLayout } from './layouts/AuthLayout';
 
 // Auth Components & Pages
 import {

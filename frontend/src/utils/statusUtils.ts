@@ -7,6 +7,8 @@
 /**
  * Timesheet status types
  */
+import { BillingStatus, ProjectStatus } from './constants';
+
 export type TimesheetStatus = 
   | 'draft' 
   | 'submitted' 
@@ -24,8 +26,12 @@ export type TimesheetStatus =
 
 /**
  * Project status types
+ *  ACTIVE: 'active',
+  COMPLETED: 'completed',
+  ARCHIVED: 'archived',
+  ON_HOLD: 'on_hold',
+  CANCELLED: 'cancelled',
  */
-export type ProjectStatus = 'active' | 'inactive' | 'completed' | 'on_hold' | 'cancelled';
 
 /**
  * User status types
@@ -34,8 +40,14 @@ export type UserStatus = 'active' | 'inactive' | 'pending' | 'suspended';
 
 /**
  * Billing status types
+ * DRAFT: 'draft',
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  PAID: 'paid',
+  OVERDUE: 'overdue',
+  CANCELLED: 'cancelled'
  */
-export type BillingStatus = 'draft' | 'pending' | 'approved' | 'paid' | 'overdue' | 'cancelled';
+
 
 /**
  * Get Tailwind CSS classes for timesheet status badge
@@ -70,7 +82,7 @@ export function getTimesheetStatusColor(status: TimesheetStatus | string): strin
 export function getProjectStatusColor(status: ProjectStatus | string): string {
   const colors: Record<string, string> = {
     active: 'bg-green-100 text-green-800 border-green-300',
-    inactive: 'bg-gray-100 text-gray-800 border-gray-300',
+    archived: 'bg-gray-100 text-gray-800 border-gray-300',
     completed: 'bg-blue-100 text-blue-800 border-blue-300',
     on_hold: 'bg-yellow-100 text-yellow-800 border-yellow-300',
     cancelled: 'bg-red-100 text-red-800 border-red-300'

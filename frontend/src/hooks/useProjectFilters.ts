@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { filterProjectsBySearch, filterProjectsByStatus } from '../utils/projectUtils';
 import type { Project } from '../types';
-import type { ViewMode, ProjectStatus } from '../utils/projectConstants';
+import type { ViewMode, ProjectStatus } from '../utils/constants';
 
 /**
  * useProjectFilters Hook
