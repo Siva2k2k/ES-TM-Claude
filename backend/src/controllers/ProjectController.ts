@@ -8,6 +8,7 @@ import {
   AuthorizationError,
   handleAsyncError
 } from '@/utils/errors';
+import { IdUtils } from '@/utils/idUtils';
 
 interface AuthRequest extends Request {
   user?: {
@@ -124,20 +125,6 @@ export class ProjectController {
       const membersResult = await ProjectService.getProjectMembers(projectId, req.user);
       const members = !membersResult.error && membersResult.members ? membersResult.members : [];
 
-      const toIdString = (value: any): string | undefined => {
-        if (!value) {
-          return undefined;
-        }
-        if (typeof value === 'string') {
-          return value;
-        }
-        if (typeof value.toString === 'function') {
-          const strValue = value.toString();
-          return strValue && strValue !== '[object Object]' ? strValue : undefined;
-        }
-        return undefined;
-      };
-
       const allMemberIds = new Set<string>();
       const leadershipIds = new Set<string>();
 
@@ -157,8 +144,9 @@ export class ProjectController {
         }
       });
 
-      const previousPrimaryManagerId = toIdString((previousProject as any)?.primary_manager_id);
-      const updatedPrimaryManagerId = toIdString((updatedProject as any)?.primary_manager_id);
+      // Use centralized ID parsing utility
+      const previousPrimaryManagerId = IdUtils.toIdString((previousProject as any)?.primary_manager_id);
+      const updatedPrimaryManagerId = IdUtils.toIdString((updatedProject as any)?.primary_manager_id);
       const projectName = (updatedProject as any)?.name || (previousProject as any)?.name || 'Project';
       const previousStatus = (previousProject as any)?.status;
       const updatedStatus = (updatedProject as any)?.status;
@@ -560,24 +548,11 @@ export class ProjectController {
     }
 
     try {
-      const toIdString = (value: any): string | undefined => {
-        if (!value) {
-          return undefined;
-        }
-        if (typeof value === 'string') {
-          return value;
-        }
-        if (typeof value.toString === 'function') {
-          const strValue = value.toString();
-          return strValue && strValue !== '[object Object]' ? strValue : undefined;
-        }
-        return undefined;
-      };
-
+      // Use centralized ID parsing utility
       const projectId =
         req.body.project_id ||
-        toIdString(updatedTask?.project_id) ||
-        toIdString(existingTask?.project_id);
+        IdUtils.toIdString(updatedTask?.project_id) ||
+        IdUtils.toIdString(existingTask?.project_id);
 
       const taskName =
         (updatedTask?.name) ||
@@ -585,9 +560,9 @@ export class ProjectController {
         existingTask?.name ||
         'Task';
 
-      const previousAssigneeId = toIdString(existingTask?.assigned_to_user_id);
+      const previousAssigneeId = IdUtils.toIdString(existingTask?.assigned_to_user_id);
       const updatedAssigneeId =
-        req.body.assigned_to_user_id || toIdString(updatedTask?.assigned_to_user_id);
+        req.body.assigned_to_user_id || IdUtils.toIdString(updatedTask?.assigned_to_user_id);
 
       const previousStatus = existingTask?.status;
       const updatedStatus = req.body.status || updatedTask?.status;
@@ -606,7 +581,7 @@ export class ProjectController {
           const projectDetails = await ProjectService.getProjectById(projectId, req.user);
           if (!projectDetails.error && projectDetails.project) {
             projectName = (projectDetails.project as any)?.name || projectName;
-            projectPrimaryManagerId = toIdString(
+            projectPrimaryManagerId = IdUtils.toIdString(
               (projectDetails.project as any)?.primary_manager_id
             );
           }

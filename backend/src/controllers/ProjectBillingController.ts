@@ -83,6 +83,7 @@ import { BillingAdjustment } from '@/models/BillingAdjustment';
 import { TimesheetProjectApproval } from '@/models/TimesheetProjectApproval';
 import type { VerificationInfo } from '@/types/billingVerification';
 import mongoose from 'mongoose';
+import { IdUtils } from '@/utils/idUtils';
 
 const BILLING_ELIGIBLE_STATUSES: string[] = [
   'lead_approved',
@@ -285,16 +286,9 @@ export class ProjectBillingController {
         view?: 'weekly' | 'monthly' | 'custom';
       };
 
-      const parseIds = (value?: string): string[] =>
-        value
-          ? value
-              .split(',')
-              .map((id) => id.trim())
-              .filter((id) => mongoose.Types.ObjectId.isValid(id))
-          : [];
-
-      const projectIds = parseIds(projectIdsRaw);
-      const clientIds = parseIds(clientIdsRaw);
+      // Use centralized ID parsing utility
+      const projectIds = IdUtils.parseIds(projectIdsRaw).filter(id => IdUtils.isValidObjectId(id));
+      const clientIds = IdUtils.parseIds(clientIdsRaw).filter(id => IdUtils.isValidObjectId(id));
 
       const projects = await ProjectBillingController.buildProjectBillingData({
         startDate,
@@ -629,14 +623,6 @@ export class ProjectBillingController {
         view?: 'weekly' | 'monthly' | 'custom';
       };
 
-      const parseIds = (value?: string): string[] =>
-        value
-          ? value
-              .split(',')
-              .map((id) => id.trim())
-              .filter((id) => mongoose.Types.ObjectId.isValid(id))
-          : [];
-
       const parseRoles = (value?: string): string[] =>
         value
           ? value
@@ -645,8 +631,9 @@ export class ProjectBillingController {
               .filter((role) => role.length > 0)
           : [];
 
-      const projectIds = parseIds(projectIdsRaw);
-      const clientIds = parseIds(clientIdsRaw);
+      // Use centralized ID parsing utility
+      const projectIds = IdUtils.parseIds(projectIdsRaw).filter(id => IdUtils.isValidObjectId(id));
+      const clientIds = IdUtils.parseIds(clientIdsRaw).filter(id => IdUtils.isValidObjectId(id));
       const roleFilters = parseRoles(rolesRaw);
 
       const projects = await ProjectBillingController.buildProjectBillingData({

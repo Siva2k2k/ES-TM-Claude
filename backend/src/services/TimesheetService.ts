@@ -28,7 +28,7 @@ import {
 import { AuditLogService } from '@/services/AuditLogService';
 import { ValidationUtils } from '@/utils/validation';
 import { NotificationService } from '@/services/NotificationService';
-import { parseLocalDate, getMondayOfWeek, toISODateString } from '@/utils/dateUtils';
+import { parseLocalDate, getMondayOfWeek, toISODateString, isWeekend } from '@/utils/dateUtils';
 
 const WEEKDAY_MIN_HOURS = 8;
 const WEEKDAY_MAX_HOURS = 10;
@@ -37,19 +37,14 @@ const WEEKLY_MAX_HOURS = 56;
 function normalizeWeekStartDateInput(dateInput: string | Date): Date {
   // Use the utility function to parse dates correctly in local timezone
   const date = parseLocalDate(dateInput);
-  
+
   if (Number.isNaN(date.getTime())) {
     throw new ValidationError('Invalid week start date');
   }
-  
+
   // Get Monday of the week
   const normalized = getMondayOfWeek(date);
   return normalized;
-}
-
-function isWeekendDay(date: Date): boolean {
-  const day = date.getDay();
-  return day === 0 || day === 6;
 }
 export interface TimesheetProjectApprovalSummary {
   project_id?: string;
@@ -96,7 +91,7 @@ export interface TimeEntryForm {
 function sanitizeTimeEntryForm(entry: TimeEntryForm): TimeEntryForm {
   const sanitized: TimeEntryForm = { ...entry };
   const entryDate = new Date(entry.date);
-  if (!Number.isNaN(entryDate.getTime()) && isWeekendDay(entryDate)) {
+  if (!Number.isNaN(entryDate.getTime()) && isWeekend(entryDate)) {
     sanitized.is_billable = false;
   }
   return sanitized;
@@ -1389,7 +1384,7 @@ export class TimesheetService {
       const existingEntries = await (TimeEntry.find as any)(query).exec();
 
       const entryDateObject = new Date(entryData.date);
-      if (!Number.isNaN(entryDateObject.getTime()) && isWeekendDay(entryDateObject)) {
+      if (!Number.isNaN(entryDateObject.getTime()) && isWeekend(entryDateObject)) {
         entryData.is_billable = false;
       }
 

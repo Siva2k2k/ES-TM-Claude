@@ -7,6 +7,7 @@ import {
   AuthorizationError,
   handleAsyncError
 } from '@/utils/errors';
+import { IdUtils } from '@/utils/idUtils';
 
 interface AuthRequest extends Request {
   user?: {
@@ -157,23 +158,8 @@ export class BillingController {
     const { startDate, endDate, format } = data;
     const isDownloadRequest = req.method === 'GET';
 
-    const parseIdList = (value: unknown): string[] => {
-      if (!value) {
-        return [];
-      }
-      if (Array.isArray(value)) {
-        return value
-          .map((id) => (typeof id === 'string' ? id.trim() : ''))
-          .filter((id) => id.length > 0);
-      }
-      if (typeof value === 'string') {
-        return value
-          .split(',')
-          .map((id) => id.trim())
-          .filter((id) => id.length > 0);
-      }
-      return [];
-    };
+    // Use centralized ID parsing utility
+    const parseIdList = IdUtils.parseIds;
 
     const parseRoles = (value: unknown): string[] => {
       if (!value) {

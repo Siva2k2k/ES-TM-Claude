@@ -2,6 +2,7 @@ import { Notification, INotification, NotificationType, NotificationPriority } f
 import { NotificationSettings } from '@/models/NotificationSettings';
 import { User } from '@/models/User';
 import mongoose from 'mongoose';
+import { IdUtils } from '@/utils/idUtils';
 
 export interface CreateNotificationParams {
   recipient_id: string | mongoose.Types.ObjectId;
@@ -29,17 +30,10 @@ export class NotificationService {
    * Create a new notification
    */
   static async create(params: CreateNotificationParams): Promise<INotification> {
-    const validObjectId = (id: any) =>
-      mongoose.Types.ObjectId.isValid(id) && new mongoose.Types.ObjectId(id).toString() === id; 
-
-
+    // Use centralized ID parsing utility
     const notification = new (Notification as any)({
-      recipient_id: validObjectId(params.recipient_id)
-        ? new mongoose.Types.ObjectId(params.recipient_id)
-        : undefined,
-      sender_id: params.sender_id && validObjectId(params.sender_id)
-        ? new mongoose.Types.ObjectId(params.sender_id)
-        : undefined,
+      recipient_id: IdUtils.toObjectId(params.recipient_id) || undefined,
+      sender_id: IdUtils.toObjectId(params.sender_id) || undefined,
       type: params.type,
       title: params.title,
       message: params.message,
