@@ -11,6 +11,7 @@ import {
 import { TimesheetApprovalService } from '../services/TimesheetApprovalService';
 import { useAuth } from '../store/contexts/AuthContext';
 import { useToast } from './useToast';
+import { getMondayOfWeek } from '../utils/timesheetHelpers';
 
 function isWeekendDate(dateStr: string): boolean {
   try {
@@ -96,7 +97,7 @@ export function useTimesheetForm(
   const form = useForm<TimesheetFormData>({
     resolver: zodResolver(timesheetFormSchema),
     defaultValues: options.defaultValues || {
-      week_start_date: getMonday(new Date()).toISOString().split('T')[0],
+      week_start_date: getMondayOfWeek(new Date()).toISOString().split('T')[0],
       entries: [],
     },
     mode: 'onChange',
@@ -320,14 +321,4 @@ export function useTimesheetForm(
     weeklyTotal,
     validationWarnings,
   };
-}
-
-/**
- * Helper function to get Monday of the current week
- */
-function getMonday(date: Date): Date {
-  const d = new Date(date);
-  const day = d.getDay();
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-  return new Date(d.setDate(diff));
 }

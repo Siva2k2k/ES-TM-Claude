@@ -274,3 +274,36 @@ export function getRoleColor(role: string): string {
 
   return colors[role.toLowerCase()] || colors.employee;
 }
+
+/**
+ * Get audit action color classes
+ * Used for audit logs and action tracking
+ * @param action - Action type (CREATE, UPDATE, DELETE, APPROVE, REJECT, LOGIN, etc.)
+ * @returns Tailwind CSS text color classes
+ */
+export function getActionColor(action: string): string {
+  const upperAction = action.toUpperCase();
+
+  // Destructive actions - red
+  if (upperAction.includes('DELETE') || upperAction.includes('REJECT')) {
+    return 'text-red-600 bg-red-50 border-red-300';
+  }
+
+  // Create/Approve actions - green
+  if (upperAction.includes('CREATE') || upperAction.includes('APPROVE')) {
+    return 'text-green-600 bg-green-50 border-green-300';
+  }
+
+  // Update/Edit actions - blue
+  if (upperAction.includes('UPDATE') || upperAction.includes('EDIT')) {
+    return 'text-blue-600 bg-blue-50 border-blue-300';
+  }
+
+  // Login/Auth actions - purple
+  if (upperAction.includes('LOGIN') || upperAction.includes('LOGOUT') || upperAction.includes('AUTH')) {
+    return 'text-purple-600 bg-purple-50 border-purple-300';
+  }
+
+  // Default - gray
+  return 'text-gray-600 bg-gray-50 border-gray-300';
+}

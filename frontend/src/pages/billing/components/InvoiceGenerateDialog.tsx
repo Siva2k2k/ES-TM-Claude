@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import type { BillingClient } from '../../../types/billing';
+import { getCurrentWeekMonday } from '../../../utils/timesheetHelpers';
 
 interface InvoiceGenerateDialogProps {
   open: boolean;
@@ -8,22 +9,14 @@ interface InvoiceGenerateDialogProps {
   onGenerate: (clientId: string, weekStart: string) => Promise<void> | void;
 }
 
-const getDefaultWeekStart = () => {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(now.setDate(diff));
-  return monday.toISOString().split('T')[0];
-};
-
 export function InvoiceGenerateDialog({ open, clients, onClose, onGenerate }: InvoiceGenerateDialogProps) {
   const [clientId, setClientId] = useState('');
-  const [weekStart, setWeekStart] = useState(getDefaultWeekStart);
+  const [weekStart, setWeekStart] = useState(getCurrentWeekMonday);
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setWeekStart(getDefaultWeekStart());
+      setWeekStart(getCurrentWeekMonday());
       setClientId(clients[0]?.id ?? '');
     }
   }, [open, clients]);

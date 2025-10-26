@@ -1,11 +1,9 @@
-import type { Project } from '../../../types';
+import type { Project } from '../types';
+import { formatDate } from './formatting';
 
 export type ViewMode = 'monthly' | 'weekly' | 'timeline' | 'custom';
 
 const toIso = (date: Date) => date.toISOString().split('T')[0];
-
-const formatShortDate = (date: Date) =>
-  date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
 
 export function buildMonthlyRange(offset: number) {
   const start = new Date();
@@ -31,7 +29,7 @@ export function buildWeeklyRange(offset: number) {
   return {
     startDate: toIso(start),
     endDate: toIso(end),
-    label: `${formatShortDate(start)} - ${formatShortDate(end)}`
+    label: `${formatDate(start, 'short')} - ${formatDate(end, 'short')}`
   };
 }
 
@@ -80,7 +78,7 @@ export function buildTimelineRange(
   return {
     startDate: toIso(earliest),
     endDate: toIso(resolvedLatest),
-    label: `${formatShortDate(earliest)} - ${formatShortDate(resolvedLatest)}`
+    label: `${formatDate(earliest, 'short')} - ${formatDate(resolvedLatest, 'short')}`
   };
 }
 
@@ -96,5 +94,5 @@ export function formatRangeLabel(startDate: string, endDate: string, mode: ViewM
 
   const start = new Date(startDate);
   const end = new Date(endDate);
-  return `${formatShortDate(start)} - ${formatShortDate(end)}`;
+  return `${formatDate(start, 'short')} - ${formatDate(end, 'short')}`;
 }

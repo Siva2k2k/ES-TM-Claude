@@ -13,6 +13,8 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import * as formatting from '../../../utils/formatting';
+import { getActionColor } from '../../../utils/statusUtils';
 
 export interface AuditLog {
   _id: string;
@@ -34,29 +36,9 @@ interface AuditLogTableProps {
   onViewDetails: (log: AuditLog) => void;
 }
 
-const getActionColor = (action: string): string => {
-  if (action.includes('DELETE') || action.includes('REJECT')) return 'text-red-600 bg-red-50';
-  if (action.includes('CREATE') || action.includes('APPROVE')) return 'text-green-600 bg-green-50';
-  if (action.includes('UPDATE') || action.includes('EDIT')) return 'text-blue-600 bg-blue-50';
-  if (action.includes('LOGIN')) return 'text-purple-600 bg-purple-50';
-  return 'text-gray-600 bg-gray-50';
-};
-
-const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date);
-};
-
 export const AuditLogTable: React.FC<AuditLogTableProps> = ({
   logs,
-  loading = false,
-  onViewDetails
+  loading = false
 }) => {
   const [expandedRows, setExpandedRows] = React.useState<Set<string>>(new Set());
 
@@ -124,7 +106,7 @@ export const AuditLogTable: React.FC<AuditLogTableProps> = ({
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                     <div className="flex items-center">
                       <Clock className="h-4 w-4 text-gray-400 mr-2" />
-                      {formatDate(log.timestamp)}
+                      {formatting.formatDate(log.timestamp, 'datetime')}
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">

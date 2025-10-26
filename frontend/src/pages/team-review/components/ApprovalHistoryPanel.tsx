@@ -17,6 +17,7 @@ import {
   FileText
 } from 'lucide-react';
 import type { ApprovalHistoryEntry, TimesheetStatus } from '../../../types/timesheetApprovals';
+import * as formatting from '../../../utils/formatting';
 
 interface ApprovalHistoryPanelProps {
   history: ApprovalHistoryEntry[];
@@ -84,21 +85,6 @@ const getStatusDisplayName = (status: TimesheetStatus): string => {
     rejected: 'Rejected'
   };
   return names[status] || status;
-};
-
-/**
- * Format date and time
- */
-const formatDateTime = (date: Date | string): string => {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true
-  });
 };
 
 export const ApprovalHistoryPanel: React.FC<ApprovalHistoryPanelProps> = ({
@@ -188,7 +174,7 @@ export const ApprovalHistoryPanel: React.FC<ApprovalHistoryPanelProps> = ({
                         </div>
                         <div className="flex items-center text-xs text-gray-500">
                           <Calendar className="w-3 h-3 mr-1" />
-                          {formatDateTime(entry.created_at)}
+                          {formatting.formatDate(entry.created_at, 'datetime')}
                         </div>
                       </div>
 

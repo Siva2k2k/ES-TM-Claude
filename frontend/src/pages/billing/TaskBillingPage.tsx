@@ -5,6 +5,7 @@ import type { TaskBillingRecord } from '../../types/billing';
 import { BillingHeader } from './components/BillingHeader';
 import { BillingEditHoursDialog } from './components/BillingEditHoursDialog';
 import { TaskBillingTable } from './components/TaskBillingTable';
+import * as formatting from '../../utils/formatting';
 
 interface EditingState {
   task: TaskBillingRecord;
@@ -13,8 +14,6 @@ interface EditingState {
   currentBillable: number;
   totalHours: number;
 }
-
-const formatDate = (date: string) => new Date(date).toLocaleDateString();
 
 export function TaskBillingPage() {
   const { projects } = useBillingContext();
@@ -33,7 +32,7 @@ export function TaskBillingPage() {
   const projectOptions = useMemo(
     () =>
       projects.map((project) => ({
-        id: project._id ?? project.id ?? '',
+        id: project.id ?? project.id ?? '',
         name: project.name
       })),
     [projects]
@@ -147,7 +146,7 @@ export function TaskBillingPage() {
                 {card.value}
               </p>
               <p className="text-xs text-slate-400 dark:text-slate-500">
-                {formatDate(params.startDate)} – {formatDate(params.endDate)}
+                {formatting.formatDate(params.startDate, 'short')} – {formatting.formatDate(params.endDate, 'short')}
               </p>
             </div>
           ))}

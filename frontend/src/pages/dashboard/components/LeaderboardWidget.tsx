@@ -1,6 +1,7 @@
 import React from 'react';
 import { Trophy, Medal, Award, TrendingUp } from 'lucide-react';
 import { Sparkline } from './AdvancedCharts';
+import * as formatting from '../../../utils/formatting';
 
 // ============================================================================
 // TYPES
@@ -33,11 +34,11 @@ interface LeaderboardWidgetProps {
 const formatValue = (value: number, format: string): string => {
   switch (format) {
     case 'currency':
-      return `$${value.toLocaleString()}`;
+      return formatting.formatCurrency(value, 'USD');
     case 'hours':
-      return `${value.toFixed(1)}h`;
+      return formatting.formatDuration(value, 'short');
     case 'percentage':
-      return `${value.toFixed(1)}%`;
+      return formatting.formatPercentage(value);
     case 'number':
     default:
       return value.toLocaleString();

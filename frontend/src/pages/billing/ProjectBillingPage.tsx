@@ -14,7 +14,7 @@ import {
   buildWeeklyRange,
   formatRangeLabel,
   type ViewMode
-} from './utils/dateRanges';
+} from '../../utils/dateRanges';
 import { BillingService } from '../../services/BillingService';
 import { showError, showSuccess } from '../../utils/toast';
 

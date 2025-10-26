@@ -7,6 +7,7 @@ import React, { useState } from 'react';
 import { Clock, Calendar, CheckCircle, XCircle, AlertCircle, Save } from 'lucide-react';
 import type { ProjectWeekUser } from '../../../types/timesheetApprovals';
 import { TeamReviewService } from '../../../services/TeamReviewService';
+import * as formatting from '../../../utils/formatting';
 
 interface UserTimesheetDetailsProps {
   user: ProjectWeekUser;
@@ -64,15 +65,6 @@ export const UserTimesheetDetails: React.FC<UserTimesheetDetailsProps> = ({
       default:
         return <span className={`${baseClasses} bg-yellow-100 text-yellow-800`}>Pending</span>;
     }
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat('en-US', {
-      month: 'short',
-      day: 'numeric',
-      weekday: 'short'
-    }).format(date);
   };
 
   const groupedEntries = user.entries.reduce((acc, entry) => {
@@ -170,14 +162,14 @@ export const UserTimesheetDetails: React.FC<UserTimesheetDetailsProps> = ({
               {user.approval_status === 'pending' && canApprove && approvalRole !== 'management' && (
                 <div className="ml-3 flex items-center gap-2">
                   <button
-                    onClick={(e) => { e.stopPropagation(); onApproveUser && onApproveUser(); }}
+                    onClick={(e) => { e.stopPropagation(); onApproveUser?.(); }}
                     className="inline-flex items-center gap-2 px-3 py-1 bg-green-600 text-white rounded-md text-sm hover:bg-green-700"
                   >
                     <CheckCircle className="w-4 h-4" />
                     Approve
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onRejectUser && onRejectUser(); }}
+                    onClick={(e) => { e.stopPropagation(); onRejectUser?.(); }}
                     className="inline-flex items-center gap-2 px-3 py-1 bg-red-600 text-white rounded-md text-sm hover:bg-red-700"
                   >
                     <XCircle className="w-4 h-4" />
@@ -305,7 +297,7 @@ export const UserTimesheetDetails: React.FC<UserTimesheetDetailsProps> = ({
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4 text-gray-600" />
                         <span className="font-medium text-gray-900">
-                          {formatDate(date)}
+                          {formatting.formatDate(date, 'long')}
                         </span>
                       </div>
                       <span className="text-sm font-medium text-gray-700">

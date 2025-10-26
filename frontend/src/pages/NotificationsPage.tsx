@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Bell, Check, CheckCheck, ArrowLeft, Trash2, Filter, X, Calendar } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { backendApi } from '../services/BackendAPI';
+import * as formatting from '../utils/formatting';
 
 interface Notification {
   _id: string;
@@ -178,17 +179,6 @@ const NotificationsPage: React.FC = () => {
       case 'low': return 'border-l-green-500 bg-green-50';
       default: return 'border-l-gray-500 bg-gray-50';
     }
-  };
-
-  const formatTimeAgo = (dateString: string) => {
-    const now = new Date();
-    const date = new Date(dateString);
-    const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-    
-    if (diffInSeconds < 60) return `${diffInSeconds}s ago`;
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
-    return `${Math.floor(diffInSeconds / 86400)}d ago`;
   };
 
   const filteredNotifications = notifications.filter(notification => {
@@ -498,7 +488,7 @@ const NotificationsPage: React.FC = () => {
                               {notification.priority}
                             </span>
                           </div>
-                          <span>{formatTimeAgo(notification.created_at)}</span>
+                          <span>{formatting.formatRelativeTime(notification.created_at)}</span>
                         </div>
                       </div>
                     </div>

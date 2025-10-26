@@ -6,24 +6,13 @@
 import React from 'react';
 import { Calendar, Clock, FileText, Tag } from 'lucide-react';
 import type { TimeEntry } from '../../../types';
+import * as formatting from '../../../utils/formatting';  
 
 interface TimeEntryTableProps {
   entries: TimeEntry[];
   projectId?: string;
   showProjectColumn?: boolean;
 }
-
-/**
- * Format date to readable string
- */
-const formatDate = (date: string | Date): string => {
-  const d = typeof date === 'string' ? new Date(date) : date;
-  return d.toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric'
-  });
-};
 
 /**
  * Format time to HH:MM
@@ -60,7 +49,7 @@ export const TimeEntryTable: React.FC<TimeEntryTableProps> = ({
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center text-sm text-gray-900">
                 <Calendar className="w-4 h-4 mr-2 text-gray-500" />
-                <span className="font-medium">{formatDate(entry.date)}</span>
+                <span className="font-medium">{formatting.formatDate(entry.date, 'long')}</span>
               </div>
               <div className="inline-flex items-center px-2.5 py-1 rounded-full bg-blue-100 text-blue-800 text-sm font-semibold">
                 <Clock className="w-3 h-3 mr-1" />
@@ -135,7 +124,7 @@ export const TimeEntryTable: React.FC<TimeEntryTableProps> = ({
             {entries.map((entry, index) => (
               <tr key={entry.id || index} className="hover:bg-gray-50">
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">
-                  {formatDate(entry.date)}
+                  {formatting.formatDate(entry.date, 'long')}
                 </td>
                 <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-600">
                   {formatTime(entry.start_time)} - {formatTime(entry.end_time)}

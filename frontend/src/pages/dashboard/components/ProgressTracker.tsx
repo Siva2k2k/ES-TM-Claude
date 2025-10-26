@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle, Clock, AlertTriangle, Circle } from 'lucide-react';
+import * as formatting from '../../../utils/formatting';
 
 // ============================================================================
 // TYPES
@@ -70,7 +71,7 @@ const getProgressColor = (progress: number, status: ProgressStatus) => {
   return 'bg-gray-400';
 };
 
-const formatDate = (dateString: string): string => {
+const formatDueDate = (dateString: string): string => {
   const date = new Date(dateString);
   const now = new Date();
   const diffTime = date.getTime() - now.getTime();
@@ -80,7 +81,7 @@ const formatDate = (dateString: string): string => {
   if (diffDays === 0) return 'Due today';
   if (diffDays === 1) return 'Due tomorrow';
   if (diffDays <= 7) return `Due in ${diffDays} days`;
-  return date.toLocaleDateString();
+  return formatting.formatDate(date, 'short');
 };
 
 // ============================================================================
@@ -180,7 +181,7 @@ export const ProgressTracker: React.FC<ProgressTrackerProps> = ({
                           : 'text-gray-600 dark:text-gray-400'
                       }`}
                     >
-                      {formatDate(item.dueDate)}
+                      {formatDueDate(item.dueDate)}
                     </span>
                   )}
                 </div>

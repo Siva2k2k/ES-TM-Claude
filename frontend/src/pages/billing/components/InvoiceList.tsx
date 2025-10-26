@@ -1,6 +1,7 @@
 import React from 'react';
 import { CheckCircle2, Eye, FileText, XCircle } from 'lucide-react';
 import type { BillingInvoice } from '../../../types/billing';
+import * as formatting from '../../../utils/formatting';
 
 interface InvoiceListProps {
   invoices: BillingInvoice[];
@@ -22,9 +23,6 @@ const statusStyles: Record<BillingInvoice['status'], { label: string; classes: s
 
 const canApproveStatus: Array<BillingInvoice['status']> = ['pending_approval'];
 const canRejectStatus: Array<BillingInvoice['status']> = ['pending_approval', 'approved'];
-
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value);
 
 export function InvoiceList({ invoices, loading, onApprove, onReject, onView }: InvoiceListProps) {
   if (loading) {
@@ -89,7 +87,7 @@ export function InvoiceList({ invoices, loading, onApprove, onReject, onView }: 
                     {new Date(invoice.due_date).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3 text-right text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    {formatCurrency(invoice.total_amount)}
+                    {formatting.formatCurrency(invoice.total_amount, 'USD')}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${status.classes}`}>

@@ -8,26 +8,16 @@ import React from 'react';
 import {
   Trash2,
   RotateCcw,
-  AlertTriangle,
-  User,
-  Calendar,
-  FileText,
-  Briefcase,
-  CheckSquare
+  AlertTriangle
 } from 'lucide-react';
-
-export interface DeletedItem {
-  _id: string;
-  entity_type: 'user' | 'project' | 'client' | 'task' | 'timesheet';
-  name?: string;
-  email?: string;
-  full_name?: string;
-  deleted_at: string;
-  deleted_by?: string;
-  deletion_reason?: string;
-  can_restore: boolean;
-  has_dependencies?: boolean;
-}
+import * as formatting from '../../../utils/formatting';
+import {
+  getEntityIcon,
+  getEntityColor,
+  getEntityDisplayName,
+  getEntityTypeLabel,
+  type DeletedItem
+} from '../../../utils/entityHelpers';
 
 interface DeletedItemsTableProps {
   items: DeletedItem[];
@@ -36,55 +26,6 @@ interface DeletedItemsTableProps {
   onHardDelete: (item: DeletedItem) => void;
   canHardDelete?: boolean;
 }
-
-const getEntityIcon = (entityType: string) => {
-  switch (entityType) {
-    case 'user':
-      return <User className="h-5 w-5" />;
-    case 'project':
-      return <Briefcase className="h-5 w-5" />;
-    case 'client':
-      return <Briefcase className="h-5 w-5" />;
-    case 'task':
-      return <CheckSquare className="h-5 w-5" />;
-    case 'timesheet':
-      return <Calendar className="h-5 w-5" />;
-    default:
-      return <FileText className="h-5 w-5" />;
-  }
-};
-
-const getEntityColor = (entityType: string): string => {
-  switch (entityType) {
-    case 'user':
-      return 'bg-blue-100 text-blue-800';
-    case 'project':
-      return 'bg-purple-100 text-purple-800';
-    case 'client':
-      return 'bg-green-100 text-green-800';
-    case 'task':
-      return 'bg-yellow-100 text-yellow-800';
-    case 'timesheet':
-      return 'bg-orange-100 text-orange-800';
-    default:
-      return 'bg-gray-100 text-gray-800';
-  }
-};
-
-const formatDate = (dateString: string): string => {
-  const date = new Date(dateString);
-  return new Intl.DateTimeFormat('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  }).format(date);
-};
-
-const getDisplayName = (item: DeletedItem): string => {
-  return item.full_name || item.name || item.email || 'Unknown';
-};
 
 export const DeletedItemsTable: React.FC<DeletedItemsTableProps> = ({
   items,
@@ -146,7 +87,7 @@ export const DeletedItemsTable: React.FC<DeletedItemsTableProps> = ({
                   </div>
                   <div className="ml-4">
                     <div className="text-sm font-medium text-gray-900">
-                      {getDisplayName(item)}
+                      {getEntityDisplayName(item)}
                     </div>
                     {item.email && item.entity_type === 'user' && (
                       <div className="text-sm text-gray-500">{item.email}</div>
@@ -156,11 +97,11 @@ export const DeletedItemsTable: React.FC<DeletedItemsTableProps> = ({
               </td>
               <td className="px-6 py-4 whitespace-nowrap">
                 <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${getEntityColor(item.entity_type)}`}>
-                  {item.entity_type.replace(/_/g, ' ').toUpperCase()}
+                  {getEntityTypeLabel(item.entity_type)}
                 </span>
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                {formatDate(item.deleted_at)}
+                {formatting.formatDate(item.deleted_at, 'datetime')}
               </td>
               <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                 {item.deleted_by || 'System'}
