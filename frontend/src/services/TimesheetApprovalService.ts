@@ -396,17 +396,6 @@ export class TimesheetApprovalService {
     }
   }
 
-  // Check if user is in manager's team (simplified - in real app, check project assignments)
-  // static isUserInManagerTeam(_userId: string, _managerId: string): boolean {
-  //   // Simplified logic - in real app, check project memberships
-  //   return true; // For demo purposes
-  // }
-  static isUserInManagerTeam(_userId: string, _managerId: string): boolean {
-    // Simplified logic - in real app, check project memberships
-    if (_userId === _managerId) return true;
-    return true; // For demo purposes
-  }
-
   // Create new timesheet
   static async createTimesheet(userId: string, weekStartDate: string): Promise<Timesheet | null> {
     try {
