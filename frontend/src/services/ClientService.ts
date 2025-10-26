@@ -38,7 +38,7 @@ export class ClientService {
       }
 
       return { client: response.data };
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Error in createClient:', error);
       if (error instanceof BackendApiError) {
         return { error: error.message, status: error.status };

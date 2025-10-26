@@ -3,7 +3,7 @@
  * Project-wise approval tracking with multi-manager support
  */
 
-import type { TimeEntry, UserRole, User, TimesheetStatus } from './index';
+import type { TimeEntry, UserRole, TimesheetStatus } from './index';
 
 /**
  * Project role types for approval workflow context
@@ -399,4 +399,27 @@ export interface BulkProjectWeekApprovalResponse {
     project_name: string;
     week_label: string;
   };
+}
+
+
+export interface TimeEntryInput {
+  project_id?: string;
+  task_id?: string;
+  date: string;
+  hours: number;
+  description?: string;
+  is_billable: boolean;
+  custom_task_description?: string;
+  entry_type: 'project_task' | 'custom_task';
+}
+
+export interface BulkTimeEntry {
+  project_id?: string;
+  task_id?: string;
+  hours: number;
+  description?: string;
+  is_billable: boolean;
+  custom_task_description?: string;
+  entry_type: 'project_task' | 'custom_task';
+  dates: string[]; // Array of dates for bulk entry
 }

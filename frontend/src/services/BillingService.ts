@@ -10,44 +10,13 @@ import type {
   ProjectBillingResponse,
   RevenueByProject,
   TaskBillingResponse,
-  UserBillingResponse
+  UserBillingResponse,
+  ProjectBillingParams,
+  TaskBillingParams,
+  UserBillingParams,
+  UpdateBillingHoursPayload
 } from '../types/billing';
 
-interface ProjectBillingParams {
-  startDate: string;
-  endDate: string;
-  view: BillingPeriodView;
-  projectIds?: string[];
-  clientIds?: string[];
-}
-
-interface TaskBillingParams {
-  startDate: string;
-  endDate: string;
-  projectIds?: string[];
-  taskIds?: string[];
-}
-
-interface UserBillingParams {
-  startDate: string;
-  endDate: string;
-  view: BillingPeriodView | 'custom';
-  projectIds?: string[];
-  clientIds?: string[];
-  roles?: string[];
-  search?: string;
-}
-
-interface UpdateBillingHoursPayload {
-  userId: string;
-  projectId?: string;
-  taskId?: string;
-  startDate: string;
-  endDate: string;
-  billableHours: number;
-  totalHours?: number;
-  reason?: string;
-}
 
 export class BillingService {
   /**

@@ -1,29 +1,9 @@
-import type { Timesheet, TimeEntry, TimesheetStatus, UserRole, TimesheetWithDetails, User } from '../types';
+import type { Timesheet, TimeEntry, TimesheetStatus, UserRole, TimesheetWithDetails } from '../types';
+import type { TimeEntryInput, BulkTimeEntry } from '../types/timesheetApprovals';
 import { TimesheetService } from './TimesheetService';
 import { backendApi } from '../lib/backendApi';
 
 
-export interface TimeEntryInput {
-  project_id?: string;
-  task_id?: string;
-  date: string;
-  hours: number;
-  description?: string;
-  is_billable: boolean;
-  custom_task_description?: string;
-  entry_type: 'project_task' | 'custom_task';
-}
-
-export interface BulkTimeEntry {
-  project_id?: string;
-  task_id?: string;
-  hours: number;
-  description?: string;
-  is_billable: boolean;
-  custom_task_description?: string;
-  entry_type: 'project_task' | 'custom_task';
-  dates: string[]; // Array of dates for bulk entry
-}
 
 export class TimesheetApprovalService {
   

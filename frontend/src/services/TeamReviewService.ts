@@ -15,7 +15,6 @@ import type {
   TeamReviewFilters,
   ProjectWeekFilters,
   ProjectWeekResponse,
-  BulkProjectWeekApprovalRequest,
   BulkProjectWeekApprovalResponse
 } from '../types/timesheetApprovals';
 

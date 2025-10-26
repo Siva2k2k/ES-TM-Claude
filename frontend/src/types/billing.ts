@@ -268,3 +268,40 @@ export interface CreateRateData {
   effective_from: string;
   effective_until?: string;
 }
+
+
+export interface ProjectBillingParams {
+  startDate: string;
+  endDate: string;
+  view: BillingPeriodView;
+  projectIds?: string[];
+  clientIds?: string[];
+}
+
+export interface TaskBillingParams {
+  startDate: string;
+  endDate: string;
+  projectIds?: string[];
+  taskIds?: string[];
+}
+
+export interface UserBillingParams {
+  startDate: string;
+  endDate: string;
+  view: BillingPeriodView | 'custom';
+  projectIds?: string[];
+  clientIds?: string[];
+  roles?: string[];
+  search?: string;
+}
+
+export interface UpdateBillingHoursPayload {
+  userId: string;
+  projectId?: string;
+  taskId?: string;
+  startDate: string;
+  endDate: string;
+  billableHours: number;
+  totalHours?: number;
+  reason?: string;
+}
