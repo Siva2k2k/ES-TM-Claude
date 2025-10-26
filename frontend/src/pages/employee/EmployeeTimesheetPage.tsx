@@ -27,7 +27,7 @@ import { useModal } from '../../hooks/useModal';
 import { Button } from '../../components/ui/Button';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../../components/ui/Tabs';
 import { Modal } from '../../components/ui/Modal';
-import { LoadingSpinner } from '../../components/shared/LoadingSpinner';
+import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { PageHeader } from '../../components/shared/PageHeader';
 import {
   TimesheetForm,

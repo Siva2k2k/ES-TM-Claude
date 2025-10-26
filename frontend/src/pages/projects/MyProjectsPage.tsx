@@ -4,7 +4,6 @@ import { ProjectService } from '../../services/ProjectService';
 import { useAuth } from '../../store/contexts/AuthContext';
 import { useRoleManager } from '../../hooks/useRoleManager';
 import type { Project, Task } from '../../types';
-import { ProjectCard } from './components/ProjectCard';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Search } from 'lucide-react';
 import SlideOver from '../../components/ui/SlideOver';

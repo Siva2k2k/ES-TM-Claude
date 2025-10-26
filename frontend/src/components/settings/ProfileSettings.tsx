@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { User, Mail, DollarSign, Shield, Save, Loader2, RefreshCw } from 'lucide-react';
+import { User, Mail, DollarSign, Shield, Save, Loader2, RefreshCw, Lock, Edit } from 'lucide-react';
 import { useAuth } from '../../store/contexts/AuthContext';
 import { backendApi } from '../../lib/backendApi';
 import { useToast } from '../../hooks/useToast';
+import { UserProfileModal } from '../UserProfileModal';
+import { ChangePasswordModal } from '../ChangePasswordModal';
 
 interface ProfileSettingsProps {
   onSettingsChange: () => void;
@@ -33,6 +35,8 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
   });
   const [loading, setLoading] = useState(false);
   const [hasChanges, setHasChanges] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
 
   useEffect(() => {
     if (currentUser) {
@@ -114,6 +118,20 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
     }
   };
 
+  const handleProfileUpdate = async () => {
+    setShowProfileModal(false);
+    if (refreshUser) {
+      await refreshUser();
+    }
+    onSettingsSaved();
+    toast.success('Profile updated successfully!');
+  };
+
+  const handlePasswordChange = () => {
+    setShowPasswordModal(false);
+    toast.success('Password changed successfully!');
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -122,6 +140,29 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
           Profile Information
         </h3>
         <p className="text-sm text-gray-500">Update your personal information and contact details.</p>
+      </div>
+
+      {/* Quick Actions */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+        <h4 className="text-sm font-medium text-gray-900 mb-3">Quick Actions</h4>
+        <div className="flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={() => setShowProfileModal(true)}
+            className="inline-flex items-center px-4 py-2 border border-blue-300 rounded-md shadow-sm text-sm font-medium text-blue-700 bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors"
+          >
+            <Edit className="h-4 w-4 mr-2" />
+            Edit Profile (Modal)
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowPasswordModal(true)}
+            className="inline-flex items-center px-4 py-2 border border-indigo-300 rounded-md shadow-sm text-sm font-medium text-indigo-700 bg-white hover:bg-indigo-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
+          >
+            <Lock className="h-4 w-4 mr-2" />
+            Change Password
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
@@ -246,6 +287,30 @@ export const ProfileSettings: React.FC<ProfileSettingsProps> = ({
           </button>
         </div>
       </form>
+
+      {/* Profile Modal */}
+      <UserProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        user={currentUser ? {
+          id: currentUser.id || '',
+          email: currentUser.email,
+          full_name: currentUser.full_name || '',
+          role: currentUser.role,
+          hourly_rate: currentUser.hourly_rate,
+          created_at: currentUser.created_at,
+          updated_at: currentUser.updated_at,
+          manager_id: currentUser.manager_id
+        } : undefined}
+        onUpdate={handleProfileUpdate}
+      />
+
+      {/* Change Password Modal */}
+      <ChangePasswordModal
+        isOpen={showPasswordModal}
+        onClose={() => setShowPasswordModal(false)}
+        onSuccess={handlePasswordChange}
+      />
     </div>
   );
 };

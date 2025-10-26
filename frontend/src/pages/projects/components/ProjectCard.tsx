@@ -11,7 +11,7 @@ import {
   Building2
 } from 'lucide-react';
 import type { Project } from '../../../types';
-import { ProjectStatusBadge } from './ProjectStatusBadge';
+import { StatusBadge } from '../../../components/shared/StatusBadge';
 import * as formatting from '../../../utils/formatting';
 
 interface ProjectCardProps {
@@ -68,7 +68,7 @@ export const ProjectCard: React.FC<ProjectCardProps> = ({
               <span className="truncate">{getClientName()}</span>
             </div>
           </div>
-          <ProjectStatusBadge status={project.status as any} size="sm" />
+          <StatusBadge type="project" status={project.status} size="sm" />
         </div>
 
         {/* Key Metrics Row (Mobile-optimized) */}

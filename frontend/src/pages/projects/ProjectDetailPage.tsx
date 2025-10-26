@@ -5,9 +5,9 @@ import { ProjectService } from '../../services/ProjectService';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Button } from '../../components/ui/Button';
-import { ProjectCard } from '../../components/project/ProjectCard';
-import { TaskList } from '../../components/project/TaskList';
-import type { Project as ProjectType, Task } from '../../components/project/ProjectList';
+import { ProjectCard } from './components/ProjectCard';
+import { ProjectTasksSection } from './components/ProjectTasksSection';
+import type { Project as ProjectType, Task } from '../../types';
 
 type ViewTab = 'overview' | 'tasks' | 'members';
 
@@ -126,9 +126,15 @@ export const ProjectDetailPage: React.FC = () => {
               </div>
             )}
 
-            {activeTab === 'tasks' && (
+            {activeTab === 'tasks' && projectId && (
               <div>
-                <TaskList tasks={tasks} />
+                <ProjectTasksSection
+                  projectId={projectId}
+                  tasks={tasks}
+                  onAddTask={() => console.log('Add task')}
+                  onEditTask={(task) => console.log('Edit task', task)}
+                  onDeleteTask={(taskId) => console.log('Delete task', taskId)}
+                />
               </div>
             )}
           </div>
