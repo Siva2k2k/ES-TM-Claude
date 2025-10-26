@@ -324,33 +324,17 @@ export class ProjectBillingController {
   }
 
   /**
-   * NEW IMPLEMENTATION: Aggregate billing data from TimesheetProjectApproval
-   * 
-   * Data Flow:
-   * 1. Fetch approved project approvals (management_status='approved')
-   * 2. Get billing adjustments (Management's final changes)
-   * 3. Calculate: final_billable = base_billable + management_adjustment
-   * 
-   * Benefits:
-   * - Only includes Management-verified data
-   * - Clear adjustment hierarchy: Manager → Management
-   * - No unverified project groups
+   * Build project filter for MongoDB queries
    */
-  private static async buildProjectBillingData(options: BuildProjectBillingOptions): Promise<ProjectBillingData[]> {
-    const { startDate, endDate, projectIds = [], clientIds = [], view } = options;
-
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-
-    // Step 1: Build project filter
-    const projectFilter: Record<string, unknown> = {};
+  private static buildProjectFilter(projectIds: string[], clientIds: string[]): Record<string, unknown> {
+    const filter: Record<string, unknown> = {};
 
     if (projectIds.length > 0) {
       const ids = projectIds
         .filter((id) => mongoose.Types.ObjectId.isValid(id))
         .map((id) => new mongoose.Types.ObjectId(id));
       if (ids.length > 0) {
-        projectFilter._id = { $in: ids };
+        filter._id = { $in: ids };
       }
     }
 
@@ -359,23 +343,22 @@ export class ProjectBillingController {
         .filter((id) => mongoose.Types.ObjectId.isValid(id))
         .map((id) => new mongoose.Types.ObjectId(id));
       if (ids.length > 0) {
-        projectFilter.client_id = { $in: ids };
+        filter.client_id = { $in: ids };
       }
     }
 
-    // Step 2: Get all projects (for metadata)
-    const projects = await (Project as any).find(projectFilter)
-      .populate('client_id', 'name')
-      .lean();
+    return filter;
+  }
 
-    if (projects.length === 0) {
-      return [];
-    }
-
-    const projectObjectIds = projects.map((p: any) => p._id);
-
-    // Step 3: Fetch approved project approvals (SOURCE OF TRUTH)
-    const approvedApprovals = await (TimesheetProjectApproval as any).aggregate([
+  /**
+   * Fetch approved project approvals from TimesheetProjectApproval
+   */
+  private static async fetchApprovedProjectApprovals(
+    projectObjectIds: mongoose.Types.ObjectId[],
+    start: Date,
+    end: Date
+  ) {
+    return await (TimesheetProjectApproval as any).aggregate([
       {
         $lookup: {
           from: 'timesheets',
@@ -400,31 +383,167 @@ export class ProjectBillingController {
             project_id: '$project_id',
             user_id: '$timesheet.user_id'
           },
-          // IMPORTANT: These are the fields from TimesheetProjectApproval
-          // worked_hours: sum of billable entry hours (actual work)
-          // billable_hours: worked_hours + billable_adjustment (Manager's approved billable)
-          // billable_adjustment: Manager's adjustment during Team Review
           worked_hours: { $sum: '$worked_hours' },
-          base_billable_hours: { $sum: '$billable_hours' }, // This already includes manager adjustment!
+          base_billable_hours: { $sum: '$billable_hours' },
           manager_adjustment: { $sum: '$billable_adjustment' },
           verified_at: { $max: '$management_approved_at' },
           entries_count: { $sum: '$entries_count' }
         }
       }
     ]);
+  }
+
+  /**
+   * Create empty project billing structure
+   */
+  private static createEmptyProjectBilling(projects: any[]): ProjectBillingData[] {
+    return projects.map((project: any) => ({
+      project_id: project._id.toString(),
+      project_name: project.name,
+      client_name: project.client_id?.name,
+      total_hours: 0,
+      billable_hours: 0,
+      non_billable_hours: 0,
+      total_amount: 0,
+      resources: []
+    }));
+  }
+
+  /**
+   * Process user billing data for a project
+   */
+  private static processUserBillingData(
+    approval: any,
+    userMap: Map<string, any>,
+    adjustmentMap: Map<string, any>,
+    project: any,
+    projectId: string,
+    view?: string
+  ): ResourceBillingData | null {
+    const userId = approval._id.user_id.toString();
+    const user = userMap.get(userId);
+
+    if (!user) return null;
+
+    const workedHours = approval.worked_hours || 0;
+    const baseBillableHours = approval.base_billable_hours || 0;
+    const managerAdjustment = approval.manager_adjustment || 0;
+    const verifiedAt = approval.verified_at;
+
+    const adjustmentKey = `${projectId}_${userId}`;
+    const billingAdj = adjustmentMap.get(adjustmentKey) as any;
+    const managementAdjustment = (billingAdj?.adjustment_hours as number) ?? 0;
+    const lastAdjustedAt = billingAdj?.adjusted_at as Date | undefined;
+
+    const finalBillableHours = baseBillableHours + managementAdjustment;
+    const nonBillableHours = Math.max(workedHours - finalBillableHours, 0);
+
+    const validation = ProjectBillingController.validateAdjustmentIntegrity(
+      workedHours,
+      managerAdjustment,
+      baseBillableHours,
+      managementAdjustment,
+      finalBillableHours
+    );
+
+    if (!validation.valid) {
+      console.error(
+        `⚠️ DATA INTEGRITY ERROR for ${user.full_name} in ${project.name}:`,
+        validation.errors
+      );
+    }
+
+    const hourlyRate = user.hourly_rate || 0;
+    const totalAmount = finalBillableHours * hourlyRate;
+
+    return {
+      user_id: userId,
+      user_name: (user.full_name as string) || 'Unknown User',
+      role: (user.role as string) || 'employee',
+      worked_hours: workedHours,
+      manager_adjustment: managerAdjustment,
+      base_billable_hours: baseBillableHours,
+      management_adjustment: managementAdjustment,
+      final_billable_hours: finalBillableHours,
+      non_billable_hours: nonBillableHours,
+      total_hours: workedHours,
+      billable_hours: finalBillableHours,
+      hourly_rate: hourlyRate,
+      total_amount: totalAmount,
+      verified_at: verifiedAt?.toISOString(),
+      last_adjusted_at: lastAdjustedAt?.toISOString(),
+      tasks: [],
+      weekly_breakdown: view === 'weekly' ? [] : undefined
+    };
+  }
+
+  /**
+   * Calculate verification info for a project
+   */
+  private static calculateProjectVerificationInfo(approvals: any[]) {
+    if (approvals.length === 0) return undefined;
+
+    const totalWorked = approvals.reduce((sum: number, a: any) => sum + (a.worked_hours || 0), 0);
+    const totalBillable = approvals.reduce((sum: number, a: any) => sum + (a.base_billable_hours || 0), 0);
+    const totalAdjustment = approvals.reduce((sum: number, a: any) => sum + (a.manager_adjustment || 0), 0);
+    const latestVerifiedAt = approvals.reduce((latest: Date | undefined, a: any) => {
+      if (!a.verified_at) return latest;
+      if (!latest || a.verified_at > latest) return a.verified_at;
+      return latest;
+    }, undefined);
+
+    return {
+      is_verified: true,
+      worked_hours: totalWorked,
+      billable_hours: totalBillable,
+      manager_adjustment: totalAdjustment,
+      user_count: approvals.length,
+      verified_at: latestVerifiedAt
+    };
+  }
+
+  /**
+   * NEW IMPLEMENTATION: Aggregate billing data from TimesheetProjectApproval
+   *
+   * Data Flow:
+   * 1. Fetch approved project approvals (management_status='approved')
+   * 2. Get billing adjustments (Management's final changes)
+   * 3. Calculate: final_billable = base_billable + management_adjustment
+   *
+   * Benefits:
+   * - Only includes Management-verified data
+   * - Clear adjustment hierarchy: Manager → Management
+   * - No unverified project groups
+   */
+  private static async buildProjectBillingData(options: BuildProjectBillingOptions): Promise<ProjectBillingData[]> {
+    const { startDate, endDate, projectIds = [], clientIds = [], view } = options;
+
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    // Step 1: Build project filter
+    const projectFilter = ProjectBillingController.buildProjectFilter(projectIds, clientIds);
+
+    // Step 2: Get all projects (for metadata)
+    const projects = await (Project as any).find(projectFilter)
+      .populate('client_id', 'name')
+      .lean();
+
+    if (projects.length === 0) {
+      return [];
+    }
+
+    const projectObjectIds = projects.map((p: any) => p._id);
+
+    // Step 3: Fetch approved project approvals (SOURCE OF TRUTH)
+    const approvedApprovals = await ProjectBillingController.fetchApprovedProjectApprovals(
+      projectObjectIds,
+      start,
+      end
+    );
 
     if (approvedApprovals.length === 0) {
-      // No approved data found, return empty projects
-      return projects.map((project: any) => ({
-        project_id: project._id.toString(),
-        project_name: project.name,
-        client_name: project.client_id?.name,
-        total_hours: 0,
-        billable_hours: 0,
-        non_billable_hours: 0,
-        total_amount: 0,
-        resources: []
-      }));
+      return ProjectBillingController.createEmptyProjectBilling(projects);
     }
 
     // Step 4: Get all unique user IDs
@@ -486,79 +605,21 @@ export class ProjectBillingController {
 
       // Step 9: Process each user's billing data
       for (const approval of approvals) {
-        const userId = approval._id.user_id.toString();
-        const user = userMap.get(userId);
-
-        if (!user) continue;
-
-        // Base data from Team Review (TimesheetProjectApproval)
-        const workedHours = approval.worked_hours || 0;
-        const baseBillableHours = approval.base_billable_hours || 0;
-        const managerAdjustment = approval.manager_adjustment || 0;
-        const verifiedAt = approval.verified_at;
-
-        // Management's final adjustment from BillingAdjustment
-        const adjustmentKey = `${projectId}_${userId}`;
-        const billingAdj = adjustmentMap.get(adjustmentKey) as any;
-        const managementAdjustment = (billingAdj?.adjustment_hours as number) ?? 0;
-        const lastAdjustedAt = billingAdj?.adjusted_at as Date | undefined;
-
-        // Final calculation
-        const finalBillableHours = baseBillableHours + managementAdjustment;
-        const nonBillableHours = Math.max(workedHours - finalBillableHours, 0);
-
-        // ✅ SAFEGUARD: Validate adjustment data integrity
-        const validation = ProjectBillingController.validateAdjustmentIntegrity(
-          workedHours,
-          managerAdjustment,
-          baseBillableHours,
-          managementAdjustment,
-          finalBillableHours
+        const resourceBilling = ProjectBillingController.processUserBillingData(
+          approval,
+          userMap,
+          adjustmentMap,
+          project,
+          projectId,
+          view
         );
-        if (!validation.valid) {
-          console.error(
-            `⚠️ DATA INTEGRITY ERROR for ${user.full_name} in ${project.name}:`,
-            validation.errors
-          );
+
+        if (resourceBilling) {
+          projectBilling.resources.push(resourceBilling);
+          projectBilling.total_hours += resourceBilling.worked_hours;
+          projectBilling.billable_hours += resourceBilling.final_billable_hours;
+          projectBilling.total_amount += resourceBilling.total_amount;
         }
-
-        // ✅ Use hourly_rate from User schema for cost calculation
-        const hourlyRate = user.hourly_rate || 0;
-        const totalAmount = finalBillableHours * hourlyRate;
-
-        const resourceBilling: ResourceBillingData = {
-          user_id: userId,
-          user_name: (user.full_name as string) || 'Unknown User',
-          role: (user.role as string) || 'employee',
-          
-          // New structure
-          worked_hours: workedHours,
-          manager_adjustment: managerAdjustment,
-          base_billable_hours: baseBillableHours,
-          management_adjustment: managementAdjustment,
-          final_billable_hours: finalBillableHours,
-          non_billable_hours: nonBillableHours,
-          
-          // Legacy fields (for backward compatibility)
-          total_hours: workedHours,
-          billable_hours: finalBillableHours,
-          
-          hourly_rate: hourlyRate,
-          total_amount: totalAmount,
-          
-          // Metadata
-          verified_at: verifiedAt?.toISOString(),
-          last_adjusted_at: lastAdjustedAt?.toISOString(),
-          
-          // TODO: Implement task breakdown from approved time entries
-          tasks: [],
-          weekly_breakdown: view === 'weekly' ? [] : undefined
-        };
-
-        projectBilling.resources.push(resourceBilling);
-        projectBilling.total_hours += workedHours;
-        projectBilling.billable_hours += finalBillableHours;
-        projectBilling.total_amount += totalAmount;
       }
 
       projectBilling.non_billable_hours = Math.max(
@@ -567,25 +628,7 @@ export class ProjectBillingController {
       );
 
       // Add project-level verification info
-      if (approvals.length > 0) {
-        const totalWorked = approvals.reduce((sum: number, a: any) => sum + (a.worked_hours || 0), 0);
-        const totalBillable = approvals.reduce((sum: number, a: any) => sum + (a.base_billable_hours || 0), 0);
-        const totalAdjustment = approvals.reduce((sum: number, a: any) => sum + (a.manager_adjustment || 0), 0);
-        const latestVerifiedAt = approvals.reduce((latest: Date | undefined, a: any) => {
-          if (!a.verified_at) return latest;
-          if (!latest || a.verified_at > latest) return a.verified_at;
-          return latest;
-        }, undefined);
-
-        projectBilling.verification_info = {
-          is_verified: true,
-          worked_hours: totalWorked,
-          billable_hours: totalBillable,
-          manager_adjustment: totalAdjustment,
-          user_count: approvals.length,
-          verified_at: latestVerifiedAt
-        };
-      }
+      projectBilling.verification_info = ProjectBillingController.calculateProjectVerificationInfo(approvals);
 
       billingData.push(projectBilling);
     }
@@ -745,6 +788,164 @@ export class ProjectBillingController {
   }
 
   /**
+   * Filter and collect time entries from timesheets within date range
+   */
+  private static collectTimeEntriesFromTimesheets(
+    timesheets: any[],
+    start: Date,
+    end: Date,
+    projectIds?: string
+  ): any[] {
+    const timeEntries: any[] = [];
+    const projectIdList = projectIds ? projectIds.split(',') : null;
+
+    for (const timesheet of timesheets) {
+      if (!timesheet.entries || timesheet.entries.length === 0) continue;
+
+      for (const entry of timesheet.entries) {
+        const entryDate = new Date(entry.date);
+
+        if (entryDate < start || entryDate > end) continue;
+
+        // Apply project filter if specified
+        if (projectIdList) {
+          if (!entry.project_id || !projectIdList.includes(entry.project_id.toString())) {
+            continue;
+          }
+        }
+
+        timeEntries.push({
+          ...entry,
+          user_id: timesheet.user_id,
+          timesheet_id: timesheet._id
+        });
+      }
+    }
+
+    return timeEntries;
+  }
+
+  /**
+   * Build project details map
+   */
+  private static async buildProjectDetailsMap(): Promise<Map<string, { name: string; client_name: string }>> {
+    const projectDetails = await (Project as any).find({}).populate('client_id', 'name').exec();
+    const projectMap = new Map();
+
+    projectDetails.forEach(p => {
+      projectMap.set(p._id.toString(), {
+        name: p.name,
+        client_name: p.client_id?.name || 'No Client'
+      });
+    });
+
+    return projectMap;
+  }
+
+  /**
+   * Group time entries by task
+   */
+  private static groupEntriesByTask(
+    timeEntries: any[],
+    projectMap: Map<string, { name: string; client_name: string }>
+  ): Map<string, any> {
+    const taskMap = new Map<string, {
+      task_id: string;
+      task_name: string;
+      project_id: string;
+      project_name: string;
+      total_hours: number;
+      billable_hours: number;
+      entries: any[];
+    }>();
+
+    for (const entry of timeEntries) {
+      const projectId = entry.project_id?.toString() || 'no-project';
+      const taskName = entry.description || entry.custom_task_description || 'No Description';
+      const taskKey = `${projectId}_${taskName}`;
+
+      if (!taskMap.has(taskKey)) {
+        const projectInfo = projectMap.get(projectId);
+        taskMap.set(taskKey, {
+          task_id: taskKey,
+          task_name: taskName,
+          project_id: projectId,
+          project_name: projectInfo?.name || 'No Project',
+          total_hours: 0,
+          billable_hours: 0,
+          entries: []
+        });
+      }
+
+      const task = taskMap.get(taskKey)!;
+      task.total_hours += entry.hours || 0;
+      if (entry.is_billable) {
+        task.billable_hours += entry.hours || 0;
+      }
+      task.entries.push(entry);
+    }
+
+    return taskMap;
+  }
+
+  /**
+   * Process task resources and calculate billing
+   */
+  private static processTaskResources(task: any): TaskResourceData[] {
+    const userMap = new Map<string, {
+      user: any;
+      hours: number;
+      billableHours: number;
+    }>();
+
+    // Group by user
+    for (const entry of task.entries) {
+      const userId = entry.user_id?._id?.toString();
+      const user = entry.user_id;
+
+      if (!userId || !user) continue;
+
+      if (!userMap.has(userId)) {
+        userMap.set(userId, {
+          user,
+          hours: 0,
+          billableHours: 0
+        });
+      }
+
+      const userTask = userMap.get(userId)!;
+      userTask.hours += entry.hours || 0;
+      if (entry.is_billable) {
+        userTask.billableHours += entry.hours || 0;
+      }
+    }
+
+    // Convert to resource data
+    const resources: TaskResourceData[] = [];
+    for (const [userId, userTask] of userMap) {
+      const user = userTask.user;
+      if (!user) continue;
+
+      try {
+        const hourlyRate = user.hourly_rate || 0;
+
+        resources.push({
+          user_id: userId,
+          user_name: user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
+          hours: userTask.hours,
+          billable_hours: userTask.billableHours,
+          rate: hourlyRate,
+          amount: userTask.billableHours * hourlyRate
+        });
+      } catch (error) {
+        console.error('Error processing task resource:', error);
+      }
+    }
+
+    return resources;
+  }
+
+  /**
    * Get task-based billing view
    */
   static async getTaskBillingView(req: Request, res: Response): Promise<void> {
@@ -759,11 +960,11 @@ export class ProjectBillingController {
         return;
       }
 
-      const { 
-        startDate, 
-        endDate, 
+      const {
+        startDate,
+        endDate,
         projectIds,
-        taskIds 
+        taskIds
       } = req.query as {
         startDate?: string;
         endDate?: string;
@@ -775,101 +976,28 @@ export class ProjectBillingController {
       const start = startDate ? new Date(startDate) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
       const end = endDate ? new Date(endDate) : new Date();
 
-      // Build filters
-      const matchFilter: any = {
-        date: { $gte: start, $lte: end }
-      };
-
-      if (projectIds) {
-        const ids = projectIds.split(',').map(id => mongoose.Types.ObjectId.createFromHexString(id));
-        matchFilter.project_id = { $in: ids };
-      }
-
-      if (taskIds) {
-        const ids = taskIds.split(',').map(id => mongoose.Types.ObjectId.createFromHexString(id));
-        matchFilter.task_id = { $in: ids };
-      }
-
       // Get time entries from timesheets for the period
       const timesheets = await (Timesheet as any).find({
         user_id: { $ne: null },
         status: { $in: BILLING_ELIGIBLE_STATUSES }
       }).populate('user_id', 'full_name email hourly_rate').exec();
 
-      const timeEntries: any[] = [];
-      
-      for (const timesheet of timesheets) {
-        if (timesheet.entries && timesheet.entries.length > 0) {
-          for (const entry of timesheet.entries) {
-            const entryDate = new Date(entry.date);
-            if (entryDate >= start && entryDate <= end) {
-              // Apply project and task filters if specified
-              if (projectIds) {
-                const ids = projectIds.split(',');
-                if (!entry.project_id || !ids.includes(entry.project_id.toString())) {
-                  continue;
-                }
-              }
-              
-              timeEntries.push({
-                ...entry,
-                user_id: timesheet.user_id,
-                timesheet_id: timesheet._id
-              });
-            }
-          }
-        }
-      }
+      // Filter and collect time entries
+      const timeEntries = ProjectBillingController.collectTimeEntriesFromTimesheets(
+        timesheets,
+        start,
+        end,
+        projectIds
+      );
 
       // Get project details for reference
-      const projectDetails = await (Project as any).find({}).populate('client_id', 'name').exec();
-      const projectMap = new Map();
-      projectDetails.forEach(p => {
-        projectMap.set(p._id.toString(), {
-          name: p.name,
-          client_name: p.client_id?.name || 'No Client'
-        });
-      });
+      const projectMap = await ProjectBillingController.buildProjectDetailsMap();
 
-      // Group by task (using description as task name since we don't have task_id)
-      const taskMap = new Map<string, {
-        task_id: string;
-        task_name: string;
-        project_id: string;
-        project_name: string;
-        total_hours: number;
-        billable_hours: number;
-        entries: any[];
-      }>();
-
-      for (const entry of timeEntries) {
-        const projectId = entry.project_id?.toString() || 'no-project';
-        const taskName = entry.description || entry.custom_task_description || 'No Description';
-        const taskKey = `${projectId}_${taskName}`;
-        
-        if (!taskMap.has(taskKey)) {
-          const projectInfo = projectMap.get(projectId);
-          taskMap.set(taskKey, {
-            task_id: taskKey,
-            task_name: taskName,
-            project_id: projectId,
-            project_name: projectInfo?.name || 'No Project',
-            total_hours: 0,
-            billable_hours: 0,
-            entries: []
-          });
-        }
-
-        const task = taskMap.get(taskKey)!;
-        task.total_hours += entry.hours || 0;
-        if (entry.is_billable) {
-          task.billable_hours += entry.hours || 0;
-        }
-        task.entries.push(entry);
-      }
-
+      // Group by task
+      const taskMap = ProjectBillingController.groupEntriesByTask(timeEntries, projectMap);
       const taskData = Array.from(taskMap.values());
 
+      // Process each task's billing data
       const billingData: TaskBillingData[] = [];
 
       for (const task of taskData) {
@@ -880,60 +1008,8 @@ export class ProjectBillingController {
           project_name: task.project_name,
           total_hours: task.total_hours,
           billable_hours: task.billable_hours,
-          resources: []
+          resources: ProjectBillingController.processTaskResources(task)
         };
-
-        // Group by user
-        const userMap = new Map<string, {
-          user: any;
-          hours: number;
-          billableHours: number;
-        }>();
-
-        for (const entry of task.entries) {
-          const userId = entry.user_id?._id?.toString();
-          const user = entry.user_id;
-
-          if (!userId || !user) continue;
-
-          if (!userMap.has(userId)) {
-            userMap.set(userId, {
-              user,
-              hours: 0,
-              billableHours: 0
-            });
-          }
-
-          const userTask = userMap.get(userId)!;
-          userTask.hours += entry.hours || 0;
-          if (entry.is_billable) {
-            userTask.billableHours += entry.hours || 0;
-          }
-        }
-
-        // Process resources for this task
-        for (const [userId, userTask] of userMap) {
-          const user = userTask.user;
-          if (!user) continue;
-
-          try {
-            // ✅ Use hourly_rate from User schema for cost calculation
-            const hourlyRate = user.hourly_rate || 0;
-
-            const taskResource: TaskResourceData = {
-              user_id: userId,
-              user_name: user.full_name || `${user.first_name || ''} ${user.last_name || ''}`.trim(),
-              hours: userTask.hours,
-              billable_hours: userTask.billableHours,
-              rate: hourlyRate,
-              amount: userTask.billableHours * hourlyRate
-            };
-
-            taskBilling.resources.push(taskResource);
-          } catch (error) {
-            console.error('Error processing task resource:', error);
-          }
-        }
 
         billingData.push(taskBilling);
       }
@@ -1299,99 +1375,119 @@ export class ProjectBillingController {
     };
   }
 
-  private static calculateProjectBillableTargets(
-    resources: ResourceBillingData[],
-    targetBillableHours: number
-  ): ProjectAdjustmentTarget[] {
-    if (resources.length === 0) {
-      return [];
-    }
-
-    const roundedTarget = Number(targetBillableHours.toFixed(2));
-    const currentTotal = resources.reduce((sum, resource) => sum + resource.billable_hours, 0);
-    const allocations: ProjectAdjustmentTarget[] = resources.map((resource) => ({
+  /**
+   * Initialize allocation targets from resources
+   */
+  private static initializeAllocations(resources: ResourceBillingData[]): ProjectAdjustmentTarget[] {
+    return resources.map((resource) => ({
       userId: resource.user_id,
       currentHours: Number(resource.billable_hours.toFixed(2)),
       totalHours: resource.total_hours,
       targetHours: Number(resource.billable_hours.toFixed(2))
     }));
+  }
 
-    if (roundedTarget <= 0) {
-      allocations.forEach((entry) => {
-        entry.targetHours = 0;
+  /**
+   * Distribute additional hours when target > current
+   */
+  private static distributeAdditionalHours(
+    allocations: ProjectAdjustmentTarget[],
+    additionalHours: number
+  ): void {
+    let remaining = Number(additionalHours.toFixed(2));
+    let candidates = allocations.map((entry, index) => ({
+      index,
+      headroom: Math.max(entry.totalHours - entry.targetHours, 0)
+    }));
+
+    while (remaining > 0.0001 && candidates.some((c) => c.headroom > 0.0001)) {
+      const active = candidates.filter((c) => c.headroom > 0.0001);
+      if (active.length === 0) break;
+
+      const share = Number((remaining / active.length).toFixed(4));
+      let consumed = 0;
+
+      active.forEach((candidate) => {
+        const entry = allocations[candidate.index];
+        const delta = Math.min(share, candidate.headroom);
+        entry.targetHours = Number((entry.targetHours + delta).toFixed(2));
+        candidate.headroom = Math.max(candidate.headroom - delta, 0);
+        consumed += delta;
       });
+
+      remaining = Number((remaining - consumed).toFixed(2));
+      candidates = candidates.map((c) => ({
+        ...c,
+        headroom: Math.max(allocations[c.index].totalHours - allocations[c.index].targetHours, 0)
+      }));
+
+      if (consumed === 0) break;
+    }
+
+    // Assign any remaining hours to first allocation
+    if (remaining > 0.0001) {
+      allocations[0].targetHours = Number((allocations[0].targetHours + remaining).toFixed(2));
+    }
+  }
+
+  /**
+   * Reduce hours when target < current
+   */
+  private static reduceExcessHours(
+    allocations: ProjectAdjustmentTarget[],
+    excessHours: number
+  ): void {
+    let remaining = Number(excessHours.toFixed(2));
+    const sorted = allocations
+      .map((entry, index) => ({ index, value: entry.targetHours }))
+      .sort((a, b) => b.value - a.value);
+
+    for (const item of sorted) {
+      if (remaining <= 0.0001) break;
+
+      const entry = allocations[item.index];
+      const reducible = entry.targetHours;
+      if (reducible <= 0) continue;
+
+      const delta = Math.min(reducible, remaining);
+      entry.targetHours = Number((entry.targetHours - delta).toFixed(2));
+      remaining = Number((remaining - delta).toFixed(2));
+    }
+  }
+
+  private static calculateProjectBillableTargets(
+    resources: ResourceBillingData[],
+    targetBillableHours: number
+  ): ProjectAdjustmentTarget[] {
+    if (resources.length === 0) return [];
+
+    const roundedTarget = Number(targetBillableHours.toFixed(2));
+    const currentTotal = resources.reduce((sum, resource) => sum + resource.billable_hours, 0);
+    const allocations = ProjectBillingController.initializeAllocations(resources);
+
+    // Handle zero target
+    if (roundedTarget <= 0) {
+      allocations.forEach((entry) => { entry.targetHours = 0; });
       return allocations;
     }
 
+    // Handle single resource
     if (resources.length === 1) {
       allocations[0].targetHours = Math.max(roundedTarget, 0);
       return allocations;
     }
 
+    // Distribute additional hours if target > current
     if (roundedTarget > currentTotal) {
-      let remaining = Number((roundedTarget - currentTotal).toFixed(2));
-      let candidates = allocations.map((entry, index) => ({
-        index,
-        headroom: Math.max(entry.totalHours - entry.targetHours, 0)
-      }));
-
-      while (remaining > 0.0001 && candidates.some((candidate) => candidate.headroom > 0.0001)) {
-        const active = candidates.filter((candidate) => candidate.headroom > 0.0001);
-        if (active.length === 0) {
-          break;
-        }
-
-        const share = Number((remaining / active.length).toFixed(4));
-        let consumed = 0;
-
-        active.forEach((candidate) => {
-          const entry = allocations[candidate.index];
-          const delta = Math.min(share, candidate.headroom);
-          entry.targetHours = Number((entry.targetHours + delta).toFixed(2));
-          candidate.headroom = Math.max(candidate.headroom - delta, 0);
-          consumed += delta;
-        });
-
-        remaining = Number((remaining - consumed).toFixed(2));
-        candidates = candidates.map((candidate) => ({
-          ...candidate,
-          headroom: Math.max(
-            allocations[candidate.index].totalHours - allocations[candidate.index].targetHours,
-            0
-          )
-        }));
-        if (consumed === 0) {
-          break;
-        }
-      }
-
-      if (remaining > 0.0001) {
-        allocations[0].targetHours = Number((allocations[0].targetHours + remaining).toFixed(2));
-      }
-
+      const additionalHours = roundedTarget - currentTotal;
+      ProjectBillingController.distributeAdditionalHours(allocations, additionalHours);
       return allocations;
     }
 
+    // Reduce hours if target < current
     if (roundedTarget < currentTotal) {
-      let remaining = Number((currentTotal - roundedTarget).toFixed(2));
-      const sorted = allocations
-        .map((entry, index) => ({ index, value: entry.targetHours }))
-        .sort((a, b) => b.value - a.value);
-
-      for (const item of sorted) {
-        if (remaining <= 0.0001) {
-          break;
-        }
-        const entry = allocations[item.index];
-        const reducible = entry.targetHours;
-        if (reducible <= 0) {
-          continue;
-        }
-        const delta = Math.min(reducible, remaining);
-        entry.targetHours = Number((entry.targetHours - delta).toFixed(2));
-        remaining = Number((remaining - delta).toFixed(2));
-      }
-
+      const excessHours = currentTotal - roundedTarget;
+      ProjectBillingController.reduceExcessHours(allocations, excessHours);
       return allocations;
     }
 

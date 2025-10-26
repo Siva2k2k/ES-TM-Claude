@@ -153,74 +153,25 @@ export class BillingController {
       throw new AuthorizationError('User not authenticated');
     }
 
-    // Support both query params (GET) and body params (POST)
-    const data = req.method === 'GET' ? req.query : req.body;
-    const { startDate, endDate, format } = data;
     const isDownloadRequest = req.method === 'GET';
-
-    // Use centralized ID parsing utility
-    const parseIdList = IdUtils.parseIds;
-
-    const parseRoles = (value: unknown): string[] => {
-      if (!value) {
-        return [];
-      }
-      if (Array.isArray(value)) {
-        return value
-          .map((role) => (typeof role === 'string' ? role.trim().toLowerCase() : ''))
-          .filter((role) => role.length > 0);
-      }
-      if (typeof value === 'string') {
-        return value
-          .split(',')
-          .map((role) => role.trim().toLowerCase())
-          .filter((role) => role.length > 0);
-      }
-      return [];
-    };
-
-    const parseView = (value: unknown): 'weekly' | 'monthly' | 'custom' => {
-      if (value === 'weekly') {
-        return 'weekly';
-      }
-      if (value === 'custom' || value === 'timeline') {
-        return 'custom';
-      }
-      return 'monthly';
-    };
-
-    const search =
-      typeof data.search === 'string' && data.search.trim().length > 0
-        ? data.search.trim()
-        : undefined;
-
-    const projectIds = parseIdList((data as any).projectIds);
-    const clientIds = parseIdList((data as any).clientIds);
-    const roles = parseRoles((data as any).roles);
-    const view = parseView((data as any).view);
+    const parsedParams = BillingController.parseExportParameters(req, isDownloadRequest);
 
     const result = await BillingService.exportBillingReport(
-      startDate as string,
-      endDate as string,
-      format as 'csv' | 'pdf' | 'excel',
+      parsedParams.startDate,
+      parsedParams.endDate,
+      parsedParams.format,
       req.user,
       {
-        projectIds,
-        clientIds,
-        roles,
-        search,
-        view
+        projectIds: parsedParams.projectIds,
+        clientIds: parsedParams.clientIds,
+        roles: parsedParams.roles,
+        search: parsedParams.search,
+        view: parsedParams.view
       },
       { generateFile: isDownloadRequest }
     );
 
     if (!result.success) {
-      if (isDownloadRequest) {
-        return res.status(400).json({
-          success: false,
-          error: result.error
-        });
-      }
       return res.status(400).json({
         success: false,
         error: result.error
@@ -228,47 +179,110 @@ export class BillingController {
     }
 
     if (isDownloadRequest) {
-      res.setHeader('Content-Type', result.contentType ?? 'text/csv');
-      if (result.filename) {
-        res.setHeader('Content-Disposition', `attachment; filename="${result.filename}"`);
-      } else {
-        res.setHeader('Content-Disposition', 'attachment; filename="project-billing.csv"');
-      }
-
-      if (result.deliveredFormat) {
-        res.setHeader('X-Delivered-Format', result.deliveredFormat);
-      }
-
-      return res.send(result.buffer ?? Buffer.from([]));
+      return BillingController.sendFileDownloadResponse(res, result);
     }
 
-    const query = new URLSearchParams({
+    return BillingController.sendExportInitiatedResponse(res, parsedParams, result);
+  });
+
+  /**
+   * Parse and validate export parameters from request
+   */
+  private static parseExportParameters(req: AuthRequest, isDownloadRequest: boolean) {
+    const data = isDownloadRequest ? req.query : req.body;
+    const { startDate, endDate, format } = data;
+
+    return {
       startDate: startDate as string,
       endDate: endDate as string,
-      format: format as string,
-      view
+      format: format as 'csv' | 'pdf' | 'excel',
+      projectIds: IdUtils.parseIds((data as any).projectIds),
+      clientIds: IdUtils.parseIds((data as any).clientIds),
+      roles: BillingController.parseRoles((data as any).roles),
+      search: BillingController.parseSearch(data.search),
+      view: BillingController.parseView((data as any).view)
+    };
+  }
+
+  /**
+   * Parse roles from request parameter
+   */
+  private static parseRoles(value: unknown): string[] {
+    if (!value) return [];
+
+    if (Array.isArray(value)) {
+      return value
+        .map((role) => (typeof role === 'string' ? role.trim().toLowerCase() : ''))
+        .filter((role) => role.length > 0);
+    }
+
+    if (typeof value === 'string') {
+      return value
+        .split(',')
+        .map((role) => role.trim().toLowerCase())
+        .filter((role) => role.length > 0);
+    }
+
+    return [];
+  }
+
+  /**
+   * Parse view type from request parameter
+   */
+  private static parseView(value: unknown): 'weekly' | 'monthly' | 'custom' {
+    if (value === 'weekly') return 'weekly';
+    if (value === 'custom' || value === 'timeline') return 'custom';
+    return 'monthly';
+  }
+
+  /**
+   * Parse search parameter
+   */
+  private static parseSearch(value: unknown): string | undefined {
+    return typeof value === 'string' && value.trim().length > 0
+      ? value.trim()
+      : undefined;
+  }
+
+  /**
+   * Send file download response
+   */
+  private static sendFileDownloadResponse(res: Response, result: any) {
+    res.setHeader('Content-Type', result.contentType ?? 'text/csv');
+
+    const filename = result.filename || 'project-billing.csv';
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    if (result.deliveredFormat) {
+      res.setHeader('X-Delivered-Format', result.deliveredFormat);
+    }
+
+    return res.send(result.buffer ?? Buffer.from([]));
+  }
+
+  /**
+   * Send export initiated response with download URL
+   */
+  private static sendExportInitiatedResponse(res: Response, params: any, result: any) {
+    const query = new URLSearchParams({
+      startDate: params.startDate,
+      endDate: params.endDate,
+      format: params.format,
+      view: params.view
     });
 
-    if (projectIds.length > 0) {
-      query.set('projectIds', projectIds.join(','));
-    }
-    if (clientIds.length > 0) {
-      query.set('clientIds', clientIds.join(','));
-    }
-    if (roles.length > 0) {
-      query.set('roles', roles.join(','));
-    }
-    if (search) {
-      query.set('search', search);
-    }
+    if (params.projectIds.length > 0) query.set('projectIds', params.projectIds.join(','));
+    if (params.clientIds.length > 0) query.set('clientIds', params.clientIds.join(','));
+    if (params.roles.length > 0) query.set('roles', params.roles.join(','));
+    if (params.search) query.set('search', params.search);
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Billing report export initiated',
       downloadUrl: `/billing/export?${query.toString()}`,
       deliveredFormat: result.deliveredFormat
     });
-  });
+  }
 
   static getBillingSnapshotById = handleAsyncError(async (req: AuthRequest, res: Response) => {
     const errors = validationResult(req);
