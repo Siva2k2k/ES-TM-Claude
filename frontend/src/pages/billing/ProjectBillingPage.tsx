@@ -385,6 +385,8 @@ export function ProjectBillingPage() {
       <ProjectBillingTable
         data={data}
         loading={loading}
+        viewMode={viewMode}
+        params={{ startDate: params.startDate, endDate: params.endDate }}
         lockedProjects={lockedProjectIds}
         onEdit={handleMemberEditRequest}
         onProjectAdjust={handleProjectAdjustmentRequest}

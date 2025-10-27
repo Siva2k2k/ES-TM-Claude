@@ -14,7 +14,8 @@ import type {
   ProjectBillingParams,
   TaskBillingParams,
   UserBillingParams,
-  UpdateBillingHoursPayload
+  UpdateBillingHoursPayload,
+  UserBreakdownResponse
 } from '../types/billing';
 
 
@@ -700,6 +701,88 @@ export class BillingService {
       console.error('Error fetching invoice dashboard stats:', error);
       return {
         error: error instanceof Error ? error.message : 'Failed to fetch invoice dashboard stats'
+      };
+    }
+  }
+
+  /**
+   * Get weekly breakdown for a user in a project
+   * Used in Monthly view to show user's weekly breakdown
+   */
+  static async getUserWeeklyBreakdown(
+    projectId: string,
+    userId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<{ success: boolean; data?: UserBreakdownResponse; error?: string }> {
+    try {
+      const params = new URLSearchParams({
+        type: 'weekly',
+        projectId,
+        userId,
+        startDate,
+        endDate
+      });
+
+      const response = await backendApi.get(`/project-billing/breakdown?${params.toString()}`);
+
+      if (response.success && response.data) {
+        return {
+          success: true,
+          data: response.data as UserBreakdownResponse
+        };
+      }
+
+      return {
+        success: false,
+        error: response.error || 'Failed to fetch weekly breakdown'
+      };
+    } catch (error) {
+      console.error('Error fetching weekly breakdown:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch weekly breakdown'
+      };
+    }
+  }
+
+  /**
+   * Get monthly breakdown for a user in a project
+   * Used in Project Timeline view to show user's monthly breakdown
+   */
+  static async getUserMonthlyBreakdown(
+    projectId: string,
+    userId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<{ success: boolean; data?: UserBreakdownResponse; error?: string }> {
+    try {
+      const params = new URLSearchParams({
+        type: 'monthly',
+        projectId,
+        userId,
+        startDate,
+        endDate
+      });
+
+      const response = await backendApi.get(`/project-billing/breakdown?${params.toString()}`);
+
+      if (response.success && response.data) {
+        return {
+          success: true,
+          data: response.data as UserBreakdownResponse
+        };
+      }
+
+      return {
+        success: false,
+        error: response.error || 'Failed to fetch monthly breakdown'
+      };
+    } catch (error) {
+      console.error('Error fetching monthly breakdown:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to fetch monthly breakdown'
       };
     }
   }

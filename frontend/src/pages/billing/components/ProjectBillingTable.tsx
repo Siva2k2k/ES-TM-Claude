@@ -1,10 +1,17 @@
 import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, Edit3, Lock, CheckCircle } from 'lucide-react';
-import type { ProjectBillingRecord, ProjectBillingResponse } from '../../../types/billing';
+import { ChevronDown, ChevronRight, Edit3, Lock, CheckCircle, BarChart3 } from 'lucide-react';
+import type { ProjectBillingRecord, ProjectBillingResponse, ProjectBillingResource } from '../../../types/billing';
+import { UserBreakdownDialog } from './UserBreakdownDialog';
+import { showError } from '../../../utils/toast';
 
 interface ProjectBillingTableProps {
   data: ProjectBillingResponse | null;
   loading: boolean;
+  viewMode?: 'weekly' | 'monthly' | 'timeline';
+  params?: {
+    startDate: string;
+    endDate: string;
+  };
   onEdit: (args: {
     project: ProjectBillingRecord;
     userId: string;
@@ -23,11 +30,21 @@ interface ProjectBillingTableProps {
 export function ProjectBillingTable({
   data,
   loading,
+  viewMode,
+  params,
   onEdit,
   onProjectAdjust,
   lockedProjects
 }: ProjectBillingTableProps) {
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [breakdownDialog, setBreakdownDialog] = useState<{
+    open: boolean;
+    projectId: string;
+    projectName: string;
+    userId: string;
+    userName: string;
+    breakdownType: 'weekly' | 'monthly';
+  } | null>(null);
 
   const toggleProject = (projectId: string) => {
     setExpanded((prev) => {
@@ -38,6 +55,32 @@ export function ProjectBillingTable({
         next.add(projectId);
       }
       return next;
+    });
+  };
+
+  const handleViewBreakdown = (resource: ProjectBillingResource, project: ProjectBillingRecord) => {
+    // Determine breakdown type based on view mode
+    const breakdownType = viewMode === 'monthly' ? 'weekly' as const :
+                         viewMode === 'timeline' ? 'monthly' as const :
+                         null;
+
+    if (!breakdownType) {
+      showError('Breakdown view not available for weekly mode');
+      return;
+    }
+
+    if (!params) {
+      showError('Date parameters not available');
+      return;
+    }
+
+    setBreakdownDialog({
+      open: true,
+      projectId: project.project_id,
+      projectName: project.project_name,
+      userId: resource.user_id,
+      userName: resource.user_name,
+      breakdownType
     });
   };
 
@@ -263,27 +306,39 @@ export function ProjectBillingTable({
                                       ${cost.toLocaleString()}
                                     </td>
                                     <td className="px-4 py-2 text-right">
-                                      <button
-                                        type="button"
-                                        onClick={() =>
-                                          onEdit({
-                                            project,
-                                            userId: resource.user_id,
-                                            userName: resource.user_name,
-                                            currentBillable: billableHours,
-                                            totalHours: workedHours,
-                                            verifiedWorkedHours: resource.verified_worked_hours,
-                                            verifiedBillableHours: resource.verified_billable_hours,
-                                            managerAdjustment: resource.manager_adjustment,
-                                            verifiedAt: resource.verified_at
-                                          })
-                                        }
-                                        disabled={isLocked}
-                                        className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium transition hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-blue-900/20 dark:disabled:border-slate-700 dark:disabled:text-slate-600"
-                                      >
-                                        <Edit3 className="mr-2 h-4 w-4" />
-                                        {isLocked ? 'Locked' : 'Adjust'}
-                                      </button>
+                                      <div className="flex items-center justify-end gap-2">
+                                        {(viewMode === 'monthly' || viewMode === 'timeline') && (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleViewBreakdown(resource, project)}
+                                            className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium transition hover:bg-purple-50 hover:text-purple-600 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-purple-900/20 dark:hover:text-purple-400"
+                                          >
+                                            <BarChart3 className="mr-2 h-4 w-4" />
+                                            Breakdown
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() =>
+                                            onEdit({
+                                              project,
+                                              userId: resource.user_id,
+                                              userName: resource.user_name,
+                                              currentBillable: billableHours,
+                                              totalHours: workedHours,
+                                              verifiedWorkedHours: resource.verified_worked_hours,
+                                              verifiedBillableHours: resource.verified_billable_hours,
+                                              managerAdjustment: resource.manager_adjustment,
+                                              verifiedAt: resource.verified_at
+                                            })
+                                          }
+                                          disabled={isLocked}
+                                          className="inline-flex items-center rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium transition hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-300 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-blue-900/20 dark:disabled:border-slate-700 dark:disabled:text-slate-600"
+                                        >
+                                          <Edit3 className="mr-2 h-4 w-4" />
+                                          {isLocked ? 'Locked' : 'Adjust'}
+                                        </button>
+                                      </div>
                                     </td>
                                   </tr>
                                 );
@@ -300,6 +355,21 @@ export function ProjectBillingTable({
           </tbody>
         </table>
       </div>
+
+      {/* Breakdown Dialog */}
+      {breakdownDialog && params && (
+        <UserBreakdownDialog
+          open={breakdownDialog.open}
+          onClose={() => setBreakdownDialog(null)}
+          projectId={breakdownDialog.projectId}
+          projectName={breakdownDialog.projectName}
+          userId={breakdownDialog.userId}
+          userName={breakdownDialog.userName}
+          breakdownType={breakdownDialog.breakdownType}
+          startDate={params.startDate}
+          endDate={params.endDate}
+        />
+      )}
     </div>
   );
 }

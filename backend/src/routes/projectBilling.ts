@@ -1,11 +1,12 @@
 import { Router } from 'express';
-import { 
+import {
   ProjectBillingController,
   getProjectBillingViewValidation,
   getTaskBillingViewValidation,
   getUserBillingViewValidation,
   updateBillableHoursValidation,
-  updateProjectBillableTotalValidation
+  updateProjectBillableTotalValidation,
+  getUserBreakdownValidation
 } from '@/controllers/ProjectBillingController';
 import { requireAuth, requireManager } from '@/middleware/auth';
 
@@ -45,6 +46,22 @@ router.get('/users', getUserBillingViewValidation, ProjectBillingController.getU
  * @access Private (Manager+)
  */
 router.get('/tasks', ProjectBillingController.getTaskBillingView);
+
+/**
+ * @route GET /api/v1/project-billing/breakdown
+ * @desc Get user breakdown (weekly or monthly) for a project
+ * @query type - 'weekly' or 'monthly'
+ * @query projectId - Project ID
+ * @query userId - User ID
+ * @query startDate - ISO date string
+ * @query endDate - ISO date string
+ * @access Private (Manager+)
+ */
+router.get(
+  '/breakdown',
+  getUserBreakdownValidation,
+  ProjectBillingController.getUserBreakdown
+);
 
 /**
  * @route GET /api/v1/project-billing/test

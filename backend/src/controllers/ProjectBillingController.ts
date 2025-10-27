@@ -132,13 +132,21 @@ interface ResourceBillingData {
   // Verification metadata
   verified_at?: string;                 // Last management_approved_at
   last_adjusted_at?: string;            // Last BillingAdjustment.adjusted_at
-  
+
   weekly_breakdown?: WeeklyBreakdown[];
+  monthly_breakdown?: MonthlyBreakdown[];
   tasks?: ResourceTaskData[];
 }
 
 interface WeeklyBreakdown {
   week_start: string;
+  total_hours: number;
+  billable_hours: number;
+  amount: number;
+}
+
+interface MonthlyBreakdown {
+  month_start: string;
   total_hours: number;
   billable_hours: number;
   amount: number;
@@ -1788,6 +1796,213 @@ export class ProjectBillingController {
       });
     }
   }
+
+  /**
+   * GET /api/v1/project-billing/breakdown
+   * Get user breakdown (weekly or monthly) for a project
+   *
+   * Query params:
+   * - type: 'weekly' or 'monthly'
+   * - projectId: Project ID
+   * - userId: User ID
+   * - startDate: ISO date string
+   * - endDate: ISO date string
+   *
+   * Used in Monthly view (type=weekly) and Project Timeline view (type=monthly)
+   */
+  static async getUserBreakdown(req: Request, res: Response): Promise<void> {
+    try {
+      const { type, projectId, userId, startDate, endDate } = req.query;
+
+      if (!mongoose.Types.ObjectId.isValid(projectId as string) || !mongoose.Types.ObjectId.isValid(userId as string)) {
+        res.status(400).json({
+          success: false,
+          error: 'Invalid project ID or user ID'
+        });
+        return;
+      }
+
+      const start = new Date(startDate as string);
+      const end = new Date(endDate as string);
+      const projectObjectId = new mongoose.Types.ObjectId(projectId as string);
+      const userObjectId = new mongoose.Types.ObjectId(userId as string);
+
+      // Fetch approved project approvals
+      // Note: TimesheetProjectApproval doesn't have week_start_date or user_id
+      // These fields are in the Timesheet model, so we lookup first, then filter
+      const approvals = await (TimesheetProjectApproval as any).aggregate([
+      {
+        $match: {
+          project_id: projectObjectId,
+          management_status: 'approved',
+          deleted_at: null
+        }
+      },
+      {
+        $lookup: {
+          from: 'timesheets',
+          localField: 'timesheet_id',
+          foreignField: '_id',
+          as: 'timesheet'
+        }
+      },
+      { $unwind: '$timesheet' },
+      {
+        $match: {
+          'timesheet.user_id': userObjectId,
+          'timesheet.week_start_date': { $gte: start, $lte: end },
+          'timesheet.deleted_at': null
+        }
+      },
+      {
+        $sort: { 'timesheet.week_start_date': 1 }
+      }
+    ]);
+
+      // Get user and project details
+      const user = await (User as any).findById(userObjectId).select('full_name email role hourly_rate').lean();
+      const project = await (Project as any).findById(projectObjectId).select('name').lean();
+
+      if (!user || !project) {
+        res.status(404).json({
+          success: false,
+          error: 'User or project not found'
+        });
+        return;
+      }
+
+      // Get billing adjustments for this user-project
+      const billingAdjustments = await (BillingAdjustment as any).find({
+        project_id: projectObjectId,
+        user_id: userObjectId,
+        billing_period_start: { $lte: end },
+        billing_period_end: { $gte: start },
+        adjustment_scope: 'project',
+        deleted_at: null
+      }).lean();
+
+      const hourlyRate = user.hourly_rate || 0;
+
+      if (type === 'weekly') {
+        // Build weekly breakdown
+        const adjustmentMap = new Map<string, any>(
+          billingAdjustments.map((adj: any) => [adj.billing_period_start.toISOString(), adj])
+        );
+
+        console.log('Approvals found:', approvals.length, approvals);
+
+        const weeklyBreakdown: WeeklyBreakdown[] = approvals.map((approval: any) => {
+          const weekStart = approval.timesheet.week_start_date.toISOString().split('T')[0];
+          const workedHours = approval.worked_hours || 0;
+          const baseBillableHours = approval.billable_hours || 0; // This is worked_hours + billable_adjustment
+
+          // Check for billing adjustment for this week
+          const adjustment = adjustmentMap.get(approval.timesheet.week_start_date.toISOString());
+          const managementAdjustment = adjustment?.adjustment_hours || 0;
+          const finalBillableHours = baseBillableHours + managementAdjustment;
+          const amount = finalBillableHours * hourlyRate;
+
+          return {
+            week_start: weekStart,
+            total_hours: workedHours,
+            billable_hours: finalBillableHours,
+            amount
+          };
+        });
+
+        // Calculate totals
+        const totalWorkedHours = weeklyBreakdown.reduce((sum, week) => sum + week.total_hours, 0);
+        const totalBillableHours = weeklyBreakdown.reduce((sum, week) => sum + week.billable_hours, 0);
+        const totalAmount = weeklyBreakdown.reduce((sum, week) => sum + week.amount, 0);
+
+        res.json({
+          success: true,
+          data: {
+            user_id: userId,
+            user_name: user.full_name || 'Unknown User',
+            project_id: projectId,
+            project_name: project.name,
+            breakdown_type: 'weekly',
+            breakdown: weeklyBreakdown,
+            total_worked_hours: totalWorkedHours,
+            total_billable_hours: totalBillableHours,
+            total_amount: totalAmount
+          }
+        });
+      } else {
+        // Build monthly breakdown
+        // Group approvals by month
+        const monthlyMap = new Map<string, { worked_hours: number; base_billable_hours: number }>();
+
+        for (const approval of approvals) {
+          const weekStartDate = new Date(approval.timesheet.week_start_date);
+          const monthKey = `${weekStartDate.getFullYear()}-${String(weekStartDate.getMonth() + 1).padStart(2, '0')}-01`;
+
+          if (!monthlyMap.has(monthKey)) {
+            monthlyMap.set(monthKey, { worked_hours: 0, base_billable_hours: 0 });
+          }
+
+          const monthData = monthlyMap.get(monthKey)!;
+          monthData.worked_hours += approval.worked_hours || 0;
+          monthData.base_billable_hours += approval.billable_hours || 0; // billable_hours from TimesheetProjectApproval
+        }
+
+        // Group adjustments by month
+        const adjustmentByMonth = new Map<string, number>();
+        for (const adj of billingAdjustments) {
+          const adjStartDate = new Date(adj.billing_period_start);
+          const monthKey = `${adjStartDate.getFullYear()}-${String(adjStartDate.getMonth() + 1).padStart(2, '0')}-01`;
+
+          adjustmentByMonth.set(
+            monthKey,
+            (adjustmentByMonth.get(monthKey) || 0) + (adj.adjustment_hours || 0)
+          );
+        }
+
+        // Build monthly breakdown
+        const monthlyBreakdown: MonthlyBreakdown[] = Array.from(monthlyMap.entries())
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .map(([monthKey, data]) => {
+            const managementAdjustment = adjustmentByMonth.get(monthKey) || 0;
+            const finalBillableHours = data.base_billable_hours + managementAdjustment;
+            const amount = finalBillableHours * hourlyRate;
+
+            return {
+              month_start: monthKey,
+              total_hours: data.worked_hours,
+              billable_hours: finalBillableHours,
+              amount
+            };
+          });
+
+        // Calculate totals
+        const totalWorkedHours = monthlyBreakdown.reduce((sum, month) => sum + month.total_hours, 0);
+        const totalBillableHours = monthlyBreakdown.reduce((sum, month) => sum + month.billable_hours, 0);
+        const totalAmount = monthlyBreakdown.reduce((sum, month) => sum + month.amount, 0);
+
+        res.json({
+          success: true,
+          data: {
+            user_id: userId,
+            user_name: user.full_name || 'Unknown User',
+            project_id: projectId,
+            project_name: project.name,
+            breakdown_type: 'monthly',
+            breakdown: monthlyBreakdown,
+            total_worked_hours: totalWorkedHours,
+            total_billable_hours: totalBillableHours,
+            total_amount: totalAmount
+          }
+        });
+      }
+    } catch (error: any) {
+      console.error('Error in getUserBreakdown:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message || 'Failed to get breakdown'
+      });
+    }
+  }
 }
 
 // Validation middlewares
@@ -1841,4 +2056,12 @@ export const createBillingAdjustmentValidation = [
   body('adjusted_billable_hours').isNumeric().withMessage('Adjusted billable hours must be a number'),
   body('original_billable_hours').isNumeric().withMessage('Original billable hours must be a number'),
   body('reason').optional().isString().withMessage('Reason must be a string')
+];
+
+export const getUserBreakdownValidation = [
+  query('type').isIn(['weekly', 'monthly']).withMessage('Type must be weekly or monthly'),
+  query('projectId').isMongoId().withMessage('Valid project ID is required'),
+  query('userId').isMongoId().withMessage('Valid user ID is required'),
+  query('startDate').isISO8601().withMessage('Valid start date is required'),
+  query('endDate').isISO8601().withMessage('Valid end date is required')
 ];

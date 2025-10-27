@@ -48,6 +48,20 @@ export interface RevenueByProject {
   rate: number;
 }
 
+export interface WeeklyBreakdown {
+  week_start: string;
+  total_hours: number;
+  billable_hours: number;
+  amount: number;
+}
+
+export interface MonthlyBreakdown {
+  month_start: string;
+  total_hours: number;
+  billable_hours: number;
+  amount: number;
+}
+
 export interface ProjectBillingResource {
   user_id: string;
   user_name: string;
@@ -57,12 +71,8 @@ export interface ProjectBillingResource {
   non_billable_hours: number;
   hourly_rate: number;
   total_amount: number;
-  weekly_breakdown?: Array<{
-    week_start: string;
-    total_hours: number;
-    billable_hours: number;
-    amount: number;
-  }>;
+  weekly_breakdown?: WeeklyBreakdown[];
+  monthly_breakdown?: MonthlyBreakdown[];
   tasks?: ProjectBillingResourceTask[];
   verified_worked_hours?: number;
   verified_billable_hours?: number;
@@ -304,4 +314,16 @@ export interface UpdateBillingHoursPayload {
   billableHours: number;
   totalHours?: number;
   reason?: string;
+}
+
+export interface UserBreakdownResponse {
+  user_id: string;
+  user_name: string;
+  project_id: string;
+  project_name: string;
+  breakdown: WeeklyBreakdown[] | MonthlyBreakdown[];
+  breakdown_type: 'weekly' | 'monthly';
+  total_worked_hours: number;
+  total_billable_hours: number;
+  total_amount: number;
 }
