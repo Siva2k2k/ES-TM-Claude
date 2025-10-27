@@ -77,35 +77,18 @@ WORKDIR /app/frontend
 COPY --from=frontend-builder /app/frontend/dist ./dist
 
 # ----------------
-# Install Static Server
-# ----------------
-WORKDIR /app
-RUN npm install -g serve
-
-# ----------------
 # Create Startup Script
 # ----------------
+# Backend will serve both API and static frontend files
+WORKDIR /app
 RUN printf '#!/bin/sh\n\
-# Startup script for Heroku deployment\n\
 echo "Starting Timesheet Management System..."\n\
 echo "PORT: $PORT"\n\
 echo "NODE_ENV: $NODE_ENV"\n\
 \n\
-# Start backend API server in background\n\
-echo "Starting Backend API..."\n\
 cd /app/backend\n\
-NODE_ENV=${NODE_ENV:-production} PORT=${PORT:-5000} node dist/index.js &\n\
-BACKEND_PID=$!\n\
-echo "Backend started with PID: $BACKEND_PID"\n\
-\n\
-# Wait for backend to be ready\n\
-echo "Waiting for backend to start..."\n\
-sleep 5\n\
-\n\
-# Start frontend static server\n\
-echo "Starting Frontend..."\n\
-cd /app/frontend\n\
-serve -s dist -l ${PORT:-3000} --cors\n\
+echo "Starting Backend API (will serve frontend static files)..."\n\
+NODE_ENV=${NODE_ENV:-production} PORT=${PORT:-3000} node dist/index.js\n\
 ' > /app/start.sh
 
 RUN chmod +x /app/start.sh
