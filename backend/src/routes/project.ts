@@ -12,7 +12,9 @@ import {
   createClientValidation,
   clientIdValidation,
   addProjectMemberEnhancedValidation,
-  updateProjectMemberRoleValidation
+  updateProjectMemberRoleValidation,
+  createTrainingTaskValidation,
+  updateTrainingTaskValidation
 } from '@/controllers/ProjectController';
 import { requireAuth, requireManager, requireManagement, requireSuperAdmin } from '@/middleware/auth';
 
@@ -91,6 +93,38 @@ router.delete('/clients/:clientId', requireManagement, clientIdValidation, Proje
  * @access Private (Users can view own projects, Manager+ can view team member projects)
  */
 router.get('/user/:userId', userIdValidation, ProjectController.getUserProjects);
+
+// ========================================================================
+// TRAINING PROJECT ROUTES (Must come before /:projectId)
+// ========================================================================
+
+/**
+ * @route GET /api/v1/projects/training
+ * @desc Get Training Project with all tasks
+ * @access Private (All authenticated users)
+ */
+router.get('/training', ProjectController.getTrainingProject);
+
+/**
+ * @route POST /api/v1/projects/training/tasks
+ * @desc Add task to Training Project
+ * @access Private (Management, Manager, Admin only)
+ */
+router.post('/training/tasks', createTrainingTaskValidation, ProjectController.addTrainingTask);
+
+/**
+ * @route PUT /api/v1/projects/training/tasks/:taskId
+ * @desc Update task in Training Project
+ * @access Private (Management, Manager, Admin only)
+ */
+router.put('/training/tasks/:taskId', updateTrainingTaskValidation, ProjectController.updateTrainingTask);
+
+/**
+ * @route DELETE /api/v1/projects/training/tasks/:taskId
+ * @desc Delete task from Training Project
+ * @access Private (Management, Manager, Admin only)
+ */
+router.delete('/training/tasks/:taskId', taskIdValidation, ProjectController.deleteTrainingTask);
 
 /**
  * @route GET /api/v1/projects/:projectId

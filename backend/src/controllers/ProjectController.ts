@@ -1123,6 +1123,141 @@ export class ProjectController {
       counts: dependencyCheck.counts
     });
   });
+
+  // ========================================================================
+  // TRAINING PROJECT ENDPOINTS
+  // ========================================================================
+
+  /**
+   * Get Training Project with all tasks
+   * Accessible to all authenticated users
+   */
+  static getTrainingProject = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const result = await ProjectService.getTrainingProjectWithTasks();
+
+    if (!result.success || !result.project) {
+      return res.status(404).json({
+        success: false,
+        error: result.error || 'Training project not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      project: result.project,
+      tasks: result.tasks
+    });
+  });
+
+  /**
+   * Add task to Training Project
+   * Only Management, Manager, and Admin can add tasks
+   */
+  static addTrainingTask = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    // Only Management, Manager, and Super Admin can add training tasks
+    if (!['management', 'manager', 'super_admin'].includes(req.user.role)) {
+      throw new AuthorizationError('Only Management, Managers, and Admins can add training tasks');
+    }
+
+    const result = await ProjectService.addTrainingTask(req.body, req.user);
+
+    if (!result.success || !result.task) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || 'Failed to create training task'
+      });
+    }
+
+    res.status(201).json({
+      success: true,
+      message: 'Training task created successfully',
+      task: result.task
+    });
+  });
+
+  /**
+   * Update task in Training Project
+   * Only Management, Manager, and Admin can update tasks
+   */
+  static updateTrainingTask = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    // Only Management, Manager, and Super Admin can update training tasks
+    if (!['management', 'manager', 'super_admin'].includes(req.user.role)) {
+      throw new AuthorizationError('Only Management, Managers, and Admins can update training tasks');
+    }
+
+    const { taskId } = req.params;
+    const result = await ProjectService.updateTrainingTask(taskId, req.body, req.user);
+
+    if (!result.success || !result.task) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || 'Failed to update training task'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Training task updated successfully',
+      task: result.task
+    });
+  });
+
+  /**
+   * Delete task from Training Project
+   * Only Management, Manager, and Admin can delete tasks
+   */
+  static deleteTrainingTask = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    // Only Management, Manager, and Super Admin can delete training tasks
+    if (!['management', 'manager', 'super_admin'].includes(req.user.role)) {
+      throw new AuthorizationError('Only Management, Managers, and Admins can delete training tasks');
+    }
+
+    const { taskId } = req.params;
+    const result = await ProjectService.deleteTrainingTask(taskId, req.user);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || 'Failed to delete training task'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Training task deleted successfully'
+    });
+  });
 }
 
 // Validation middleware
@@ -1408,4 +1543,38 @@ export const updateProjectMemberRoleValidation = [
     .optional()
     .isBoolean()
     .withMessage('hasManagerAccess must be a boolean')
+];
+
+// ========================================================================
+// TRAINING PROJECT VALIDATIONS
+// ========================================================================
+
+export const createTrainingTaskValidation = [
+  body('name')
+    .trim()
+    .isLength({ min: 2, max: 200 })
+    .withMessage('Task name must be between 2 and 200 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Description must be less than 500 characters')
+];
+
+export const updateTrainingTaskValidation = [
+  ...taskIdValidation,
+  body('name')
+    .optional()
+    .trim()
+    .isLength({ min: 2, max: 200 })
+    .withMessage('Task name must be between 2 and 200 characters'),
+  body('description')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Description must be less than 500 characters'),
+  body('is_active')
+    .optional()
+    .isBoolean()
+    .withMessage('is_active must be a boolean')
 ];

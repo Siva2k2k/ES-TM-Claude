@@ -644,8 +644,9 @@ export class TeamReviewApprovalService {
     }).session(session);
 
     for (const approval of approvals) {
-      // Check lead approval if lead exists
-      if (approval.lead_id && approval.lead_status !== 'approved') {
+      // Check lead approval if lead exists and is required
+      // 'not_required' status means lead approval was bypassed (e.g., for training projects)
+      if (approval.lead_id && approval.lead_status !== 'approved' && approval.lead_status !== 'not_required') {
         return false;
       }
     }

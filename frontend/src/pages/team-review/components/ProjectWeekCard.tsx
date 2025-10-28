@@ -144,13 +144,19 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
   const canShowActions = canApprove && (projectWeek.approval_status === 'pending' || projectWeek.approval_status === 'partially_processed');
   const shouldShowActions = canShowActions && (isManagementMode ? hasManagerApproved : hasPendingApprovals);
 
-  // Updated: Disable buttons if there are defaulters OR other conditions
-  const actionButtonDisabled = isLoading || (isManagementMode && !allManagerApproved) || !canProceedWithApproval;
+  // For training projects, don't check defaulters - always allow approval if other conditions are met
+  const isTrainingProject = projectWeek.project_type === 'training';
+  
+  // Updated: Disable buttons if there are defaulters (for non-training projects) OR other conditions
+  const actionButtonDisabled = isLoading || 
+    (isManagementMode && !allManagerApproved) || 
+    (!isTrainingProject && !canProceedWithApproval);
   const actionButtonLabel = isManagementMode ? 'Verify All' : 'Approve All';
 
   const getActionButtonTitle = () => {
-    if (!canProceedWithApproval) {
-      return `Cannot proceed. ${defaulterCount} team member${defaulterCount !== 1 ? 's' : ''} have not submitted timesheets.`;
+    if (!isTrainingProject && !canProceedWithApproval) {
+      const memberText = defaulterCount === 1 ? 'member' : 'members';
+      return `Cannot proceed. ${defaulterCount} team ${memberText} have not submitted timesheets.`;
     }
     if (isManagementMode) {
       return allManagerApproved
@@ -186,6 +192,11 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
               <h3 className="text-xl font-semibold text-gray-900">
                 {projectWeek.project_name}
               </h3>
+              {projectWeek.project_type === 'training' && (
+                <span className="px-3 py-1 rounded-full text-sm font-medium bg-purple-100 text-purple-800">
+                  Training
+                </span>
+              )}
               {getStatusBadge(projectWeek.approval_status, projectWeek.sub_status)}
               {projectWeek.is_reopened && (
                 <span
@@ -247,8 +258,8 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
           )}
         </div>
 
-        {/* Defaulter Tracking */}
-        {projectWeek.week_start && (
+        {/* Defaulter Tracking - Skip for training projects */}
+        {projectWeek.week_start && projectWeek.project_type !== 'training' && (
           <div className="mb-4">
             <DefaulterList
               projectId={projectWeek.project_id}
@@ -409,7 +420,6 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
 
               <div className="divide-y divide-gray-200">
                 {projectWeek.users.map(user => (
-                  console.log("User Timesheet Details:", user.approval_status),
                   <UserTimesheetDetails
                     key={user.user_id}
                     user={user}

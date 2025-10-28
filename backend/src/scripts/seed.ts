@@ -15,12 +15,12 @@ const seedData = async (): Promise<void> => {
     logger.info('🌱 Starting database seeding...');
 
     // Clear existing data (optional - remove in production)
-    await (User.deleteMany as any)({}).exec();
-    await (Client.deleteMany as any)({}).exec();
-    await (Project.deleteMany as any)({}).exec();
-    await (Task.deleteMany as any)({}).exec();
+    // await (User.deleteMany as any)({}).exec();
+    // await (Client.deleteMany as any)({}).exec();
+    // await (Project.deleteMany as any)({}).exec();
+    // await (Task.deleteMany as any)({}).exec();
     
-    logger.info('🧹 Cleared existing data');
+    // logger.info('🧹 Cleared existing data');
 
     // Create users
     const hashedPassword = await PasswordSecurity.hashPassword('admin123');
@@ -79,6 +79,12 @@ const seedData = async (): Promise<void> => {
         description: 'Digital marketing and advertising agency',
         is_active: true,
         contact_email: 'hello@digitalmarketing.com'
+      },
+      {
+        name: 'Internal',
+        description: 'Internal company projects and training',
+        is_active: true,
+        contact_email: 'internal@company.com'
       }
     ]);
 
@@ -118,6 +124,17 @@ const seedData = async (): Promise<void> => {
         end_date: new Date('2024-12-31'),
         budget: 25000,
         is_billable: true
+      },
+      {
+        name: 'Training Program',
+        description: 'Company-wide training and professional development program',
+        client_id: clients[2]._id, // Internal client
+        primary_manager_id: users[0]._id, // Assign to super admin (no specific manager)
+        project_type: 'training',
+        status: 'active',
+        start_date: new Date('2024-01-01'),
+        // No end date - training is ongoing
+        is_billable: false
       }
     ]);
 
@@ -169,6 +186,17 @@ const seedData = async (): Promise<void> => {
         estimated_hours: 100,
         hourly_rate: 45,
         is_active: true
+      },
+      // Training Project Default Tasks
+      {
+        name: 'General Training',
+        description: 'General training activities and learning',
+        project_id: projects[3]._id, // Training Program project
+        created_by_user_id: users[0]._id, // Created by super admin
+        estimated_hours: 0, // No estimation for training
+        hourly_rate: 0, // Non-billable
+        is_active: true,
+        is_billable: false
       }
     ]);
 
@@ -178,8 +206,12 @@ const seedData = async (): Promise<void> => {
     logger.info('\n📊 Summary:');
     logger.info(`   Users: ${users.length}`);
     logger.info(`   Clients: ${clients.length}`);
-    logger.info(`   Projects: ${projects.length}`);
+    logger.info(`   Projects: ${projects.length} (including Training Program)`);
     logger.info(`   Tasks: ${tasks.length}`);
+    logger.info('\n📚 Training Program:');
+    logger.info('   Project: Training Program (globally accessible)');
+    logger.info('   Default Task: General Training');
+    logger.info('   Note: All employees can select training entries');
     logger.info('\n🔑 Login Credentials:');
     logger.info('   Email: admin@company.com');
     logger.info('   Password: admin123');

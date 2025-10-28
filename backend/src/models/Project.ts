@@ -210,6 +210,7 @@ ProjectMemberSchema.virtual('id').get(function() {
 ProjectSchema.set('toJSON', {
   virtuals: true,
   transform: function(_doc, ret) {
+    ret.id = ret._id;
     delete ret._id;
     delete ret.__v;
     return ret;
@@ -224,6 +225,15 @@ ProjectMemberSchema.set('toJSON', {
     return ret;
   }
 });
+
+// Static methods
+ProjectSchema.statics.getTrainingProject = async function(): Promise<IProject | null> {
+  return this.findOne({
+    project_type: 'training',
+    status: 'active',
+    deleted_at: null
+  }).exec();
+};
 
 export const Project = mongoose.models.Project || mongoose.model<IProject>('Project', ProjectSchema);
 export const ProjectMember = mongoose.models.ProjectMember || mongoose.model<IProjectMember>('ProjectMember', ProjectMemberSchema);

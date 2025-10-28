@@ -120,6 +120,11 @@ export class TeamReviewServiceV2 {
           pm => pm.project_id.toString() === project._id.toString()
         );
 
+        // Debug logging for training projects
+        if (project.project_type === 'training') {
+          logger.info(`Processing training project: ${project.name} (${project._id}) for role: ${approverRole}`);
+        }
+
         // Get lead for this project
         const leadMember = projectMembersForProject.find(pm => pm.project_role === 'lead');
         let leadInfo = null;
@@ -186,7 +191,8 @@ export class TeamReviewServiceV2 {
           // Manager should ONLY see the group when BOTH conditions are met:
           // 1. Lead has reviewed all employee timesheets (no pending reviews)
           // 2. Lead has submitted their own timesheet for this week
-          if (approverRole === 'manager' || approverRole === 'super_admin') {
+          // EXCEPTION: Training projects are always visible to managers regardless of lead status
+          if ((approverRole === 'manager' || approverRole === 'super_admin') && project.project_type !== 'training') {
             // Check if this project has a Lead
             const hasLead = leadInfo?.id ? true : false;
 
@@ -262,7 +268,8 @@ export class TeamReviewServiceV2 {
           // Management should ONLY see the group when BOTH conditions are met:
           // 1. Manager has approved all employee and lead timesheets (no pending manager reviews)
           // 2. Manager has submitted their own timesheet for this week
-          if (approverRole === 'management') {
+          // EXCEPTION: Training projects are always visible to management regardless of manager status
+          if (approverRole === 'management' && project.project_type !== 'training') {
             // Get the project's primary manager
             const managerId = project.primary_manager_id?._id?.toString();
             
@@ -325,12 +332,25 @@ export class TeamReviewServiceV2 {
             // Check if user is the project manager (primary_manager_id)
             const isProjectManager = project.primary_manager_id?._id?.toString() === ts.user_id._id.toString();
             
-            // For Management role view, include both project members AND the project manager
-            // For other roles, only include project members
-            if (!memberInfo && !isProjectManager) continue;
+            // Special handling for training projects
+            const isTrainingProject = project.project_type === 'training';
+            
+            // For training projects: ALL users with time entries are visible to managers/management
+            // For other projects: only include project members OR the project manager
+            if (!isTrainingProject && !memberInfo && !isProjectManager) continue;
             
             // If user is not a project member but is the manager, treat them as manager role
-            const effectiveProjectRole = memberInfo ? memberInfo.project_role : 'manager';
+            // For training projects, if user is not a formal member, treat them as employee
+            let effectiveProjectRole: string;
+            if (memberInfo) {
+              effectiveProjectRole = memberInfo.project_role;
+            } else if (isProjectManager) {
+              effectiveProjectRole = 'manager';
+            } else if (isTrainingProject) {
+              effectiveProjectRole = 'employee'; // Default role for training participants
+            } else {
+              effectiveProjectRole = 'employee'; // Fallback
+            }
 
             // Get entries for this user-project-week
             const userEntries = entries.filter(
@@ -440,6 +460,7 @@ export class TeamReviewServiceV2 {
             project_id: project._id.toString(),
             project_name: project.name,
             project_status: project.status,
+            project_type: project.project_type, // Include project type
             week_start: weekStart.toISOString(),
             week_end: weekEnd.toISOString(),
             week_label: this.formatWeekLabel(weekStart, weekEnd),
@@ -516,12 +537,15 @@ export class TeamReviewServiceV2 {
 
     // Role-based filtering
     if (approverRole === 'management' || approverRole === 'super_admin') {
-      // Management sees all projects
+      // Management sees all projects (including training)
     } else if (approverRole === 'manager') {
-      // Managers see their managed projects
-      query.primary_manager_id = new mongoose.Types.ObjectId(approverId);
+      // Managers see their managed projects + ALL training projects
+      query.$or = [
+        { primary_manager_id: new mongoose.Types.ObjectId(approverId) },
+        { project_type: 'training' }
+      ];
     } else if (approverRole === 'lead') {
-      // Leads see projects where they are assigned as lead
+      // Leads see projects where they are assigned as lead, BUT NOT training projects
       const leadProjects = await (ProjectMember as any).find({
         user_id: new mongoose.Types.ObjectId(approverId),
         project_role: 'lead',
@@ -529,7 +553,10 @@ export class TeamReviewServiceV2 {
         removed_at: null
       }).distinct('project_id');
 
-      query._id = { $in: leadProjects };
+      query.$and = [
+        { _id: { $in: leadProjects } },
+        { project_type: { $ne: 'training' } } // Exclude training projects for leads
+      ];
     }
 
     // Project filter
@@ -537,6 +564,17 @@ export class TeamReviewServiceV2 {
       const projectIds = Array.isArray(projectFilter) ? projectFilter : [projectFilter];
       if (query._id) {
         query._id = { $in: projectIds.map(id => new mongoose.Types.ObjectId(id)) };
+      } else if (query.$or) {
+        // If we have $or query (manager case), we need to maintain it while adding project filter
+        const originalOr = query.$or;
+        delete query.$or;
+        query.$and = [
+          { $or: originalOr },
+          { _id: { $in: projectIds.map(id => new mongoose.Types.ObjectId(id)) } }
+        ];
+      } else if (query.$and) {
+        // If we have $and query (lead case), add to it
+        query.$and.push({ _id: { $in: projectIds.map(id => new mongoose.Types.ObjectId(id)) } });
       } else {
         query._id = { $in: projectIds.map(id => new mongoose.Types.ObjectId(id)) };
       }
@@ -544,7 +582,12 @@ export class TeamReviewServiceV2 {
 
     // Search filter
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      const searchCondition = { name: { $regex: search, $options: 'i' } };
+      if (query.$and) {
+        query.$and.push(searchCondition);
+      } else {
+        query.name = { $regex: search, $options: 'i' };
+      }
     }
 
     return query;

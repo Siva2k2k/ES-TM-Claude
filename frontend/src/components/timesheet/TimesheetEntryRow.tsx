@@ -133,7 +133,8 @@ export const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
             <Badge variant="secondary">{projectName}</Badge>
             <span className="text-sm text-gray-600">{formatDate(entry.date)}</span>
             <span className="font-semibold">{entry.hours}h</span>
-            {entry.is_billable && <Badge variant="success" size="sm">Billable</Badge>}
+            {entry.is_billable && !isTrainingEntry && <Badge variant="success" size="sm">Billable</Badge>}
+            {(isTrainingEntry || isLeaveEntry || isMiscEntry) && <Badge variant="outline" size="sm">Non-Billable</Badge>}
             {entryType === 'custom_task' && <Badge variant="outline" size="sm">Custom</Badge>}
             {isEntryRejected && <Badge variant="danger" size="sm">Entry Rejected</Badge>}
             {isProjectRejected && !isEntryRejected && <Badge variant="danger" size="sm">Project Rejected</Badge>}
@@ -352,7 +353,12 @@ export const TimesheetEntryRow: React.FC<TimesheetEntryRowProps> = ({
                   )} />
 
                   <Controller name={`entries.${index}.is_billable`} control={control} render={({ field }) => (
-                    <Checkbox checked={field.value} onCheckedChange={field.onChange} label="Billable" />
+                    <Checkbox
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      label="Billable"
+                      disabled={isTrainingEntry || isLeaveEntry || isMiscEntry}
+                    />
                   )} />
                 </>
               )}

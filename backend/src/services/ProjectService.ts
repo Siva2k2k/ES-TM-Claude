@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import {
   Project,
   ProjectMember,
@@ -2157,6 +2158,208 @@ export class ProjectService {
     } catch (error) {
       console.error('Error in getProjectMembersEnhanced:', error);
       return { error: 'Failed to fetch project members' };
+    }
+  }
+
+  // ========================================================================
+  // TRAINING PROJECT METHODS
+  // ========================================================================
+
+  /**
+   * Get Training Project with all tasks
+   */
+  static async getTrainingProjectWithTasks(): Promise<{
+    success: boolean;
+    project?: any;
+    tasks?: any[];
+    error?: string;
+  }> {
+    try {
+      const Task = (await import('../models/Task')).default;
+      const project = await (Project as any).getTrainingProject();
+
+      if (!project) {
+        return {
+          success: false,
+          error: 'Training project not found. Please contact administrator.'
+        };
+      }
+
+      // Get all tasks for this project
+      const tasks = await (Task.find as any)({
+        project_id: project._id,
+        deleted_at: null
+      }).sort({ created_at: -1 }).lean();
+
+      return {
+        success: true,
+        project,
+        tasks
+      };
+    } catch (error) {
+      console.error('Error in getTrainingProjectWithTasks:', error);
+      return {
+        success: false,
+        error: 'Failed to fetch training project'
+      };
+    }
+  }
+
+  /**
+   * Add task to Training Project
+   */
+  static async addTrainingTask(
+    taskData: any,
+    currentUser: AuthUser
+  ): Promise<{
+    success: boolean;
+    task?: any;
+    error?: string;
+  }> {
+    try {
+      const project = await (Project as any).getTrainingProject();
+
+      if (!project) {
+        return {
+          success: false,
+          error: 'Training project not found'
+        };
+      }
+
+      // Create task
+      const task = await (Task.create as any)({
+        name: taskData.name,
+        description: taskData.description || '',
+        project_id: project._id,
+        created_by_user_id: new mongoose.Types.ObjectId(currentUser.id),
+        estimated_hours: 0,
+        hourly_rate: 0,
+        is_active: true,
+        is_billable: false, // Training tasks are always non-billable
+        status: 'open'
+      });
+
+      return {
+        success: true,
+        task
+      };
+    } catch (error) {
+      console.error('Error in addTrainingTask:', error);
+      return {
+        success: false,
+        error: 'Failed to create training task'
+      };
+    }
+  }
+
+  /**
+   * Update task in Training Project
+   */
+  static async updateTrainingTask(
+    taskId: string,
+    taskData: any,
+    currentUser: AuthUser
+  ): Promise<{
+    success: boolean;
+    task?: any;
+    error?: string;
+  }> {
+    try {
+      const Task = (await import('../models/Task')).default;
+      const project = await (Project as any).getTrainingProject();
+
+      if (!project) {
+        return {
+          success: false,
+          error: 'Training project not found'
+        };
+      }
+
+      // Find task
+      const task = await Task.findOne({
+        _id: new mongoose.Types.ObjectId(taskId),
+        project_id: project._id,
+        deleted_at: null
+      });
+
+      if (!task) {
+        return {
+          success: false,
+          error: 'Training task not found'
+        };
+      }
+
+      // Update fields
+      if (taskData.name !== undefined) task.name = taskData.name;
+      if (taskData.description !== undefined) task.description = taskData.description;
+      if (taskData.is_active !== undefined) task.is_active = taskData.is_active;
+
+      // Ensure training tasks remain non-billable
+      task.is_billable = false;
+
+      await task.save();
+
+      return {
+        success: true,
+        task
+      };
+    } catch (error) {
+      console.error('Error in updateTrainingTask:', error);
+      return {
+        success: false,
+        error: 'Failed to update training task'
+      };
+    }
+  }
+
+  /**
+   * Delete task from Training Project (soft delete)
+   */
+  static async deleteTrainingTask(
+    taskId: string,
+    currentUser: AuthUser
+  ): Promise<{
+    success: boolean;
+    error?: string;
+  }> {
+    try {
+      const Task = (await import('../models/Task')).default;
+      const project = await (Project as any).getTrainingProject();
+
+      if (!project) {
+        return {
+          success: false,
+          error: 'Training project not found'
+        };
+      }
+
+      // Find task
+      const task = await Task.findOne({
+        _id: new mongoose.Types.ObjectId(taskId),
+        project_id: project._id,
+        deleted_at: null
+      });
+
+      if (!task) {
+        return {
+          success: false,
+          error: 'Training task not found'
+        };
+      }
+
+      // Soft delete
+      task.deleted_at = new Date();
+      await task.save();
+
+      return {
+        success: true
+      };
+    } catch (error) {
+      console.error('Error in deleteTrainingTask:', error);
+      return {
+        success: false,
+        error: 'Failed to delete training task'
+      };
     }
   }
 }

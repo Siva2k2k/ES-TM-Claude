@@ -87,6 +87,9 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
     message: string;
     pendingReviews: Array<{ projectName: string; employeeName: string }>;
   } | null>(null);
+  const [trainingProject, setTrainingProject] = useState<{ id: string; name: string } | null>(null);
+  const [trainingTasks, setTrainingTasks] = useState<Array<{ id: string; name: string }>>([]);
+  const [loadingTrainingData, setLoadingTrainingData] = useState(false);
   const isViewMode = mode === 'view';
 
   const {
@@ -107,6 +110,35 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
     timesheetId,
     onSuccess
   });
+
+  // Fetch training project and tasks on mount
+  useEffect(() => {
+    const fetchTrainingData = async () => {
+      setLoadingTrainingData(true);
+      try {
+        const response = await backendApi.get('/projects/training');
+        if (response.success && response.project && response.tasks) {
+          setTrainingProject({
+            id: response.project.id,
+            name: response.project.name
+          });
+          setTrainingTasks(
+            response.tasks.map((task: any) => ({
+              id: task._id, // Use task.id instead of task._id since we fixed the backend JSON transform
+              name: task.name
+            }))
+          );
+        }
+       
+      } catch (error) {
+        console.error('Failed to fetch training project:', error);
+      } finally {
+        setLoadingTrainingData(false);
+      }
+    };
+
+    fetchTrainingData();
+  }, []);
 
   useEffect(() => {
     if (initialData) {
@@ -245,8 +277,8 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
 
       case 'training':
         newEntry = {
-          project_id: '', // Will be auto-assigned to Training Program
-          task_id: '',
+          project_id: trainingProject?.id || '', // Auto-assigned to Training Program
+          task_id: trainingTasks.length > 0 ? trainingTasks[0].id : '', // Default to first training task
           date: weekDates[0].toISOString().split('T')[0],
           hours: 8,
           description: '',
@@ -666,14 +698,22 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
                   <div className="flex-1">
                     <h4 className="font-medium text-blue-900 mb-1">Training Entry</h4>
                     <p className="text-sm text-blue-700">
-                      Training entries are automatically assigned to the Training Program project.
-                      They follow the standard approval workflow (Lead → Manager → Management).
+                      {loadingTrainingData ? (
+                        'Loading training data...'
+                      ) : trainingProject ? (
+                        <>
+                          Training entries are automatically assigned to the <strong>{trainingProject.name}</strong> project.
+                        </>
+                      ) : (
+                        'Training project not found. Please contact your administrator.'
+                      )}
                     </p>
                   </div>
                   <Button
                     onClick={handleAddEntry}
                     icon={Plus}
                     className="bg-blue-600 hover:bg-blue-700"
+                    disabled={!trainingProject || loadingTrainingData}
                   >
                     Add Training Entry
                   </Button>
@@ -696,27 +736,38 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
           </div>
         ) : (
           <div className="space-y-3">
-            {entries.map((entry, index) => (
-              <TimesheetEntryRow
-                key={(entry as any)._uid || `${index}_${entry.date}`}
-                entry={entry}
-                index={index}
-                isExpanded={expandedEntry === index}
-                onToggle={() => setExpandedEntry(expandedEntry === index ? null : index)}
-                onRemove={() => removeEntry(index)}
-                projects={activeProjects}
-                control={control}
-                setValue={setValue}
-                errors={errors.entries?.[index]}
-                projectApprovalsMap={projectApprovalMap}
-                tasks={taskOptions}
-                weekOptions={weekOptions}
-                onCopyEntry={handleCopyEntry}
-                isViewMode={isViewMode && !allowRejectionEdit}
-                timesheetStatus={timesheetStatus}
-                isPartialRejection={isPartialRejection}
-              />
-            ))}
+            {entries.map((entry, index) => {
+              // Determine which tasks to show based on entry category
+              const entryTasks = (entry as any).entry_category === 'training' 
+                ? trainingTasks.map(task => ({
+                    value: task.id,
+                    label: task.name,
+                    projectId: trainingProject?.id || ''
+                  }))
+                : taskOptions.filter(task => task.projectId === entry.project_id);
+
+              return (
+                <TimesheetEntryRow
+                  key={(entry as any)._uid || `${index}_${entry.date}`}
+                  entry={entry}
+                  index={index}
+                  isExpanded={expandedEntry === index}
+                  onToggle={() => setExpandedEntry(expandedEntry === index ? null : index)}
+                  onRemove={() => removeEntry(index)}
+                  projects={activeProjects}
+                  control={control}
+                  setValue={setValue}
+                  errors={errors.entries?.[index]}
+                  projectApprovalsMap={projectApprovalMap}
+                  tasks={entryTasks}
+                  weekOptions={weekOptions}
+                  onCopyEntry={handleCopyEntry}
+                  isViewMode={isViewMode && !allowRejectionEdit}
+                  timesheetStatus={timesheetStatus}
+                  isPartialRejection={isPartialRejection}
+                />
+              );
+            })}
           </div>
         )}
       </CardContent>

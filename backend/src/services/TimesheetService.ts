@@ -1008,12 +1008,20 @@ export class TimesheetService {
             : undefined;
 
           // Add recipients based on who is submitting the timesheet:
-          // - If an employee submits, notify the Lead for the project
-          // - If a Lead submits, notify the Manager for the project
+          // - For training projects: Employees notify Manager directly (skip Lead)
+          // - For regular projects: Employees notify Lead, Leads notify Manager
           // - If a Manager submits, notify all Management users
           if (currentUser.role === 'employee') {
-            if (leadId && leadId !== timesheetOwnerId) {
-              submissionRecipientIds.add(leadId);
+            // Training projects skip lead approval - notify manager directly
+            if (project.project_type === 'training') {
+              if (managerId && managerId !== timesheetOwnerId) {
+                submissionRecipientIds.add(managerId);
+              }
+            } else {
+              // Regular projects - notify lead
+              if (leadId && leadId !== timesheetOwnerId) {
+                submissionRecipientIds.add(leadId);
+              }
             }
           } else if (currentUser.role === 'lead') {
             if (managerId && managerId !== timesheetOwnerId) {
@@ -1054,7 +1062,10 @@ export class TimesheetService {
           let managerStatus = 'pending';
           let managementStatus = 'pending';
 
-          if (currentUser.role === 'lead') {
+          // Training projects skip lead approval - go directly to manager
+          if (project.project_type === 'training') {
+            leadStatus = 'not_required';
+          } else if (currentUser.role === 'lead') {
             leadStatus = 'not_required';
           }
 
@@ -1318,6 +1329,15 @@ export class TimesheetService {
         throw new ValidationError(validation.error!);
       }
 
+      // Check if entry is for training project - training entries must be non-billable
+      let isBillable = entryData.is_billable;
+      if (entryData.project_id) {
+        const project = await Project.findById(entryData.project_id).lean();
+        if (project && project.project_type === 'training') {
+          isBillable = false; // Force non-billable for training projects
+        }
+      }
+
       // Create time entry
       const entryInsertData = {
         timesheet_id: new mongoose.Types.ObjectId(timesheetId),
@@ -1326,7 +1346,7 @@ export class TimesheetService {
         date: new Date(entryData.date),
         hours: entryData.hours,
         description: entryData.description,
-        is_billable: entryData.is_billable,
+        is_billable: isBillable,
         custom_task_description: entryData.custom_task_description,
         entry_type: entryData.entry_type
       };

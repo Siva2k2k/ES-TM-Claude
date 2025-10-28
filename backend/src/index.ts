@@ -5,7 +5,6 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import compression from 'compression';
 import cookieParser from 'cookie-parser';
-import rateLimit from 'express-rate-limit';
 import passport from 'passport';
 import path from 'path';
 import dotenv from 'dotenv';
@@ -39,18 +38,6 @@ app.use(
     crossOriginEmbedderPolicy: false,
   })
 );
-
-// Rate limiting (disabled for development)
-if (process.env.NODE_ENV === 'production') {
-  const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
-    message: {
-      error: 'Too many requests from this IP, please try again later.',
-    },
-  });
-  app.use('/api', limiter);
-}
 
 // CORS configuration
 const corsOptions = {

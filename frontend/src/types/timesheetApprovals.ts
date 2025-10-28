@@ -314,6 +314,7 @@ export interface ProjectWeekGroup {
   project_id: string;
   project_name: string;
   project_status: string;
+  project_type?: string; // 'regular' | 'internal' | 'training'
   week_start: string;
   week_end: string;
   week_label: string; // e.g., "Oct 6-12, 2025"
