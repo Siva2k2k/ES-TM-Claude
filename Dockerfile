@@ -18,7 +18,8 @@ RUN npm ci
 COPY frontend/ ./
 
 # Build arguments for frontend environment variables
-ARG VITE_API_URL
+# Use empty string to make frontend use relative URLs (same domain as backend)
+ARG VITE_API_URL=""
 ENV VITE_API_URL=${VITE_API_URL}
 
 # Build frontend application
@@ -82,14 +83,14 @@ COPY --from=frontend-builder /app/frontend/dist ./dist
 # Backend will serve both API and static frontend files
 WORKDIR /app
 RUN printf '#!/bin/sh\n\
-echo "Starting Timesheet Management System..."\n\
-echo "PORT: $PORT"\n\
-echo "NODE_ENV: $NODE_ENV"\n\
-\n\
-cd /app/backend\n\
-echo "Starting Backend API (will serve frontend static files)..."\n\
-NODE_ENV=${NODE_ENV:-production} PORT=${PORT:-3000} node dist/index.js\n\
-' > /app/start.sh
+    echo "Starting Timesheet Management System..."\n\
+    echo "PORT: $PORT"\n\
+    echo "NODE_ENV: $NODE_ENV"\n\
+    \n\
+    cd /app/backend\n\
+    echo "Starting Backend API (will serve frontend static files)..."\n\
+    NODE_ENV=${NODE_ENV:-production} PORT=${PORT:-3000} node dist/index.js\n\
+    ' > /app/start.sh
 
 RUN chmod +x /app/start.sh
 

@@ -170,7 +170,9 @@ export class ReportService {
 
       // Use backendApi with manual fetch for blob response
       const token = localStorage.getItem('accessToken');
-      const baseURL = (import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1').replace(/\/+$/, '');
+      // In production (when VITE_API_URL is not set or empty), use relative URLs (same domain)
+      const baseURL = (import.meta.env.VITE_API_URL || 
+        (import.meta.env.MODE === 'production' ? '/api/v1' : 'http://localhost:3001/api/v1')).replace(/\/+$/, '');
       const response = await fetch(`${baseURL}/reports/generate`, {
         method: 'POST',
         headers: {

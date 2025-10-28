@@ -7,7 +7,10 @@
 import axios, { AxiosRequestConfig, AxiosResponse, AxiosError } from 'axios';
 import axiosInstance from '../config/axios.config';
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+// In production (when VITE_API_URL is not set or empty), use relative URLs (same domain)
+// In development, use localhost:3001
+const BACKEND_URL = import.meta.env.VITE_API_URL || 
+  (import.meta.env.MODE === 'production' ? '' : 'http://localhost:3001');
 
 export class BackendApiError extends Error {
   constructor(
