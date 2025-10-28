@@ -118,6 +118,6 @@ export const filterProjectsByStatus = (
  */
 export const getManagers = (users: User[]): User[] => {
   return users.filter(user =>
-    ['manager', 'management', 'super_admin'].includes(user.role) && user.is_active
+    ['manager'].includes(user.role) && user.is_active
   );
 };

@@ -23,7 +23,7 @@ import {
   X,
   Save
 } from 'lucide-react';
-import type { Client } from '../types';
+import type { Client } from '../../types';
 import { fr } from 'zod/v4/locales';
 
 interface ClientWithProjects extends Client {

@@ -102,6 +102,18 @@ export class ClientService {
         throw new ConflictError('A client with this name already exists');
       }
 
+      // Check for duplicate email addresses (case-insensitive) if email is provided
+      if (clientData.contact_email && clientData.contact_email.trim()) {
+        const existingEmailClient = await Client.findOne({
+          contact_email: { $regex: new RegExp(`^${clientData.contact_email.trim()}$`, 'i') },
+          deleted_at: null
+        });
+
+        if (existingEmailClient) {
+          throw new ConflictError('A client with this email address already exists');
+        }
+      }
+
       const client = new Client({
         name: clientData.name?.trim(),
         contact_person: clientData.contact_person?.trim() || undefined,
@@ -148,7 +160,7 @@ export class ClientService {
       return { client: client as IClient };
     } catch (error: any) {
       console.error('Error creating client:', error);
-      if (error instanceof AuthorizationError || error instanceof ValidationError) {
+      if (error instanceof AuthorizationError || error instanceof ValidationError || error instanceof ConflictError) {
         return { error: error.message };
       }
       return { error: 'Failed to create client' };
@@ -327,6 +339,19 @@ export class ClientService {
 
         if (duplicateClient) {
           return { success: false, error: 'A client with this name already exists' };
+        }
+      }
+
+      // Check for duplicate email addresses (excluding current client) if email is provided
+      if (updates.contact_email && updates.contact_email.trim() !== existingClient.contact_email) {
+        const duplicateEmailClient = await Client.findOne({
+          _id: { $ne: clientId },
+          contact_email: { $regex: new RegExp(`^${updates.contact_email.trim()}$`, 'i') },
+          deleted_at: null
+        });
+
+        if (duplicateEmailClient) {
+          return { success: false, error: 'A client with this email address already exists' };
         }
       }
 
