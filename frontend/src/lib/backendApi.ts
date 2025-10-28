@@ -80,10 +80,12 @@ export class BackendApiClient {
    */
   private async request<T>(config: AxiosRequestConfig): Promise<T> {
     try {
-      const response: AxiosResponse<T> = await axiosInstance.request({
-        baseURL: this.baseURL,
-        ...config
-      });
+      // Only override baseURL if BACKEND_URL is explicitly set (not empty string)
+      const requestConfig: AxiosRequestConfig = this.baseURL 
+        ? { baseURL: this.baseURL, ...config }
+        : config;
+      
+      const response: AxiosResponse<T> = await axiosInstance.request(requestConfig);
       return response.data;
     } catch (error) {
       return this.handleAxiosError(error);
