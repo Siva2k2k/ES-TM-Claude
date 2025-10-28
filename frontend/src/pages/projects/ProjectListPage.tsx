@@ -21,9 +21,8 @@ import {
   Plus,
 } from 'lucide-react';
 import { useRoleManager } from '../../hooks/useRoleManager';
-import { useAuth } from '../../store/contexts/AuthContext';
 import { DeleteActionModal } from '../../components/DeleteActionModal';
-import type { Project, Task } from '../../types';
+import type { Project } from '../../types';
 
 // Custom Hooks
 import { useProjectData } from '../../hooks/useProjectData';
@@ -50,7 +49,6 @@ import { getManagerDisplayName, getClientName, getManagers } from '../../utils/p
  */
 export const ProjectListPage: React.FC = () => {
   const { canManageProjects } = useRoleManager();
-  const { currentUser } = useAuth();
 
   // Custom hooks for data and actions
   const { 
@@ -65,8 +63,6 @@ export const ProjectListPage: React.FC = () => {
     getTasksForProject,
     addMemberToProject,
     removeMemberFromProject,
-    isAddingMember,
-    isRemovingMember,
     availableUsers,
     loadAvailableUsers
   } = useProjectData();
@@ -111,6 +107,9 @@ export const ProjectListPage: React.FC = () => {
 
   // Get managers for project form
   const managers = getManagers(users);
+
+  // Filter projects for managers - managers only see projects they manage
+  const displayProjects = filteredProjects;
 
   /**
    * Handle project creation
@@ -277,7 +276,7 @@ export const ProjectListPage: React.FC = () => {
         <ProjectHeader
           activeTab={activeTab}
           onTabChange={setActiveTab}
-          projectCount={filteredProjects.length}
+          projectCount={displayProjects.length}
         />
 
         {/* Tab Content */}
@@ -303,7 +302,7 @@ export const ProjectListPage: React.FC = () => {
                   <div className="flex gap-3 items-center">
                     <select
                       value={statusFilter}
-                      onChange={(e) => setStatusFilter(e.target.value as any)}
+                      onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'completed' | 'archived')}
                       className="px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
                     >
                       <option value="all">All Status</option>
@@ -340,7 +339,7 @@ export const ProjectListPage: React.FC = () => {
               </div>
 
               {/* Projects Grid/List */}
-              {filteredProjects.length === 0 ? (
+              {displayProjects.length === 0 ? (
                 <EmptyProjectState
                   hasFilters={hasActiveFilters}
                   onCreateClick={() => setActiveTab('create')}
@@ -348,7 +347,7 @@ export const ProjectListPage: React.FC = () => {
               ) : viewMode === 'grid' ? (
                 /* GRID VIEW */
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredProjects.map((project) => (
+                  {displayProjects.map((project) => (
                     <div
                       key={project.id}
                       className="group bg-white rounded-2xl shadow-sm border border-gray-100 hover:shadow-xl hover:border-blue-200 transition-all duration-300 overflow-hidden"
@@ -498,7 +497,7 @@ export const ProjectListPage: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {filteredProjects.map((project) => (
+                        {displayProjects.map((project) => (
                           <React.Fragment key={project.id}>
                             <tr className="hover:bg-gray-50 transition-colors group">
                               <td className="px-6 py-4">
@@ -763,7 +762,7 @@ export const ProjectListPage: React.FC = () => {
           task={editingTask}
           members={taskSlideProjectId ? getMembersForProject(taskSlideProjectId) : []}
           onSaved={handleTaskSaved}
-          onDeleted={async (taskId) => {
+          onDeleted={async () => {
             if (taskSlideProjectId) await loadProjectTasks(taskSlideProjectId);
           }}
         />

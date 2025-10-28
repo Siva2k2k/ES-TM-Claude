@@ -3,6 +3,7 @@ import { ProjectService } from '../services/ProjectService';
 import { UserService } from '../services/UserService';
 import { deduplicateProjects } from '../utils/projectUtils';
 import { showSuccess, showError } from '../utils/toast';
+import { useAuth } from '../store/contexts/AuthContext';
 import type { Project, Client, User, Task } from '../types';
 
 /**
@@ -44,6 +45,7 @@ export interface ProjectMember {
  * @returns Project data, loading state, error state, and refresh function
  */
 export const useProjectData = () => {
+  const { currentUser } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [users, setUsers] = useState<User[]>([]);
@@ -131,8 +133,20 @@ export const useProjectData = () => {
       } else {
         const raw = projectsResult.projects || [];
         const deduped = deduplicateProjects(raw);
-        setProjects(deduped);
-        projectList = deduped;
+        
+        // Filter projects for managers - managers only see projects they manage
+        const filteredProjects = currentUser?.role === 'manager'
+          ? deduped.filter(project => {
+              // Handle both string ID and populated user object cases
+              const managerId = typeof project.primary_manager_id === 'object' && project.primary_manager_id
+                ? (project.primary_manager_id as { id: string }).id
+                : project.primary_manager_id;
+              return managerId === currentUser?.id;
+            })
+          : deduped;
+        
+        setProjects(filteredProjects);
+        projectList = filteredProjects;
       }
 
       // Handle clients
@@ -158,7 +172,7 @@ export const useProjectData = () => {
     } finally {
       setLoading(false);
     }
-  }, [loadProjectDetails]);
+  }, [loadProjectDetails, currentUser]);
 
   /**
    * Refresh all data
@@ -183,10 +197,22 @@ export const useProjectData = () => {
       } else {
         const raw = projectsResult.projects || [];
         const deduped = deduplicateProjects(raw);
-        setProjects(deduped);
+        
+        // Filter projects for managers - managers only see projects they manage
+        const filteredProjects = currentUser?.role === 'manager'
+          ? deduped.filter(project => {
+              // Handle both string ID and populated user object cases
+              const managerId = typeof project.primary_manager_id === 'object' && project.primary_manager_id
+                ? (project.primary_manager_id as { id: string }).id
+                : project.primary_manager_id;
+              return managerId === currentUser?.id;
+            })
+          : deduped;
+        
+        setProjects(filteredProjects);
         
         // Also reload project details
-        await loadProjectDetails(deduped);
+        await loadProjectDetails(filteredProjects);
       }
     } catch (err) {
       console.error('Error loading projects:', err);
@@ -195,7 +221,7 @@ export const useProjectData = () => {
     } finally {
       setLoading(false);
     }
-  }, [loadProjectDetails]);
+  }, [loadProjectDetails, currentUser]);
 
   /**
    * Get members for a specific project from cache

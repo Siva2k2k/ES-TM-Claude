@@ -1,5 +1,6 @@
 import React from 'react';
 import { Plus, FolderKanban, Users, BarChart3 } from 'lucide-react';
+import { useAuth } from '../../../store/contexts/AuthContext';
 
 interface ProjectHeaderProps {
   activeTab: string;
@@ -22,6 +23,8 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
   onTabChange,
   projectCount,
 }) => {
+  const { currentUser } = useAuth();
+
   return (
     <div className="mb-8">
       <div className="flex items-center justify-between mb-6">
@@ -31,7 +34,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
           </h1>
           <p className="text-gray-600">Create and manage all projects across the organization</p>
         </div>
-        {activeTab === 'overview' && (
+        {activeTab === 'overview' && currentUser?.role !== 'manager' && (
           <button
             onClick={() => onTabChange('create')}
             className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl hover:shadow-lg hover:scale-105 transition-all duration-200 font-medium"
@@ -59,6 +62,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
             </div>
           </button>
 
+          {currentUser?.role !== 'manager' && (
           <button
             onClick={() => onTabChange('create')}
             className={`flex-1 min-w-[120px] py-3 px-4 rounded-xl font-medium text-sm transition-all duration-200 ${
@@ -71,7 +75,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
               <Plus className="h-4 w-4" />
               <span>Create</span>
             </div>
-          </button>
+          </button>)}
 
           <button
             onClick={() => onTabChange('members')}
@@ -87,6 +91,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
             </div>
           </button>
 
+          {currentUser?.role !== 'manager' && (
           <button
             onClick={() => onTabChange('analytics')}
             className={`flex-1 min-w-[120px] py-3 px-4 rounded-xl font-medium text-sm transition-all duration-200 ${
@@ -99,7 +104,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
               <BarChart3 className="h-4 w-4" />
               <span>Analytics</span>
             </div>
-          </button>
+          </button>)}
         </nav>
       </div>
     </div>
