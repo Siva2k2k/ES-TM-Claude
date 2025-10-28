@@ -45,6 +45,13 @@ router.get(
   DefaulterController.validateNoDefaulters
 );
 
+// Missing submissions route (must come before parameterized routes)
+// GET /api/v1/defaulters/missing-submissions
+router.get(
+  '/missing-submissions',
+  DefaulterController.getMissingSubmissions
+);
+
 // Manager defaulters route
 // GET /api/v1/defaulters/manager/:managerId/:weekStart
 router.get(

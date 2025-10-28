@@ -55,6 +55,27 @@ const getStatusBadge = (status: string, subStatus?: string): JSX.Element => {
   }
 };
 
+const getStatusText = (
+  isManagementMode: boolean,
+  allManagerApproved: boolean,
+  teamMembers: ProjectWeekGroup['users'],
+  managerApprovedUsers: ProjectWeekGroup['users'],
+  pendingUsers: ProjectWeekGroup['users']
+): string => {
+  if (isManagementMode) {
+    if (allManagerApproved) {
+      return 'Ready for verification';
+    }
+    const pendingCount = teamMembers.length - managerApprovedUsers.length;
+    return `${pendingCount} ${pendingCount === 1 ? 'user is' : 'users are'} pending`;
+  } else {
+    if (pendingUsers.length === 0) {
+      return 'All approved';
+    }
+    return `${pendingUsers.length} ${pendingUsers.length === 1 ? 'user is' : 'users are'} pending`;
+  }
+};
+
 const calculateAggregatedHours = (
   users: ProjectWeekGroup['users'],
   userBillableData: Record<string, { worked_hours: number; billable_hours: number; billable_adjustment: number }>
@@ -270,7 +291,7 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
         )}
 
         {/* Stats Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-4">
           <div className="bg-white rounded-lg border border-gray-200 p-3">
             <div className="flex items-center gap-2 mb-1">
               <Users className="w-4 h-4 text-blue-600" />
@@ -303,7 +324,7 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
               <Clock className="w-4 h-4 text-green-600" />
               <span className="text-sm text-gray-600">Hours</span>
             </div>
-            {(isManagementMode || approvalRole === 'manager') ? (
+            {(isManagementMode || approvalRole === 'manager') && projectWeek.project_type !== 'training' ? (
               <>
                 <div className="text-2xl font-bold text-gray-900">
                   {totalBillableHours.toFixed(1)}
@@ -332,22 +353,6 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
               <span className="text-sm text-gray-600">Entries</span>
             </div>
             <div className="text-2xl font-bold text-gray-900">{projectWeek.total_entries}</div>
-          </div>
-
-          <div className="bg-white rounded-lg border border-gray-200 p-3">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-sm text-gray-600">Status</span>
-            </div>
-            <div className="text-lg font-semibold text-gray-900 capitalize">
-              {isManagementMode
-                ? `${managerApprovedUsers.length}/${teamMembers.length} manager approved`
-                : projectWeek.approval_status}
-            </div>
-            {isManagementMode && (
-              <div className="text-xs text-gray-500 mt-1">
-                {allManagerApproved ? 'Ready for final verification' : 'Waiting on manager approvals'}
-              </div>
-            )}
           </div>
         </div>
 
@@ -431,6 +436,7 @@ export const ProjectWeekCard: React.FC<ProjectWeekCardProps> = ({
                     onBillableUpdate={(data) => handleBillableUpdate(user.user_id, data)}
                     canApprove={!!canApprove}
                     approvalRole={approvalRole}
+                    projectType={projectWeek.project_type}
                   />
                 ))}
               </div>

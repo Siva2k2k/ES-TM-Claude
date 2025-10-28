@@ -187,6 +187,10 @@ export class TeamReviewServiceV2 {
           
           if (statusResult.status === null) continue; // Skip if doesn't match filter
 
+          // Calculate counts based on the users that are actually included in this project-week
+          // This ensures the counts match what the user sees
+          
+
           // FOR MANAGER VIEW: Hide groups where Lead hasn't completed all requirements
           // Manager should ONLY see the group when BOTH conditions are met:
           // 1. Lead has reviewed all employee timesheets (no pending reviews)
@@ -403,6 +407,12 @@ export class TeamReviewServiceV2 {
             totalEntries += userEntries.length;
           }
 
+          const userApprovalCounts = {
+            pending_count: users.filter(u => u.approval_status === 'pending').length,
+            approved_count: users.filter(u => u.approval_status === 'approved').length,
+            rejected_count: users.filter(u => u.approval_status === 'rejected').length
+          };
+
           if (users.length === 0) continue;
 
           // Get rejection/approval details based on role
@@ -470,9 +480,9 @@ export class TeamReviewServiceV2 {
             lead_name: leadInfo?.name,
             approval_status: finalStatus,
             sub_status: finalSubStatus,
-            pending_count: statusResult.pending_count,
-            approved_count: statusResult.approved_count,
-            rejected_count: statusResult.rejected_count,
+            pending_count: userApprovalCounts.pending_count,
+            approved_count: userApprovalCounts.approved_count,
+            rejected_count: userApprovalCounts.rejected_count,
             users,
             total_users: users.length,
             total_hours: totalHours,

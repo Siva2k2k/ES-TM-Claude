@@ -6,10 +6,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileCheck, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
+import { FileCheck, AlertCircle, CheckCircle, RefreshCw, Users } from 'lucide-react';
 import { useAuth } from '../../store/contexts/AuthContext';
 import { useRoleManager } from '../../hooks/useRoleManager';
 import TeamReviewService from '../../services/TeamReviewService';
+import { backendApi } from '../../lib/backendApi';
 import {
   FilterBar,
   PaginationControls,
@@ -24,6 +25,18 @@ import type {
 } from '../../types/timesheetApprovals';
 
 type TabStatus = 'pending' | 'approved' | 'rejected';
+
+interface MissingSubmission {
+  user_id: string;
+  user_name: string;
+  user_email?: string;
+  role: string;
+  project_id: string;
+  project_name: string;
+  week_start_date: string;
+  week_end_date: string;
+  message: string;
+}
 
 export const TeamReviewPageV2: React.FC = () => {
   const navigate = useNavigate();
@@ -45,6 +58,8 @@ export const TeamReviewPageV2: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [missingSubmissions, setMissingSubmissions] = useState<MissingSubmission[]>([]);
+  const [loadingMissing, setLoadingMissing] = useState(false);
 
   // Filters state
   const [filters, setFilters] = useState<ProjectWeekFilters>({
@@ -86,13 +101,38 @@ export const TeamReviewPageV2: React.FC = () => {
     }
   }, [filters]);
 
+  // Load missing submissions
+  const loadMissingSubmissions = useCallback(async () => {
+    setLoadingMissing(true);
+    try {
+      const response = await backendApi.get<{
+        success: boolean;
+        user_id: string;
+        user_role: string;
+        missing_submissions: MissingSubmission[];
+        count: number;
+        period: string;
+      }>('/defaulters/missing-submissions');
+
+      setMissingSubmissions(response.missing_submissions || []);
+    } catch (err) {
+      console.error('Error loading missing submissions:', err);
+      setMissingSubmissions([]);
+    } finally {
+      setLoadingMissing(false);
+    }
+  }, []);
+
+  console.log("Missing Submissions:", missingSubmissions);
+
   useEffect(() => {
     if (!canApprove) {
       navigate('/dashboard');
       return;
     }
     loadProjectWeeks();
-  }, [canApprove, navigate, filters, loadProjectWeeks]);
+    loadMissingSubmissions();
+  }, [canApprove, navigate, filters, loadProjectWeeks, loadMissingSubmissions]);
 
   // Handle tab change
   const handleTabChange = (tab: TabStatus) => {
@@ -348,6 +388,29 @@ export const TeamReviewPageV2: React.FC = () => {
         </div>
       )}
 
+      {/* Defaulter's List */}
+      {missingSubmissions.length > 0 && (
+        <div className="mb-6 bg-white rounded-lg border border-gray-200 p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Users className="w-6 h-6 text-orange-600" />
+            <h2 className="text-xl font-semibold text-gray-900">Defaulter's List</h2>
+            <span className="px-3 py-1 bg-orange-100 text-orange-800 rounded-full text-sm font-medium">
+              {missingSubmissions.length} missing submission{missingSubmissions.length === 1 ? '' : 's'}
+            </span>
+          </div>
+          <div className="space-y-3">
+            {missingSubmissions.map((submission) => (
+              <div key={`${submission.user_id}-${submission.project_id}-${submission.week_start_date}`} className="flex items-start gap-3 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                <AlertCircle className="w-5 h-5 text-orange-600 mt-0.5 flex-shrink-0" />
+                <div className="text-sm text-gray-800">
+                  {submission.message}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="mb-6 border-b border-gray-200">
         <nav className="-mb-px flex space-x-8" aria-label="Tabs">
@@ -403,7 +466,6 @@ export const TeamReviewPageV2: React.FC = () => {
           {/* Project-Week Cards */}
           <div className="space-y-6 mb-6">
             {data.project_weeks.map(projectWeek => (
-              console.log(projectWeek),
               <ProjectWeekCard
                 key={`${projectWeek.project_id}-${projectWeek.week_start}`}
                 projectWeek={projectWeek}

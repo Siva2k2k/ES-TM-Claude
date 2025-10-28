@@ -12,6 +12,7 @@ import * as formatting from '../../../utils/formatting';
 interface UserTimesheetDetailsProps {
   user: ProjectWeekUser;
   projectId: string;
+  projectType?: string; // 'regular' | 'internal' | 'training'
   isExpanded: boolean;
   onToggle: () => void;
   onApproveUser?: () => void;
@@ -28,6 +29,7 @@ interface UserTimesheetDetailsProps {
 export const UserTimesheetDetails: React.FC<UserTimesheetDetailsProps> = ({
   user,
   projectId,
+  projectType,
   isExpanded,
   onToggle,
   onApproveUser,
@@ -206,8 +208,8 @@ export const UserTimesheetDetails: React.FC<UserTimesheetDetailsProps> = ({
               <div className="text-xs text-gray-500">Entries</div>
             </div>
             
-            {/* Billable Hours (Manager/Management only) */}
-            {(approvalRole === 'manager' || approvalRole === 'management') && (
+            {/* Billable Hours (Manager/Management only, not for training projects) */}
+            {(approvalRole === 'manager' || approvalRole === 'management') && projectType !== 'training' && (
               <>
                 <div className="text-center">
                   <div className="font-semibold text-blue-900">
@@ -232,7 +234,7 @@ export const UserTimesheetDetails: React.FC<UserTimesheetDetailsProps> = ({
                 </div>
                 
                 {/* Quick Adjustment Input */}
-                <div className="flex items-center gap-1 ml-2" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center gap-1 ml-2">
                   <input
                     type="number"
                     step="0.5"

@@ -231,6 +231,42 @@ export class DefaulterController {
       excluded_role: excludeRole
     });
   });
+
+  /**
+   * Get users who haven't submitted timesheets for any project in the past 2 weeks
+   * GET /api/defaulters/missing-submissions
+   *
+   * Returns missing submissions with formatted messages for display
+   *
+   * Access: Lead, Manager, Management, Super Admin
+   */
+  static getMissingSubmissions = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    if (!req.user) {
+      throw new ValidationError('User not authenticated');
+    }
+
+    // Only leads and managers can access this endpoint
+    if (!['lead', 'manager', 'management', 'super_admin'].includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only team leads and managers can view missing submissions'
+      });
+    }
+
+    const missingSubmissions = await DefaulterService.getMissingSubmissionsForPastWeeks(
+      req.user.id,
+      req.user.role
+    );
+
+    res.json({
+      success: true,
+      user_id: req.user.id,
+      user_role: req.user.role,
+      missing_submissions: missingSubmissions,
+      count: missingSubmissions.length,
+      period: 'past 2 weeks'
+    });
+  });
 }
 
 // Validation middleware

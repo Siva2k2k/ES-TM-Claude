@@ -5,7 +5,7 @@
  * Provides blocking validation to prevent approvals when defaulters exist
  */
 
-import { ProjectMember } from '@/models/Project';
+import { ProjectMember, Project } from '@/models/Project';
 import { Timesheet } from '@/models/Timesheet';
 import { ValidationError } from '@/utils/errors';
 import mongoose from 'mongoose';
@@ -19,6 +19,18 @@ export interface Defaulter {
   last_submission_date?: Date;
   project_id?: string;
   project_name?: string;
+}
+
+export interface MissingSubmission {
+  user_id: string;
+  user_name: string;
+  user_email?: string;
+  role: string;
+  project_id: string;
+  project_name: string;
+  week_start_date: Date;
+  week_end_date: Date;
+  message: string; // Formatted message for display
 }
 
 export class DefaulterService {
@@ -305,6 +317,121 @@ export class DefaulterService {
     console.log(`Would send reminders to ${defaulters.length} defaulters for project ${projectId}`);
 
     return defaulters.length;
+  }
+
+  /**
+   * Get users who haven't submitted timesheets for any project in the past 2 weeks
+   * Returns missing submissions with project and week details
+   *
+   * @param userId User ID (lead or manager)
+   * @param userRole User's role (lead or manager)
+   * @returns Array of missing submissions
+   */
+  async getMissingSubmissionsForPastWeeks(
+    userId: string,
+    userRole: string
+  ): Promise<MissingSubmission[]> {
+    try {
+      if (!mongoose.Types.ObjectId.isValid(userId)) {
+        throw new ValidationError('Invalid user ID format');
+      }
+
+      // Calculate past 2 weeks from current week
+      const currentWeekStart = this.getCurrentWeekStart();
+      const pastWeeks: Date[] = [];
+
+      // Get current week and previous week
+      pastWeeks.push(currentWeekStart);
+
+      const previousWeek = new Date(currentWeekStart);
+      previousWeek.setUTCDate(previousWeek.getUTCDate() - 7);
+      pastWeeks.push(previousWeek);
+
+      // Get projects based on user role
+      let projects: any[] = [];
+
+      if (userRole === 'manager') {
+        // Manager sees all projects where they are primary manager
+        projects = await (Project.find as any)({
+          primary_manager_id: new mongoose.Types.ObjectId(userId),
+          status: 'active',
+          deleted_at: null
+        }).select('_id name');
+      } else if (userRole === 'lead') {
+        // Lead sees projects where they are assigned as lead
+        projects = await (Project.find as any)({
+          'leads.user_id': new mongoose.Types.ObjectId(userId),
+          status: 'active',
+          deleted_at: null
+        }).select('_id name');
+      }
+
+      const missingSubmissions: MissingSubmission[] = [];
+
+      for (const project of projects) {
+        // Get project members based on role hierarchy
+        const members = await (ProjectMember.find as any)({
+          project_id: project._id,
+          removed_at: null,
+          deleted_at: null
+        }).populate('user_id', 'full_name email role')
+          .lean();
+
+        for (const member of members) {
+          const user = member.user_id as any;
+
+          if (!user) continue;
+
+          // Filter users based on role hierarchy
+          let shouldInclude = false;
+
+          if (userRole === 'manager') {
+            // Manager sees employees and leads (but not other managers)
+            shouldInclude = ['employee', 'lead'].includes(user.role);
+          } else if (userRole === 'lead') {
+            // Lead sees only employees (not other leads or managers)
+            shouldInclude = user.role === 'employee';
+          }
+
+          if (!shouldInclude) continue;
+
+          // Check each past week for missing submissions
+          for (const weekStart of pastWeeks) {
+            const timesheet = await (Timesheet.findOne as any)({
+              user_id: user._id,
+              week_start_date: weekStart,
+              status: { $in: ['submitted', 'lead_approved', 'manager_approved', 'management_pending', 'frozen', 'billed'] },
+              deleted_at: null
+            });
+
+            if (!timesheet) {
+              // User hasn't submitted for this week - add to missing submissions
+              const weekEnd = new Date(weekStart);
+              weekEnd.setUTCDate(weekEnd.getUTCDate() + 6); // Sunday
+
+              const message = `${user.full_name || 'Unknown'} did not submit entries on ${project.name} for week ${weekStart.toISOString().split('T')[0]} - ${weekEnd.toISOString().split('T')[0]}`;
+
+              missingSubmissions.push({
+                user_id: user._id.toString(),
+                user_name: user.full_name || 'Unknown',
+                user_email: user.email,
+                role: user.role || 'employee',
+                project_id: project._id.toString(),
+                project_name: project.name,
+                week_start_date: weekStart,
+                week_end_date: weekEnd,
+                message
+              });
+            }
+          }
+        }
+      }
+
+      return missingSubmissions;
+    } catch (error) {
+      console.error('Error getting missing submissions for past weeks:', error);
+      return [];
+    }
   }
 }
 
