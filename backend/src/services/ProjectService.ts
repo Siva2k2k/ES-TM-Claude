@@ -2276,7 +2276,7 @@ export class ProjectService {
       }
 
       // Find task
-      const task = await Task.findOne({
+      const task = await (Task.findOne as any)({
         _id: new mongoose.Types.ObjectId(taskId),
         project_id: project._id,
         deleted_at: null
@@ -2334,7 +2334,7 @@ export class ProjectService {
       }
 
       // Find task
-      const task = await Task.findOne({
+      const task = await (Task.findOne as any)({
         _id: new mongoose.Types.ObjectId(taskId),
         project_id: project._id,
         deleted_at: null
