@@ -22,7 +22,7 @@ import { Select, type SelectOption } from '../ui/Select';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '../ui/Card';
 import { Alert, AlertTitle, AlertDescription } from '../ui/Alert';
 import { formatDate, formatDuration } from '../../utils/formatting';
-import type { TimeEntry } from '../../types/timesheet.schemas';
+import type { TimeEntry } from '../../types';
 import { backendApi } from '../../lib/backendApi';
 import { CompanyHolidayService, type CompanyHoliday } from '../../services/CompanyHolidayService';
 import type { TimesheetProjectApproval, TimesheetStatus } from '../../types/timesheetApprovals';
@@ -47,9 +47,7 @@ export interface TimesheetFormProps {
   projects?: Array<{ id: string; name: string; is_active: boolean }>;
   tasks?: Array<{ id: string; name: string; project_id: string }>;
   projectApprovals?: ProjectApproval[];
-  editableProjectIds?: string[];
   timesheetStatus?: TimesheetStatus;
-  leadRejectionReason?: string;
   onSuccess?: (result: TimesheetSubmitResult) => void;
   onCancel?: () => void;
 }
@@ -65,6 +63,14 @@ type WeekOption = {
   label: string;
 };
 
+type ExtendedTimeEntry = TimeEntry & {
+  entry_category?: string;
+  leave_session?: string;
+  miscellaneous_activity?: string;
+  _uid?: string;
+  is_editable?: boolean;
+};
+
 type EntryCategory = 'project' | 'leave' | 'training' | 'miscellaneous';
 
 export const TimesheetForm: React.FC<TimesheetFormProps> = ({
@@ -75,9 +81,7 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
   projects = [],
   tasks = [],
   projectApprovals = [],
-  editableProjectIds = [],
   timesheetStatus,
-  leadRejectionReason,
   onSuccess,
   onCancel
 }) => {
@@ -228,11 +232,28 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
     if (initialData) {
       try {
         const entriesWithUid = Array.isArray(initialData.entries)
-          ? initialData.entries.map(entry => ({
-              ...(entry as any),
-              is_editable: entry.is_editable !== undefined ? Boolean(entry.is_editable) : true,
-              _uid: (entry as any)._uid || generateUid()
-            }))
+          ? initialData.entries.map((entry: ExtendedTimeEntry) => {
+              // Infer entry_category if not present
+              let entryCategory = entry.entry_category;
+              if (!entryCategory) {
+                if (entry.leave_session) {
+                  entryCategory = 'leave';
+                } else if (entry.miscellaneous_activity) {
+                  entryCategory = 'miscellaneous';
+                } else if (entry.project_id && trainingProject && entry.project_id === trainingProject.id) {
+                  entryCategory = 'training';
+                } else {
+                  entryCategory = 'project';
+                }
+              }
+
+              return {
+                ...entry,
+                entry_category: entryCategory,
+                is_editable: entry.is_editable !== undefined ? Boolean(entry.is_editable) : true,
+                _uid: entry._uid || generateUid()
+              };
+            })
           : [];
 
         form.reset({
@@ -250,7 +271,7 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
     } else if (mode === 'create') {
       setSelectedProject('');
     }
-  }, [initialData, initialWeekStartDate, form, mode]);
+  }, [initialData, initialWeekStartDate, form, mode, trainingProject]);
 
   useEffect(() => {
     // Holiday logic: Apply holiday entries across all modes (create, edit, view)
@@ -488,6 +509,17 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
   };
 
   const handleSubmit = async (status: 'draft' | 'submitted') => {
+    // Validate before any submission
+    if (status === 'draft' && !canSaveDraft) {
+      console.warn('Cannot save draft: validation errors or no entries');
+      return;
+    }
+
+    if (status === 'submitted' && !canSubmit) {
+      console.warn('Cannot submit: validation errors or blocking issues');
+      return;
+    }
+
     if (status === 'submitted' && timesheetId) {
       try {
         const canSubmitCheck = await backendApi.checkCanSubmit(timesheetId);
@@ -526,6 +558,9 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
   const blockingErrors = validation.blockingErrors;
   const hasFormErrors = Object.keys(errors).length > 0;
   const canSubmit = !hasFormErrors && blockingErrors.length === 0 && entries.length > 0;
+  
+  // For drafts, we're more lenient but still require basic validity
+  const canSaveDraft = entries.length > 0 && blockingErrors.length === 0;
 
   return (
     <Card className="w-full">
@@ -661,8 +696,7 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
         )}
 
         {blockingErrors.length > 0 && (
-          <Alert variant="destructive">
-            <AlertTriangle className="h-4 w-4" />
+          <Alert variant="danger">
             <AlertTitle>Validation Errors - Cannot Submit</AlertTitle>
             <AlertDescription>
               <p className="text-sm mb-2">The following issues must be resolved before submitting:</p>
@@ -930,7 +964,7 @@ export const TimesheetForm: React.FC<TimesheetFormProps> = ({
               variant="secondary"
               icon={Save}
               onClick={() => handleSubmit('draft')}
-              disabled={isSubmitting || entries.length === 0}
+              disabled={isSubmitting || !canSaveDraft}
             >
               Save Draft
             </Button>

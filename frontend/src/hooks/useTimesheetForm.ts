@@ -32,11 +32,34 @@ function prepareEntriesForPersistence(entries: Array<TimeEntry | (TimeEntry & { 
       typeof rest.hours === 'number'
         ? rest.hours
         : Number(rest.hours || 0);
-    return {
+
+    // Build the base entry
+    const baseEntry: any = {
       ...rest,
       hours: coercedHours,
       is_billable: isWeekendDate(rest.date) ? false : Boolean(rest.is_billable)
     };
+
+    // Ensure backward compatibility: if entry_type is set but task_type is not, copy it
+    if (baseEntry.entry_type && !baseEntry.task_type) {
+      baseEntry.task_type = baseEntry.entry_type;
+    }
+
+    // Ensure entry_category is included (required by backend)
+    if (!baseEntry.entry_category) {
+      // Infer category from entry structure if missing
+      if ((entry as any).leave_session) {
+        baseEntry.entry_category = 'leave';
+      } else if ((entry as any).miscellaneous_activity) {
+        baseEntry.entry_category = 'miscellaneous';
+      } else if (baseEntry.project_id?.includes('training')) {
+        baseEntry.entry_category = 'training';
+      } else {
+        baseEntry.entry_category = 'project';
+      }
+    }
+
+    return baseEntry;
   });
 }
 
@@ -170,6 +193,8 @@ export function useTimesheetForm(
         // Get form values
         const values = form.getValues();
 
+        console.log("Submitting timesheet with values:", values);
+
         if (status === 'submitted') {
           const isValid = await form.trigger();
           if (!isValid) {
@@ -222,6 +247,8 @@ export function useTimesheetForm(
         }
 
         const sanitizedEntries = prepareEntriesForPersistence(values.entries || []);
+
+        console.log("Sanitized entries for persistence:", sanitizedEntries);
 
         // Handle edit flow
         if (mode === 'edit' && options.timesheetId) {

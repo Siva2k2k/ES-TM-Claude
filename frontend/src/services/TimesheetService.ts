@@ -312,7 +312,11 @@ export class TimesheetService {
       description?: string;
       is_billable: boolean;
       custom_task_description?: string;
-      entry_type: 'project_task' | 'custom_task';
+      entry_type: 'project_task' | 'custom_task' | 'non_project' | 'leave' | 'holiday';
+      entry_category?: 'project' | 'leave' | 'training' | 'miscellaneous' | 'holiday';
+      leave_session?: 'morning' | 'afternoon' | 'full_day';
+      miscellaneous_activity?: string;
+      project_name?: string;
     }
   ): Promise<{ entry?: TimeEntry; error?: string }> {
     try {
@@ -326,6 +330,12 @@ export class TimesheetService {
         task_id: entryData.task_id,
         description: entryData.description,
         custom_task_description: entryData.custom_task_description
+        ,
+        // pass through optional metadata when available
+        entry_category: entryData.entry_category,
+        leave_session: entryData.leave_session,
+        miscellaneous_activity: entryData.miscellaneous_activity,
+        project_name: entryData.project_name
       });
 
       if (response.success) {
@@ -504,7 +514,11 @@ export class TimesheetService {
       description?: string;
       is_billable: boolean;
       custom_task_description?: string;
-      entry_type: 'project_task' | 'custom_task';
+      entry_type: 'project_task' | 'custom_task' | 'non_project' | 'leave' | 'holiday';
+      entry_category?: 'project' | 'leave' | 'training' | 'miscellaneous' | 'holiday';
+      leave_session?: 'morning' | 'afternoon' | 'full_day';
+      miscellaneous_activity?: string;
+      project_name?: string;
     }[]
   ): Promise<{ success: boolean; error?: string; updatedEntries?: TimeEntry[] }> {
     try {

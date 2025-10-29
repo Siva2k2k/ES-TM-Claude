@@ -411,7 +411,13 @@ export interface TimeEntryInput {
   description?: string;
   is_billable: boolean;
   custom_task_description?: string;
-  entry_type: 'project_task' | 'custom_task';
+  // broaden supported entry types to match frontend values
+  entry_type: 'project_task' | 'custom_task' | 'non_project' | 'leave' | 'holiday';
+  // optional categorization and additional metadata used by UI/backend
+  entry_category?: 'project' | 'leave' | 'training' | 'miscellaneous' | 'holiday';
+  leave_session?: 'morning' | 'afternoon' | 'full_day';
+  miscellaneous_activity?: string;
+  project_name?: string;
 }
 
 export interface BulkTimeEntry {
@@ -421,6 +427,9 @@ export interface BulkTimeEntry {
   description?: string;
   is_billable: boolean;
   custom_task_description?: string;
-  entry_type: 'project_task' | 'custom_task';
+  entry_type: 'project_task' | 'custom_task' | 'non_project' | 'leave' | 'holiday';
+  entry_category?: 'project' | 'leave' | 'training' | 'miscellaneous' | 'holiday';
+  leave_session?: 'morning' | 'afternoon' | 'full_day';
+  miscellaneous_activity?: string;
   dates: string[]; // Array of dates for bulk entry
 }

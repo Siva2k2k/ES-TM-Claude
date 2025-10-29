@@ -334,7 +334,15 @@ export const  EmployeeTimesheetPage: React.FC = () => {
 
   // Loading state
   if (isLoading) {
-    return <LoadingSpinner fullScreen text="Loading timesheets..." />;
+    return (
+      <div className="min-h-screen bg-gray-50 p-6 flex items-center justify-center">
+        <div className="bg-white rounded-lg shadow p-8 text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600">Loading clients...</p>
+        </div>
+      </div>
+    );
+    // return <LoadingSpinner fullScreen text="Loading timesheets..." />;
   }
 
   return (
@@ -476,8 +484,13 @@ function normalizeEntries(entries: any[], timesheetId?: string): CalendarEntry[]
       description: entry.description || entry.note || '',
       is_billable: entry.is_billable !== undefined ? Boolean(entry.is_billable) : true,
       entry_type: (entry.entry_type as TimeEntry['entry_type']) || 'project_task',
+      entry_category: entry.entry_category || 'project', // Include entry_category
       project_name: entry.project_name || entry.project?.name || entry.projectName || '',
-      is_editable: entry.is_editable !== undefined ? Boolean(entry.is_editable) : undefined
+      is_editable: entry.is_editable !== undefined ? Boolean(entry.is_editable) : undefined,
+      // Include category-specific fields
+      leave_session: entry.leave_session,
+      miscellaneous_activity: entry.miscellaneous_activity,
+      custom_task_description: entry.custom_task_description
     } as CalendarEntry;
   });
 }

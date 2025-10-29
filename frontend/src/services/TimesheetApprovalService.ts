@@ -442,7 +442,12 @@ export class TimesheetApprovalService {
         description: entry.description,
         is_billable: entry.is_billable,
         custom_task_description: entry.custom_task_description,
-        entry_type: entry.entry_type
+        entry_type: entry.entry_type,
+        // Pass through additional fields used for leave/training/misc/holiday
+        entry_category: entry.entry_category,
+        leave_session: entry.leave_session,
+        miscellaneous_activity: entry.miscellaneous_activity,
+        project_name: entry.project_name
       });
       
       if (result.error) {
@@ -463,14 +468,19 @@ export class TimesheetApprovalService {
       const result = await TimesheetService.updateTimesheetEntries(
         timesheetId,
         entries.map(entry => ({
-          project_id: entry.project_id,
-          task_id: entry.task_id,
-          date: entry.date,
-          hours: entry.hours,
-          description: entry.description,
-          is_billable: entry.is_billable,
-          custom_task_description: entry.custom_task_description,
-          entry_type: entry.entry_type
+            project_id: entry.project_id,
+            task_id: entry.task_id,
+            date: entry.date,
+            hours: entry.hours,
+            description: entry.description,
+            is_billable: entry.is_billable,
+            custom_task_description: entry.custom_task_description,
+            entry_type: entry.entry_type,
+            // additional metadata
+            entry_category: entry.entry_category,
+            leave_session: entry.leave_session,
+            miscellaneous_activity: entry.miscellaneous_activity,
+            project_name: entry.project_name
         }))
       );
 
@@ -528,7 +538,11 @@ export class TimesheetApprovalService {
           description: e.description,
           is_billable: e.is_billable,
           custom_task_description: e.custom_task_description,
-          entry_type: e.entry_type
+          entry_type: e.entry_type,
+          entry_category: e.entry_category,
+          leave_session: e.leave_session,
+          miscellaneous_activity: e.miscellaneous_activity,
+          project_name: e.project_name
         }))
       );
 

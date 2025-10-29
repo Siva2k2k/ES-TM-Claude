@@ -9,6 +9,12 @@ import { z } from 'zod';
 // Entry type enum
 export const entryTypeSchema = z.enum(['project_task', 'custom_task', 'non_project', 'leave', 'holiday']);
 
+// Entry category enum
+export const entryCategorySchema = z.enum(['project', 'leave', 'training', 'miscellaneous']);
+
+// Leave session enum
+export const leaveSessionSchema = z.enum(['morning', 'afternoon', 'full_day']);
+
 // Time entry schema
 export const timeEntrySchema = z.object({
   project_id: z.string().optional(),
@@ -19,10 +25,14 @@ export const timeEntrySchema = z.object({
     .max(24, 'Maximum 24 hours per day'),
   // Description is optional in the UI; make it optional here to avoid blocking submissions
   description: z.string().max(500, 'Description too long').optional(),
-  is_billable: z.boolean().default(true),
-  entry_type: entryTypeSchema.default('project_task'),
+  is_billable: z.boolean().optional().default(true),
+  entry_type: entryTypeSchema.optional().default('project_task'),
   custom_task_description: z.string().optional(),
   is_editable: z.boolean().optional(),
+  // New fields for categorization
+  entry_category: entryCategorySchema.optional(),
+  leave_session: leaveSessionSchema.optional(),
+  miscellaneous_activity: z.string().optional(),
 }).refine(
   (data) => {
     // Project tasks require project_id and task_id

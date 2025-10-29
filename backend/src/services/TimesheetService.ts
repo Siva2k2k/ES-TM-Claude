@@ -86,6 +86,12 @@ export interface TimeEntryForm {
   is_billable: boolean;
   custom_task_description?: string;
   entry_type: EntryType;
+
+  // New entry category fields
+  entry_category?: EntryCategory;
+  leave_session?: LeaveSession;
+  miscellaneous_activity?: string;
+  task_type?: TaskType; // For backward compatibility with entry_type
 }
 
 function sanitizeTimeEntryForm(entry: TimeEntryForm): TimeEntryForm {
@@ -94,6 +100,29 @@ function sanitizeTimeEntryForm(entry: TimeEntryForm): TimeEntryForm {
   if (!Number.isNaN(entryDate.getTime()) && isWeekend(entryDate)) {
     sanitized.is_billable = false;
   }
+
+  // Ensure backward compatibility: if entry_type is set but task_type is not, copy it
+  if (entry.entry_type && !entry.task_type) {
+    sanitized.task_type = entry.entry_type;
+  }
+
+  // Set default entry_category if not provided - infer from entry fields
+  if (!entry.entry_category) {
+    // Infer category from entry structure
+    if (entry.leave_session) {
+      sanitized.entry_category = 'leave';
+    } else if (entry.miscellaneous_activity) {
+      sanitized.entry_category = 'miscellaneous';
+    } else if (entry.project_id) {
+      // Check if it's a training project by name/ID pattern or default to project
+      // For now, we'll need to rely on explicit entry_category for training
+      // since we can't query the database here
+      sanitized.entry_category = 'project';
+    } else {
+      sanitized.entry_category = 'project'; // Default fallback
+    }
+  }
+
   return sanitized;
 }
 
@@ -1634,10 +1663,13 @@ export class TimesheetService {
       // Helper: convert an entry to a comparable shape for duplicate checks
       const normalize = (e: any) => ({
         date: new Date(e.date).toISOString().split('T')[0],
+        entry_category: e.entry_category || 'project', // Default to project for backward compatibility
         entry_type: e.entry_type,
         project_id: e.project_id ? (e.project_id.toString ? e.project_id.toString() : e.project_id) : undefined,
         task_id: e.task_id ? (e.task_id.toString ? e.task_id.toString() : e.task_id) : undefined,
         custom_task_description: e.custom_task_description ? String(e.custom_task_description).trim() : undefined,
+        leave_session: e.leave_session,
+        miscellaneous_activity: e.miscellaneous_activity ? String(e.miscellaneous_activity).trim() : undefined,
         hours: Number(e.hours) || 0
       });
 
@@ -1651,24 +1683,45 @@ export class TimesheetService {
           throw new ValidationError(`Entry validation failed: Hours must be greater than zero`);
         }
 
-        // Check duplicates for project_task
-        if (a.entry_type === 'project_task' && a.project_id && a.task_id) {
-          for (let j = 0; j < payloadNormalized.length; j++) {
-            if (i === j) continue;
-            const b = payloadNormalized[j];
-            if (b.date === a.date && b.entry_type === 'project_task' && b.project_id === a.project_id && b.task_id === a.task_id) {
-              throw new ValidationError('Entry validation failed: A time entry for this project and task already exists on this date. Please update the existing entry instead.');
+        // Check duplicates based on entry category
+        if (a.entry_category === 'project' || a.entry_category === 'training') {
+          // For project/training entries, check duplicates for project_task
+          if (a.entry_type === 'project_task' && a.project_id && a.task_id) {
+            for (let j = 0; j < payloadNormalized.length; j++) {
+              if (i === j) continue;
+              const b = payloadNormalized[j];
+              if (b.date === a.date && b.entry_category === a.entry_category && b.entry_type === 'project_task' && b.project_id === a.project_id && b.task_id === a.task_id) {
+                throw new ValidationError('Entry validation failed: A time entry for this project and task already exists on this date. Please update the existing entry instead.');
+              }
             }
           }
-        }
 
-        // Check duplicates for custom_task
-        if (a.entry_type === 'custom_task' && a.custom_task_description) {
+          // Check duplicates for custom_task
+          if (a.entry_type === 'custom_task' && a.custom_task_description) {
+            for (let j = 0; j < payloadNormalized.length; j++) {
+              if (i === j) continue;
+              const b = payloadNormalized[j];
+              if (b.date === a.date && b.entry_category === a.entry_category && b.entry_type === 'custom_task' && b.custom_task_description === a.custom_task_description) {
+                throw new ValidationError('Entry validation failed: A custom task with this description already exists on this date. Please update the existing entry instead.');
+              }
+            }
+          }
+        } else if (a.entry_category === 'leave') {
+          // Check duplicates for leave entries (same date and session)
           for (let j = 0; j < payloadNormalized.length; j++) {
             if (i === j) continue;
             const b = payloadNormalized[j];
-            if (b.date === a.date && b.entry_type === 'custom_task' && b.custom_task_description === a.custom_task_description) {
-              throw new ValidationError('Entry validation failed: A custom task with this description already exists on this date. Please update the existing entry instead.');
+            if (b.date === a.date && b.entry_category === 'leave' && b.leave_session === a.leave_session) {
+              throw new ValidationError('Entry validation failed: A leave entry for this date and session already exists. Please update the existing entry instead.');
+            }
+          }
+        } else if (a.entry_category === 'miscellaneous') {
+          // Check duplicates for miscellaneous entries (same date and activity)
+          for (let j = 0; j < payloadNormalized.length; j++) {
+            if (i === j) continue;
+            const b = payloadNormalized[j];
+            if (b.date === a.date && b.entry_category === 'miscellaneous' && b.miscellaneous_activity === a.miscellaneous_activity) {
+              throw new ValidationError('Entry validation failed: A miscellaneous entry with this activity already exists on this date. Please update the existing entry instead.');
             }
           }
         }
@@ -1712,19 +1765,57 @@ export class TimesheetService {
       }
 
       // Create new entries
-      const entryInsertData = sanitizedEntries.map(entryData => ({
-        timesheet_id: new mongoose.Types.ObjectId(timesheetId),
-        project_id: entryData.project_id ? new mongoose.Types.ObjectId(entryData.project_id) : undefined,
-        task_id: entryData.task_id ? new mongoose.Types.ObjectId(entryData.task_id) : undefined,
-        date: new Date(entryData.date),
-        hours: entryData.hours,
-        description: entryData.description,
-        is_billable: entryData.is_billable,
-        custom_task_description: entryData.custom_task_description,
-        entry_type: entryData.entry_type,
-        created_at: new Date(),
-        updated_at: new Date()
-      }));
+      const entryInsertData = sanitizedEntries.map(entryData => {
+        const baseData: any = {
+          timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+          date: new Date(entryData.date),
+          hours: entryData.hours,
+          description: entryData.description,
+          is_billable: entryData.is_billable,
+          created_at: new Date(),
+          updated_at: new Date()
+        };
+
+        // Set entry category and related fields
+        if (entryData.entry_category) {
+          baseData.entry_category = entryData.entry_category;
+
+          switch (entryData.entry_category) {
+            case 'project':
+            case 'training':
+              baseData.project_id = entryData.project_id ? new mongoose.Types.ObjectId(entryData.project_id) : undefined;
+              baseData.task_type = entryData.task_type || entryData.entry_type; // Use task_type if available, fallback to entry_type
+              if (entryData.task_id) {
+                baseData.task_id = new mongoose.Types.ObjectId(entryData.task_id);
+              }
+              if (entryData.custom_task_description) {
+                baseData.custom_task_description = entryData.custom_task_description;
+              }
+              // Backward compatibility
+              baseData.entry_type = baseData.task_type;
+              break;
+
+            case 'leave':
+              baseData.leave_session = entryData.leave_session;
+              baseData.is_billable = false; // Leave is always non-billable
+              break;
+
+            case 'miscellaneous':
+              baseData.miscellaneous_activity = entryData.miscellaneous_activity;
+              baseData.is_billable = false; // Miscellaneous is always non-billable
+              break;
+          }
+        } else {
+          // Backward compatibility: if no entry_category, infer from entry_type
+          baseData.entry_category = 'project'; // Default
+          baseData.project_id = entryData.project_id ? new mongoose.Types.ObjectId(entryData.project_id) : undefined;
+          baseData.task_id = entryData.task_id ? new mongoose.Types.ObjectId(entryData.task_id) : undefined;
+          baseData.custom_task_description = entryData.custom_task_description;
+          baseData.entry_type = entryData.entry_type;
+        }
+
+        return baseData;
+      });
 
       const updatedEntries = await (TimeEntry.insertMany as any)(entryInsertData);
 

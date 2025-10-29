@@ -312,12 +312,16 @@ export class BackendApiClient {
     entryData: {
       date: string;
       hours: number;
-      entry_type: 'project_task' | 'custom_task';
+      entry_type: 'project_task' | 'custom_task' | 'non_project' | 'leave' | 'holiday';
       is_billable: boolean;
       project_id?: string;
       task_id?: string;
       description?: string;
       custom_task_description?: string;
+      entry_category?: 'project' | 'leave' | 'training' | 'miscellaneous' | 'holiday';
+      leave_session?: 'morning' | 'afternoon' | 'full_day';
+      miscellaneous_activity?: string;
+      project_name?: string;
     }
   ): Promise<{ success: boolean; data: unknown }> {
     return this.post(`/timesheets/${timesheetId}/entries`, entryData);
