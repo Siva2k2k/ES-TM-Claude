@@ -345,9 +345,9 @@ export class ProjectService {
   /**
    * Get project by ID
    */
-  static async getProjectById(projectId: string): Promise<{ project?: Project; error?: string }> {
+  static async getProjectById(projectId: string): Promise<{ project?: Project; warnings?: string[]; error?: string }> {
     try {
-      const response = await backendApi.get<{ success: boolean; data: Project; message?: string }>(
+      const response = await backendApi.get<{ success: boolean; data: Project; warnings?: string[]; message?: string }>(
         `/projects/${projectId}`
       );
 
@@ -355,7 +355,10 @@ export class ProjectService {
         return { error: response.message || 'Project not found' };
       }
 
-      return { project: response.data };
+      return { 
+        project: response.data,
+        warnings: response.warnings
+      };
     } catch (error) {
       console.error('Error in getProjectById:', error);
       const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch project';

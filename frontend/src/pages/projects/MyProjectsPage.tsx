@@ -6,14 +6,31 @@ import { useRoleManager } from '../../hooks/useRoleManager';
 import type { Project, Task } from '../../types';
 import { LoadingSpinner } from '../../components/ui/LoadingSpinner';
 import { Search } from 'lucide-react';
-import SlideOver from '../../components/ui/SlideOver';
-import { Clock, DollarSign, Tag } from 'lucide-react';
+import { Modal } from '../../components/ui/Modal';
+import { Clock, DollarSign, Tag, Users, Calendar, Building2, CheckSquare, User } from 'lucide-react';
+import * as formatting from '../../utils/formatting';
 
 type Member = {
   id: string;
   user_id: string;
   user_name?: string;
   user_email?: string;
+};
+
+type TaskView = {
+  id?: string;
+  _id?: string;
+  name?: string;
+  description?: string;
+  status?: string;
+  estimated_hours?: number | null;
+  is_billable?: boolean;
+  assigned_to_user_id?: string | { id?: string; _id?: string } | null;
+};
+
+type ProjectWithDetails = Project & {
+  client_name?: string;
+  manager_name?: string;
 };
 
 const MyProjectsPage: React.FC = () => {
@@ -109,9 +126,9 @@ const MyProjectsPage: React.FC = () => {
     });
   }, [projects, query, statusFilter]);
 
-  // currently selected project for SlideOver
-  const selectedProject = openProjectId ? projects.find(pr => ((pr as unknown as { id?: string; _id?: string }).id || (pr as unknown as { id?: string; _id?: string })._id) === openProjectId) : undefined;
-
+  // currently selected project for Modal
+  const selectedProject: ProjectWithDetails | undefined = openProjectId ? projects.find(pr => ((pr as unknown as { id?: string; _id?: string }).id || (pr as unknown as { id?: string; _id?: string })._id) === openProjectId) : undefined;
+  
   // precompute grid items to avoid complex nested JSX in the return
   const gridContent = filtered.map((p) => {
     const pid = (p as unknown as { id?: string; _id?: string }).id || (p as unknown as { id?: string; _id?: string })._id;
@@ -120,34 +137,68 @@ const MyProjectsPage: React.FC = () => {
 
     const teamCount = projectMembers.length;
     const myTasksCount = projectTasks.filter(t => t.assigned_to_user_id === currentUser?.id).length;
+    const projectStatus = String(p.status).toLowerCase();
 
     return (
-      <div key={String(pid)} className="space-y-3">
-        <div className="bg-white rounded-lg shadow border border-gray-200 overflow-hidden">
-          <div className="p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex-1 min-w-0">
-                <h3 className="text-lg font-semibold text-gray-900 truncate">{p.name}</h3>
-                <div className="text-sm text-gray-500 mt-1 truncate">{(p as unknown as { client_name?: string }).client_name || 'No Client'}</div>
+      <div key={String(pid)} className="bg-white dark:bg-gray-800 rounded-lg shadow dark:shadow-gray-900/50 border border-gray-200 dark:border-gray-700 overflow-hidden transition-all hover:shadow-md dark:hover:shadow-gray-900/70 flex flex-col h-full">
+        {/* Card Header */}
+        <div className="p-4 space-y-3 flex-grow">
+          {/* Top Row: Title & Status */}
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate">
+                {p.name}
+              </h3>
+              <div className="flex items-center gap-2 mt-1 text-sm text-gray-600 dark:text-gray-400">
+                <Building2 className="h-4 w-4 shrink-0" />
+                <span className="truncate">{(typeof p.client_id === 'object' && p.client_id?.name) || 'No Client'}</span>
               </div>
-              <div className="text-sm text-gray-600">{String(p.status)}</div>
             </div>
+            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ${
+              projectStatus === 'active' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300' :
+              projectStatus === 'completed' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300' :
+              projectStatus === 'on_hold' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-300' :
+              'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300'
+            }`}>
+              {projectStatus}
+            </span>
+          </div>
 
-            <div className="mt-3 flex items-center justify-between text-sm text-gray-600">
-              <div className="flex items-center gap-3">
-                <div className="text-sm font-medium text-gray-700">Team: <span className="font-normal">{teamCount}</span></div>
-                <div className="text-sm font-medium text-gray-700">My Tasks: <span className="font-normal">{myTasksCount}</span></div>
+          {/* Key Metrics Row */}
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            {/* Team Count */}
+            {!isEmployee && (
+              <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+                <Users className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                <span className="font-medium">{teamCount}</span>
+                <span className="text-xs">team members</span>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => openDetails(String(pid))}
-                  className="text-sm text-blue-600 hover:underline"
-                >
-                  View Details
-                </button>
-              </div>
+            )}
+
+            {/* My Tasks Count */}
+            <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
+              <CheckSquare className="h-4 w-4 shrink-0 text-purple-600 dark:text-purple-400" />
+              <span className="font-medium">{myTasksCount}</span>
+              <span className="text-xs">my tasks</span>
             </div>
           </div>
+
+          {/* Description Preview */}
+          {p.description && (
+            <p className="text-sm text-gray-600 dark:text-gray-400 line-clamp-2">
+              {p.description}
+            </p>
+          )}
+        </div>
+
+        {/* Card Footer - Actions - Always at bottom */}
+        <div className="px-4 py-3 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-200 dark:border-gray-700 flex items-center justify-end gap-2 flex-shrink-0">
+          <button
+            onClick={() => openDetails(String(pid))}
+            className="px-3 py-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors min-h-[44px]"
+          >
+            View Details
+          </button>
         </div>
       </div>
     );
@@ -191,29 +242,32 @@ const MyProjectsPage: React.FC = () => {
   if (loading) return <div className="p-8"><LoadingSpinner /></div>;
 
   return (
-    <div className="p-6">
-      <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-4 md:p-6 lg:p-8">
+      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">My Projects</h1>
-          <p className="text-sm text-gray-500">Projects assigned to you and your team's tasks</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">My Projects</h1>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+            Manage your assigned projects and track team progress
+          </p>
         </div>
 
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <div className="relative flex items-center bg-white border border-gray-200 rounded-md shadow-sm px-3 py-2 w-full sm:w-80">
-            <Search className="w-4 h-4 text-gray-400 mr-2" />
+        <div className="flex items-center gap-4 w-full sm:w-auto">
+          <div className="relative flex items-center bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm px-4 py-2.5 w-full sm:w-80">
+            <Search className="w-4 h-4 text-gray-400 mr-3" />
             <input
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Search projects, descriptions or clients..."
-              className="w-full text-sm placeholder-gray-400 outline-none"
+              className="w-full text-sm placeholder-gray-400 outline-none bg-transparent"
             />
           </div>
 
           <div className="flex items-center gap-2">
             <select
               value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as any)}
-              className="border border-gray-200 rounded-md px-3 py-2 text-sm bg-white"
+              onChange={(e) => setStatusFilter(e.target.value as 'all' | 'active' | 'completed')}
+              className="border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2.5 text-sm bg-white dark:bg-gray-800"
             >
               <option value="all">All statuses</option>
               <option value="active">Active</option>
@@ -224,104 +278,206 @@ const MyProjectsPage: React.FC = () => {
       </div>
 
       {filtered.length === 0 ? (
-        <div className="bg-white rounded-lg p-6 border border-gray-200 text-center text-gray-600">No projects found.</div>
+        <div className="text-center py-12">
+          <Building2 className="h-12 w-12 mx-auto mb-4 text-gray-300 dark:text-gray-600" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">No projects found</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            {query || statusFilter !== 'all' ? 'Try adjusting your search or filters.' : 'You haven\'t been assigned to any projects yet.'}
+          </p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
           {gridContent}
         </div>
       )}
-      {/* SlideOver for project details (mobile-first, overlays page) */}
-      <SlideOver open={!!openProjectId} onClose={closeDetails} title={selectedProject?.name}>
+      {/* Modal for project details */}
+      <Modal isOpen={!!openProjectId} onClose={closeDetails} title={selectedProject?.name} size="lg">
         {slideData.loading ? (
-          <div className="p-6"><LoadingSpinner /></div>
+          <div className="flex items-center justify-center py-12">
+            <LoadingSpinner />
+          </div>
         ) : selectedProject ? (
-          <div className="space-y-4">
-            <div>
-              <h3 className="text-sm font-semibold text-gray-800 mb-2">Project Details</h3>
-              <div className="text-sm text-gray-700"><strong>Description:</strong> {(selectedProject as any).description || 'No description'}</div>
-              <div className="mt-1 text-sm text-gray-700"><strong>Start:</strong> {(selectedProject as any).start_date || '—'}</div>
-              <div className="mt-1 text-sm text-gray-700"><strong>End:</strong> {(selectedProject as any).end_date || '—'}</div>
-              <div className="mt-1 text-sm text-gray-700"><strong>Client:</strong> {(selectedProject as any).client_name || 'No Client'}</div>
-              <div className="mt-1 text-sm text-gray-700"><strong>Manager:</strong> {(selectedProject as any).manager_name || '—'}</div>
+          <div className="space-y-6">
+            {/* Project Overview Card */}
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Client</span>
+                  </div>
+                  <p className="text-sm text-gray-900 dark:text-gray-100 ml-6">
+                    {(typeof selectedProject.client_id === 'object' && selectedProject.client_id?.name) || 'No Client'}
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <User className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Manager</span>
+                  </div>
+                  <p className="text-sm text-gray-900 dark:text-gray-100 ml-6">
+                    {(typeof selectedProject.primary_manager_id === 'object' && selectedProject.primary_manager_id?.full_name) || 'No Manager Assigned'}
+                  </p>
+                </div>
+                <div className="space-y-3"><div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Start Date</span>
+                  </div>
+                  <p className="text-sm text-gray-900 dark:text-gray-100 ml-6">
+                    {selectedProject.start_date ? formatting.formatDate(selectedProject.start_date, 'short') : '—'}
+                  </p>
+                </div>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">End Date</span>
+                  </div>
+                  <p className="text-sm text-gray-900 dark:text-gray-100 ml-6">
+                    {selectedProject.end_date ? formatting.formatDate(selectedProject.end_date, 'short') : '—'}
+                  </p>
+                </div>
+              </div>
+              {selectedProject.description && (
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Description</span>
+                  <p className="text-sm text-gray-900 dark:text-gray-100 mt-1">
+                    {selectedProject.description}
+                  </p>
+                </div>
+              )}
             </div>
 
+            {/* Tasks Section */}
             <div>
-              <h3 className="text-sm font-semibold text-gray-800 mb-2">Tasks</h3>
-              <div className="text-sm text-gray-700"><strong>Available:</strong> {(slideData.tasks || []).length}</div>
-              <div className="mt-1 text-sm text-gray-700"><strong>Your tasks:</strong> {(slideData.tasks || []).filter(t => t.assigned_to_user_id === currentUser?.id).length}</div>
-              {((slideData.tasks || []).length > 0) && (() => {
-                const allTasks = slideData.tasks || [];
-                const tasksToRender = isEmployee ? allTasks.filter(t => t.assigned_to_user_id === currentUser?.id) : allTasks;
-                type TaskView = {
-                  id?: string;
-                  _id?: string;
-                  name?: string;
-                  description?: string;
-                  status?: string;
-                  estimated_hours?: number | null;
-                  is_billable?: boolean;
-                  assigned_to_user_id?: string | { id?: string; _id?: string } | null;
-                };
-                return (
-                  <div className="mt-3 grid grid-cols-1 gap-3">
-                    {tasksToRender.map((tt) => {
+              <div className="flex items-center gap-2 mb-4">
+                <CheckSquare className="h-5 w-5 text-purple-600" />
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                  Tasks
+                </h3>
+              </div>
+
+              {(slideData.tasks || []).length === 0 ? (
+                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                  <CheckSquare className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                  <p>No tasks assigned to this project</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {(() => {
+                    const allTasks = slideData.tasks || [];
+                    const tasksToRender = isEmployee ? allTasks.filter(t => t.assigned_to_user_id === currentUser?.id) : allTasks;
+                    return tasksToRender.map((tt) => {
                       const t = tt as TaskView;
                       const tid = t.id || t._id || 'unknown';
                       const status = t.status || 'open';
                       const est = t.estimated_hours ?? 0;
                       const billable = !!t.is_billable;
                       const desc = t.description;
-                      const statusColor = status === 'completed' ? 'bg-green-100 text-green-800' : status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' : 'bg-gray-100 text-gray-800';
+
                       return (
-                        <div key={String(tid)} className="bg-white rounded-md shadow-sm border border-gray-200 p-3">
+                        <div key={String(tid)} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4 hover:shadow-sm transition-shadow">
                           <div className="flex items-start justify-between gap-3">
                             <div className="flex-1 min-w-0">
-                              <h4 className="text-sm font-semibold text-gray-900 truncate">{t.name}</h4>
-                              {desc && <p className="text-xs text-gray-500 mt-1 line-clamp-2">{desc}</p>}
-                              <div className="mt-2 flex items-center gap-3 text-xs text-gray-600">
-                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full ${statusColor}`}>{status}</span>
-                                <span className="inline-flex items-center gap-1"><Clock className="h-3 w-3 text-gray-500" /> {est}h</span>
-                                {billable && <span className="inline-flex items-center gap-1"><DollarSign className="h-3 w-3 text-green-600" /> Billable</span>}
+                              <div className="flex items-center gap-2 mb-2">
+                                <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
+                                  {t.name}
+                                </h4>
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  status === 'completed' ? 'bg-green-100 text-green-800' :
+                                  status === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {status}
+                                </span>
+                              </div>
+                              {desc && (
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 line-clamp-2">
+                                  {desc}
+                                </p>
+                              )}
+                              <div className="flex items-center gap-4 text-xs text-gray-500 dark:text-gray-400">
+                                <div className="flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  <span>{est}h estimated</span>
+                                </div>
+                                {billable && (
+                                  <div className="flex items-center gap-1">
+                                    <DollarSign className="h-3 w-3 text-green-600" />
+                                    <span className="text-green-600 dark:text-green-400">Billable</span>
+                                  </div>
+                                )}
                               </div>
                             </div>
-                            <div className="text-sm text-gray-500 flex-shrink-0">
-                              <Tag className="h-5 w-5" />
+                            <div className="flex-shrink-0">
+                              <Tag className="h-5 w-5 text-gray-400" />
                             </div>
                           </div>
                         </div>
                       );
-                    })}
+                    });
+                  })()}
+                </div>
+              )}
+
+              {/* Task Summary */}
+              {(slideData.tasks || []).length > 0 && (
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                  <div className="text-sm text-blue-800 dark:text-blue-200">
+                    <strong>Your tasks:</strong> {(slideData.tasks || []).filter(t => t.assigned_to_user_id === currentUser?.id).length} of {(slideData.tasks || []).length} total
                   </div>
-                );
-              })()}
+                </div>
+              )}
             </div>
 
+            {/* Team Members Section - Only for Leads */}
             {isLead && (
               <div>
-                <h3 className="text-sm font-semibold text-gray-800 mb-2">Team Members</h3>
+                <div className="flex items-center gap-2 mb-4">
+                  <Users className="h-5 w-5 text-blue-600" />
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                    Team Members ({(slideData.members || []).length})
+                  </h3>
+                </div>
+
                 {(slideData.members || []).length === 0 ? (
-                  <div className="text-sm text-gray-500">No team members assigned.</div>
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <Users className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+                    <p>No team members assigned</p>
+                  </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {(slideData.members || []).map(m => {
                       const memberTasks = (slideData.tasks || []).filter(t => t.assigned_to_user_id === m.user_id);
                       return (
-                        <div key={m.id} className="bg-gray-50 rounded-md p-3 flex items-start justify-between">
-                          <div>
-                            <div className="text-sm font-semibold text-gray-800">{m.user_name || m.user_email}</div>
-                            <div className="text-sm text-gray-500">{memberTasks.length} task(s)</div>
+                        <div key={m.id} className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex-1">
+                              <h4 className="text-sm font-semibold text-gray-900 dark:text-gray-100">
+                                {m.user_name || m.user_email}
+                              </h4>
+                              <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                {memberTasks.length} task{memberTasks.length !== 1 ? 's' : ''} assigned
+                              </p>
+                            </div>
                           </div>
-                          <div className="text-sm">
-                            {memberTasks.length > 0 ? (
-                              <ul className="list-disc list-inside text-sm text-gray-700">
+                          {memberTasks.length > 0 && (
+                            <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700">
+                              <div className="space-y-2">
                                 {memberTasks.map(t => (
-                                  <li key={(t as unknown as { id?: string; _id?: string }).id || (t as unknown as { id?: string; _id?: string })._id}>{t.name} {t.status ? `(${t.status})` : ''}</li>
+                                  <div key={(t as unknown as { id?: string; _id?: string }).id || (t as unknown as { id?: string; _id?: string })._id} className="flex items-center justify-between text-xs">
+                                    <span className="text-gray-700 dark:text-gray-300 truncate flex-1 mr-2">{t.name}</span>
+                                    <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-xs font-medium ${
+                                      (t.status || 'open') === 'completed' ? 'bg-green-100 text-green-800' :
+                                      (t.status || 'open') === 'in_progress' ? 'bg-yellow-100 text-yellow-800' :
+                                      'bg-gray-100 text-gray-800'
+                                    }`}>
+                                      {t.status || 'open'}
+                                    </span>
+                                  </div>
                                 ))}
-                              </ul>
-                            ) : (
-                              <div className="text-sm text-gray-500">No tasks assigned</div>
-                            )}
-                          </div>
+                              </div>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -331,9 +487,13 @@ const MyProjectsPage: React.FC = () => {
             )}
           </div>
         ) : (
-          <div className="text-sm text-gray-600">Project not found</div>
+          <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+            <Building2 className="h-8 w-8 mx-auto mb-2 text-gray-300" />
+            <p>Project not found</p>
+          </div>
         )}
-      </SlideOver>
+      </Modal>
+      </div>
     </div>
   );
 };

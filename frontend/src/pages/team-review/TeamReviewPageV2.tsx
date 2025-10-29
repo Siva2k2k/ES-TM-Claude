@@ -123,7 +123,6 @@ export const TeamReviewPageV2: React.FC = () => {
     }
   }, []);
 
-  console.log("Missing Submissions:", missingSubmissions);
 
   useEffect(() => {
     if (!canApprove) {
@@ -175,8 +174,6 @@ export const TeamReviewPageV2: React.FC = () => {
         return;
       }
     }
-
-    console.log("Approving project week:", projectWeek.users);
 
     setModalState({
       isOpen: true,

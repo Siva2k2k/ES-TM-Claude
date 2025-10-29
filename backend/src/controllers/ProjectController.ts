@@ -287,10 +287,17 @@ export class ProjectController {
       });
     }
 
-    res.json({
+    // Include any non-blocking warnings returned by the service so the frontend can surface them
+    const response: any = {
       success: true,
       project: result.project
-    });
+    };
+
+    if (result.warnings && Array.isArray(result.warnings) && result.warnings.length > 0) {
+      response.warnings = result.warnings;
+    }
+
+    res.json(response);
   });
 
   static getUserProjects = handleAsyncError(async (req: AuthRequest, res: Response) => {

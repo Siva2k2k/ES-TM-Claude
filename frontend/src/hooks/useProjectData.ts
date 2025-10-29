@@ -52,6 +52,7 @@ export const useProjectData = () => {
   const [analytics, setAnalytics] = useState<ProjectAnalytics | null>(null);
   const [projectMembersMap, setProjectMembersMap] = useState<Record<string, ProjectMember[]>>({});
   const [projectTasksMap, setProjectTasksMap] = useState<Record<string, Task[]>>({});
+  const [projectWarningsMap, setProjectWarningsMap] = useState<Record<string, string[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAddingMember, setIsAddingMember] = useState(false);
@@ -59,13 +60,13 @@ export const useProjectData = () => {
   const [availableUsers, setAvailableUsers] = useState<User[]>([]);
 
   /**
-   * Load members and tasks for all projects
+   * Load members, tasks, and warnings for all projects
    */
   const loadProjectDetails = useCallback(async (projectList: Project[]) => {
     if (projectList.length === 0) return;
 
     try {
-      // Load members and tasks for all projects in parallel
+      // Load members, tasks, and warnings for all projects in parallel
       const memberPromises = projectList.map(async (project) => {
         try {
           const result = await ProjectService.getProjectMembers(project.id);
@@ -86,9 +87,20 @@ export const useProjectData = () => {
         }
       });
 
-      const [memberResults, taskResults] = await Promise.all([
+      const warningPromises = projectList.map(async (project) => {
+        try {
+          const result = await ProjectService.getProjectById(project.id);
+          return { projectId: project.id, warnings: result.warnings || [] };
+        } catch (err) {
+          console.error(`Error loading warnings for project ${project.id}:`, err);
+          return { projectId: project.id, warnings: [] };
+        }
+      });
+
+      const [memberResults, taskResults, warningResults] = await Promise.all([
         Promise.all(memberPromises),
-        Promise.all(taskPromises)
+        Promise.all(taskPromises),
+        Promise.all(warningPromises)
       ]);
 
       // Build members map
@@ -103,8 +115,15 @@ export const useProjectData = () => {
         tasksMap[projectId] = tasks;
       }
 
+      // Build warnings map
+      const warningsMap: Record<string, string[]> = {};
+      for (const { projectId, warnings } of warningResults) {
+        warningsMap[projectId] = warnings;
+      }
+
       setProjectMembersMap(membersMap);
       setProjectTasksMap(tasksMap);
+      setProjectWarningsMap(warningsMap);
     } catch (err) {
       console.error('Error loading project details:', err);
     }
@@ -238,6 +257,13 @@ export const useProjectData = () => {
   }, [projectTasksMap]);
 
   /**
+   * Get warnings for a specific project from cache
+   */
+  const getWarningsForProject = useCallback((projectId: string): string[] => {
+    return projectWarningsMap[projectId] || [];
+  }, [projectWarningsMap]);
+
+  /**
    * Load members for a specific project and update the map
    */
   const loadMembersForProject = useCallback(async (projectId: string): Promise<ProjectMember[]> => {
@@ -346,12 +372,14 @@ export const useProjectData = () => {
     analytics,
     projectMembersMap,
     projectTasksMap,
+    projectWarningsMap,
     loading,
     error,
     refresh,
     loadProjectsOnly,
     getMembersForProject,
     getTasksForProject,
+    getWarningsForProject,
     loadMembersForProject,
     addMemberToProject,
     removeMemberFromProject,

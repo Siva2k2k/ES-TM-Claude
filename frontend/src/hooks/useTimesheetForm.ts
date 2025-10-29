@@ -192,9 +192,6 @@ export function useTimesheetForm(
       try {
         // Get form values
         const values = form.getValues();
-
-        console.log("Submitting timesheet with values:", values);
-
         if (status === 'submitted') {
           const isValid = await form.trigger();
           if (!isValid) {
@@ -248,7 +245,6 @@ export function useTimesheetForm(
 
         const sanitizedEntries = prepareEntriesForPersistence(values.entries || []);
 
-        console.log("Sanitized entries for persistence:", sanitizedEntries);
 
         // Handle edit flow
         if (mode === 'edit' && options.timesheetId) {

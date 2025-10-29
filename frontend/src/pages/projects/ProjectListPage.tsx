@@ -61,6 +61,7 @@ export const ProjectListPage: React.FC = () => {
     refresh,
     getMembersForProject,
     getTasksForProject,
+    getWarningsForProject,
     addMemberToProject,
     removeMemberFromProject,
     availableUsers,
@@ -364,9 +365,19 @@ export const ProjectListPage: React.FC = () => {
                       <div className="p-6">
                         {/* Project Title and Status */}
                         <div className="flex items-start justify-between mb-4">
-                          <h3 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2 flex-1">
-                            {project.name}
-                          </h3>
+                          <div className="flex-1">
+                            <h3 className="text-lg font-bold text-gray-900 group-hover:text-blue-600 transition-colors line-clamp-2 flex items-center gap-2">
+                              {project.name} 
+                              {getWarningsForProject(project.id).length > 0 && (
+                                <span
+                                  title={`Project warnings: ${getWarningsForProject(project.id).join(', ')}`}
+                                  className="inline-flex items-center ml-2"
+                                >
+                                  <AlertCircle className="h-4 w-4 text-yellow-500 flex-shrink-0" />
+                                </span>
+                              )}
+                            </h3>
+                          </div>
                           <div className="flex items-center gap-2 ml-2">
                             <span className={`px-3 py-1 text-xs font-semibold rounded-full whitespace-nowrap ${
                               project.status === 'active'
@@ -502,8 +513,14 @@ export const ProjectListPage: React.FC = () => {
                             <tr className="hover:bg-gray-50 transition-colors group">
                               <td className="px-6 py-4">
                                 <div>
-                                  <div className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
+                                  <div className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors flex items-center gap-2">
                                     {project.name}
+                                    {getWarningsForProject(project.id).length > 0 && (
+                                      <AlertCircle 
+                                        className="h-4 w-4 text-yellow-500 flex-shrink-0" 
+                                        title="No Lead assigned" 
+                                      />
+                                    )}
                                   </div>
                                   {project.description && (
                                     <div className="text-sm text-gray-500 line-clamp-1 mt-1">

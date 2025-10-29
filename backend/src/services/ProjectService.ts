@@ -576,7 +576,7 @@ export class ProjectService {
   /**
    * Get project by ID
    */
-  static async getProjectById(projectId: string, currentUser: AuthUser): Promise<{ project?: ProjectWithDetails; error?: string }> {
+  static async getProjectById(projectId: string, currentUser: AuthUser): Promise<{ project?: ProjectWithDetails; error?: string; warnings?: string[] }> {
     try {
       // Check project access
       const hasAccess = await this.checkProjectAccess(projectId, currentUser);
@@ -595,7 +595,22 @@ export class ProjectService {
         throw new NotFoundError('Project not found');
       }
 
-      return { project };
+      // Non-blocking validation: check whether the project has a Lead assigned.
+      // This is a soft/warning check intended for UI display only and must not block operations.
+      const leadMember = await (ProjectMember.findOne as any)({
+        project_id: projectId,
+        project_role: 'lead',
+        removed_at: { $exists: false },
+        deleted_at: { $exists: false }
+      }).lean();
+
+      const warnings: string[] = [];
+      if (!leadMember) {
+        // Frontend can display this warning (non-blocking)
+        warnings.push('project_must_have_lead');
+      }
+
+      return { project, warnings };
     } catch (error) {
       console.error('Error in getProjectById:', error);
       if (error instanceof AuthorizationError || error instanceof NotFoundError) {

@@ -798,8 +798,6 @@ export class ProjectBillingController {
           billingAdjustments.map((adj: any) => [adj.billing_period_start.toISOString(), adj])
         );
 
-        console.log('Approvals found:', approvals.length, approvals);
-
         const weeklyBreakdown: WeeklyBreakdown[] = approvals.map((approval: any) => {
           const weekStart = approval.timesheet.week_start_date.toISOString().split('T')[0];
           const workedHours = approval.worked_hours || 0;

@@ -148,8 +148,6 @@ export class TeamReviewServiceV2 {
           return isVisible;
         });
 
-        console.log("Approver Role:", approverRole, "Project ID:", project._id.toString(), "Timesheets:", projectTimesheets);
-
         // Group by week
         const weekGroups = new Map<string, any[]>();
         for (const ts of projectTimesheets) {
