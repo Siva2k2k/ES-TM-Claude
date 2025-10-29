@@ -768,6 +768,27 @@ export class TeamReviewApprovalService {
   }
 
   /**
+   * Check if all management approvals are complete for a timesheet
+   */
+  private static async checkAllManagementApproved(
+    timesheetId: string,
+    session: any
+  ): Promise<boolean> {
+    const approvals = await TimesheetProjectApproval.find({
+      timesheet_id: new mongoose.Types.ObjectId(timesheetId)
+    }).session(session);
+
+    for (const approval of approvals) {
+      // Check management approval (always required for final verification)
+      if (approval.management_status !== 'approved') {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
    * Check if all required approvals are complete (legacy method - kept for compatibility)
    */
   private static async checkAllApprovalsComplete(
@@ -840,6 +861,7 @@ export class TeamReviewApprovalService {
    */
   static async bulkVerifyTimesheets(
     timesheetIds: string[],
+    projectId: string,
     verifierId: string
   ): Promise<{ processed_count: number; failed_count: number }> {
     let processedCount = 0;
@@ -847,7 +869,7 @@ export class TeamReviewApprovalService {
 
     for (const timesheetId of timesheetIds) {
       try {
-        // Get timesheet to capture status before update
+        // Verify the timesheet exists
         const timesheet = await Timesheet.findById(timesheetId);
         if (!timesheet) {
           logger.warn(`Timesheet ${timesheetId} not found, skipping`);
@@ -857,24 +879,12 @@ export class TeamReviewApprovalService {
 
         const statusBefore = timesheet.status;
 
-        // Update timesheet status to frozen
-        await Timesheet.findByIdAndUpdate(timesheetId, {
-          status: 'frozen',
-          is_frozen: true,
-          verified_by_id: new mongoose.Types.ObjectId(verifierId),
-          verified_at: new Date(),
-          approved_by_management_id: new mongoose.Types.ObjectId(verifierId),
-          approved_by_management_at: new Date()
-        });
-
-        // Get all project approvals for this timesheet to record history for each project
-        const projectApprovals = await TimesheetProjectApproval.find({
-          timesheet_id: new mongoose.Types.ObjectId(timesheetId)
-        });
-
-        // CRITICAL: Update ALL project approvals for this timesheet to mark management_status as approved
-        await TimesheetProjectApproval.updateMany(
-          { timesheet_id: new mongoose.Types.ObjectId(timesheetId) },
+        // Update the specific TimesheetProjectApproval record for this project and timesheet
+        const approval = await TimesheetProjectApproval.findOneAndUpdate(
+          {
+            timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+            project_id: new mongoose.Types.ObjectId(projectId)
+          },
           {
             $set: {
               management_status: 'approved',
@@ -886,24 +896,44 @@ export class TeamReviewApprovalService {
           }
         );
 
-        // Record approval history for each project
-        for (const approval of projectApprovals) {
-          await ApprovalHistory.create({
-            timesheet_id: timesheet._id,
-            project_id: approval.project_id,
-            user_id: timesheet.user_id,
-            approver_id: new mongoose.Types.ObjectId(verifierId),
-            approver_role: 'management',
-            action: 'approved',
-            status_before: normalizeTimesheetStatus(statusBefore),
-            status_after: normalizeTimesheetStatus('frozen'),
-            notes: 'Bulk verification'
-          });
+        if (!approval) {
+          logger.warn(`Project approval record not found for timesheet ${timesheetId} and project ${projectId}, skipping`);
+          failedCount++;
+          continue;
         }
+
+        // Check if ALL project approvals for this timesheet are now approved by management
+        const allManagementApproved = await this.checkAllManagementApproved(timesheetId, undefined);
+
+        // Update timesheet status if all management approvals are complete
+        let newStatus = timesheet.status;
+        if (allManagementApproved) {
+          newStatus = 'frozen';
+          timesheet.status = newStatus;
+          timesheet.is_frozen = true;
+          timesheet.verified_by_id = new mongoose.Types.ObjectId(verifierId);
+          timesheet.verified_at = new Date();
+          timesheet.approved_by_management_id = new mongoose.Types.ObjectId(verifierId);
+          timesheet.approved_by_management_at = new Date();
+          await timesheet.save();
+        }
+
+        // Record approval history for this specific project
+        await ApprovalHistory.create({
+          timesheet_id: timesheet._id,
+          project_id: new mongoose.Types.ObjectId(projectId),
+          user_id: timesheet.user_id,
+          approver_id: new mongoose.Types.ObjectId(verifierId),
+          approver_role: 'management',
+          action: 'approved',
+          status_before: normalizeTimesheetStatus(statusBefore),
+          status_after: normalizeTimesheetStatus(newStatus),
+          notes: 'Bulk project verification'
+        });
 
         processedCount++;
       } catch (error) {
-        logger.error(`Failed to verify timesheet ${timesheetId}:`, error);
+        logger.error(`Failed to verify timesheet ${timesheetId} for project ${projectId}:`, error);
         failedCount++;
       }
     }

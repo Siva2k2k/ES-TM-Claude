@@ -176,6 +176,8 @@ export const TeamReviewPageV2: React.FC = () => {
       }
     }
 
+    console.log("Approving project week:", projectWeek.users);
+
     setModalState({
       isOpen: true,
       projectWeek,
@@ -313,7 +315,6 @@ export const TeamReviewPageV2: React.FC = () => {
         );
         setSuccess(`Successfully rejected ${projectWeek.project_name} - ${projectWeek.week_label}`);
       }
-
       // Reload data
       await loadProjectWeeks();
 

@@ -135,7 +135,7 @@ export class TeamReviewController {
    */
   static async bulkVerify(req: AuthRequest, res: Response): Promise<void> {
     try {
-      const { timesheet_ids } = req.body;
+      const { timesheet_ids, project_id } = req.body;
       const userId = req.user?.id;
       const userRole = req.user?.role;
 
@@ -154,7 +154,12 @@ export class TeamReviewController {
         return;
       }
 
-      const result = await TeamReviewApprovalService.bulkVerifyTimesheets(timesheet_ids, userId);
+      if (!project_id) {
+        res.status(400).json({ error: 'Project ID is required for bulk verification' });
+        return;
+      }
+
+      const result = await TeamReviewApprovalService.bulkVerifyTimesheets(timesheet_ids, project_id, userId);
 
       res.status(200).json({
         success: true,

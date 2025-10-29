@@ -134,11 +134,31 @@ export const UserTimesheetDetails: React.FC<UserTimesheetDetailsProps> = ({
   return (
     <div className="border-t border-gray-200">
       {/* User Header - Clickable */}
-      <button
-        onClick={onToggle}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={(e: React.MouseEvent<HTMLDivElement>) => {
+          const target = e.target as HTMLElement | null;
+          // If the click originated from an interactive descendant, ignore it
+          if (target && target.closest('button, a, input, select, textarea, label')) {
+            return;
+          }
+          onToggle();
+        }}
+        onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+          // Toggle on Enter/Space but ignore if focus is on an interactive control
+          if (e.key === 'Enter' || e.key === ' ') {
+            const target = e.target as HTMLElement | null;
+            if (target && target.closest('button, a, input, select, textarea, label')) {
+              return;
+            }
+            e.preventDefault();
+            onToggle();
+          }
+        }}
         className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors"
       >
-        <div className="flex items-center gap-3 flex-1">
+        <div className="flex items-center gap-3 flex-1 flex-wrap">
           {/* Status Icon */}
           <div>{getStatusIcon()}</div>
 
@@ -248,7 +268,7 @@ export const UserTimesheetDetails: React.FC<UserTimesheetDetailsProps> = ({
                     title={adjustmentError || "Adjust billable hours"}
                   />
                   <button
-                    onClick={handleSaveAdjustment}
+                    onClick={(e) => { e.stopPropagation(); handleSaveAdjustment(); }}
                     disabled={isSavingAdjustment}
                     className="p-1 text-blue-600 hover:bg-blue-50 rounded disabled:text-gray-400 transition-colors"
                     title="Save adjustment"
@@ -278,7 +298,7 @@ export const UserTimesheetDetails: React.FC<UserTimesheetDetailsProps> = ({
             </svg>
           </div>
         </div>
-      </button>
+      </div>
 
       {/* Expanded Details */}
       {isExpanded && (

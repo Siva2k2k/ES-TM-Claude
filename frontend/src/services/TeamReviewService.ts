@@ -88,8 +88,8 @@ export class TeamReviewService {
   }
 
   /**
-   * Bulk verify timesheets (Management only)
-   * Changes status from 'manager_approved' to 'frozen'
+   * Bulk verify timesheets for a specific project (Management only)
+   * Changes management_status from 'pending' to 'approved' for the specified project approvals
    */
   static async bulkVerifyTimesheets(
     request: BulkApprovalRequest
