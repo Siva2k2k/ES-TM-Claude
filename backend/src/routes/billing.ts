@@ -4,7 +4,8 @@ import {
   generateWeeklySnapshotValidation,
   approveMonthlyBillingValidation,
   exportBillingReportValidation,
-  snapshotIdValidation
+  snapshotIdValidation,
+  getBillingSummaryValidation
 } from '@/controllers/BillingController';
 import { requireAuth, requireManagement } from '@/middleware/auth';
 
@@ -43,6 +44,13 @@ router.get('/snapshots', BillingController.getAllBillingSnapshots);
  * @access Private (Management+)
  */
 router.get('/snapshots/:snapshotId', snapshotIdValidation, BillingController.getBillingSnapshotById);
+
+/**
+ * @route GET /api/v1/billing/summary
+ * @desc Get billing summary
+ * @access Private (Management+)
+ */
+router.get('/summary', getBillingSummaryValidation, BillingController.getBillingSummary);
 
 /**
  * @route GET /api/v1/billing/dashboard

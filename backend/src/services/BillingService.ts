@@ -2,6 +2,7 @@ import PDFDocument from 'pdfkit';
 
 type PdfKitInstance = InstanceType<typeof PDFDocument>;
 import { ProjectBillingController } from '@/controllers/ProjectBillingController';
+import { ProjectBillingService } from '@/services/ProjectBillingService';
 import { BillingSnapshot, IBillingSnapshot } from '@/models/BillingSnapshot';
 import { Timesheet } from '@/models/Timesheet';
 import { UserRole } from '@/models/User';
@@ -860,21 +861,8 @@ export class BillingService {
     clientIds: string[];
   }): Promise<any[]> {
     const { startDate, endDate, projectIds, clientIds, view } = options;
-    const controllerRef = ProjectBillingController as unknown as {
-      buildProjectBillingData: (params: {
-        startDate: string;
-        endDate: string;
-        projectIds?: string[];
-        clientIds?: string[];
-        view: 'weekly' | 'monthly' | 'custom';
-      }) => Promise<any[]>;
-    };
 
-    if (typeof controllerRef.buildProjectBillingData !== 'function') {
-      throw new Error('Project billing data builder is not available');
-    }
-
-    return controllerRef.buildProjectBillingData({
+    return ProjectBillingService.buildProjectBillingData({
       startDate,
       endDate,
       projectIds,

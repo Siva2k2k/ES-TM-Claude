@@ -536,7 +536,7 @@ export class BillingService {
    */
   static async getInvoices(): Promise<{ invoices: BillingInvoice[]; error?: string }> {
     try {
-      const response = await backendApi.get('/billing/invoices');
+      const response = await backendApi.get('/invoices');
       if (response.success) {
         const invoices: BillingInvoice[] = Array.isArray(response.invoices)
           ? response.invoices
@@ -562,7 +562,7 @@ export class BillingService {
    */
   static async approveInvoice(invoiceId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.post(`/billing/invoices/${invoiceId}/approve`, {});
+      const response = await backendApi.post(`/invoices/${invoiceId}/approve`, {});
       return {
         success: Boolean(response.success),
         error: response.success ? undefined : (response.message || 'Failed to approve invoice')
@@ -581,7 +581,7 @@ export class BillingService {
    */
   static async rejectInvoice(invoiceId: string, reason: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.post(`/billing/invoices/${invoiceId}/reject`, { reason });
+      const response = await backendApi.post(`/invoices/${invoiceId}/reject`, { reason });
       return {
         success: Boolean(response.success),
         error: response.success ? undefined : (response.message || 'Failed to reject invoice')
@@ -600,7 +600,7 @@ export class BillingService {
    */
   static async generateInvoice(clientId: string, weekStartDate: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.post('/billing/invoices/generate', {
+      const response = await backendApi.post(`/invoices/generate`, {
         client_id: clientId,
         week_start_date: weekStartDate
       });
@@ -623,7 +623,7 @@ export class BillingService {
    */
   static async getBillingRates(): Promise<{ rates: BillingRate[]; error?: string }> {
     try {
-      const response = await backendApi.get('/billing/rates');
+      const response = await backendApi.get('/billing-rates');
 
       if (response.success && Array.isArray(response.rates)) {
         return { rates: response.rates as BillingRate[] };
@@ -651,7 +651,7 @@ export class BillingService {
    */
   static async createBillingRate(payload: CreateRateData): Promise<{ rate?: BillingRate; error?: string }> {
     try {
-      const response = await backendApi.post('/billing/rates', payload);
+      const response = await backendApi.post('/billing-rates', payload);
       if (response.success && response.rate) {
         return { rate: response.rate as BillingRate };
       }
@@ -672,7 +672,7 @@ export class BillingService {
    */
   static async deleteBillingRate(rateId: string): Promise<{ success: boolean; error?: string }> {
     try {
-      const response = await backendApi.delete(`/billing/rates/${rateId}`);
+      const response = await backendApi.delete(`/billing-rates/${rateId}`);
       return {
         success: Boolean(response.success),
         error: response.success ? undefined : (response.message || 'Failed to delete billing rate')
@@ -692,7 +692,7 @@ export class BillingService {
    */
   static async getInvoiceDashboardStats(): Promise<{ stats?: unknown; error?: string }> {
     try {
-      const response = await backendApi.get('/billing/invoices/dashboard-stats');
+      const response = await backendApi.get('/invoices/dashboard-stats');
 
       if (response.success) {
         return { stats: response.data };

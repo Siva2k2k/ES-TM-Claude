@@ -6,6 +6,8 @@ import userRoutes from './user';
 import projectRoutes from './project';
 import billingRoutes from './billing';
 import projectBillingRoutes from './projectBilling';
+import invoiceRoutes from './invoice';
+import billingRateRoutes from './billingRate';
 import auditRoutes from './audit';
 import clientRoutes from './client';
 import dashboardRoutes from './dashboard';
@@ -26,6 +28,8 @@ export const registerRoutes = (app: Express): void => {
   app.use('/api/v1/projects', projectRoutes);
   app.use('/api/v1/billing', billingRoutes);
   app.use('/api/v1/project-billing', projectBillingRoutes);
+  app.use('/api/v1/invoices', invoiceRoutes);
+  app.use('/api/v1/billing-rates', billingRateRoutes);
   app.use('/api/v1/audit', auditRoutes);
   app.use('/api/v1/timesheets', timesheetRoutes);
   app.use('/api/v1/clients', clientRoutes);

@@ -165,12 +165,7 @@ export class ProjectBillingService {
     end: Date,
     approvedTimesheetIds: mongoose.Types.ObjectId[]
   ) {
-    console.log(`[fetchTaskDataForUser] Starting fetch for user ${userObjectId}`);
-    console.log(`[fetchTaskDataForUser] Approved timesheet count: ${approvedTimesheetIds.length}`);
-    console.log(`[fetchTaskDataForUser] Project count: ${projectObjectIds.length}`);
-    console.log(`[fetchTaskDataForUser] Date range: ${start} to ${end}`);
-
-    // Fetch time entries for this user within date range
+    // Fetch task-level data for a specific user by joining with timesheets to filter by user_id
     const pipeline = [
       {
         $lookup: {
@@ -183,13 +178,16 @@ export class ProjectBillingService {
       { $unwind: '$timesheet' },
       {
         $match: {
-          'timesheet._id': { $in: approvedTimesheetIds },
           'timesheet.user_id': userObjectId,
-          'timesheet.week_start_date': { $gte: start, $lte: end },
-          'timesheet.deleted_at': null,
+          timesheet_id: { $in: approvedTimesheetIds },
           project_id: { $in: projectObjectIds },
           deleted_at: null,
-          entry_category: { $in: ['project', 'training'] } // Include both project and training entries
+          // Include entries with category 'project', 'training', or undefined/null (legacy entries)
+          $or: [
+            { entry_category: { $in: ['project', 'training'] } },
+            { entry_category: { $exists: false } },
+            { entry_category: null }
+          ]
         }
       },
       {
@@ -225,24 +223,7 @@ export class ProjectBillingService {
       }
     ];
 
-    const result = await (TimeEntry as any).aggregate(pipeline);
-    console.log(`[TaskData] User ${userObjectId}: Found ${result.length} tasks from ${approvedTimesheetIds.length} approved timesheets`);
-
-    if (result.length > 0) {
-      console.log(`[TaskData] Sample tasks for user ${userObjectId}:`, JSON.stringify(result.slice(0, 3), null, 2));
-    } else {
-      console.warn(`[TaskData] NO TASKS FOUND for user ${userObjectId}. Debugging info:`);
-      console.warn(`  - Approved timesheets: ${approvedTimesheetIds.map(id => id.toString()).join(', ')}`);
-      console.warn(`  - Projects: ${projectObjectIds.map(id => id.toString()).join(', ')}`);
-
-      // Let's check if there are ANY time entries for this user (without filters)
-      const anyEntries = await (TimeEntry as any).countDocuments({
-        project_id: { $in: projectObjectIds }
-      });
-      console.warn(`  - Total time entries for these projects: ${anyEntries}`);
-    }
-
-    return result;
+    return await (TimeEntry as any).aggregate(pipeline);
   }
 
   /**
@@ -297,9 +278,6 @@ export class ProjectBillingService {
     const userTaskKey = `${userId}_${projectId}`;
     const taskData = taskDataMap?.get(userTaskKey) || [];
 
-    console.log(`[processUserBilling] Looking up tasks with key: ${userTaskKey}`);
-    console.log(`[processUserBilling] Found ${taskData.length} tasks for ${user.full_name} in ${project.name}`);
-
     // Process task data with proper billing calculation
     const tasks = taskData.map((task: any) => ({
       task_id: task._id.task_id?.toString() || 'custom',
@@ -311,10 +289,6 @@ export class ProjectBillingService {
       non_billable_hours: task.non_billable_hours || 0,
       amount: (task.billable_hours || 0) * hourlyRate
     }));
-
-    if (tasks.length > 0) {
-      console.log(`[ResourceBilling] User ${user.full_name} in ${project.name}: ${tasks.length} tasks attached`);
-    }
 
     return {
       user_id: userId,
@@ -412,18 +386,34 @@ export class ProjectBillingService {
       .filter((id): id is string => typeof id === 'string' && mongoose.Types.ObjectId.isValid(id))
       .map((id) => new mongoose.Types.ObjectId(id));
 
-    // Extract unique timesheet IDs from the aggregation pipeline
-    // Note: We need to fetch the actual approval documents to get timesheet_id
-    const approvalTimesheets = await (TimesheetProjectApproval as any).find({
+    // Extract timesheet IDs with their project associations
+    // We need project-specific timesheet IDs for accurate task breakdown
+    const approvalDocs = await (TimesheetProjectApproval as any).find({
       project_id: { $in: projectObjectIds },
       management_status: 'approved'
-    }).distinct('timesheet_id');
+    }).select('timesheet_id project_id').lean();
 
-    const approvedTimesheetIds = approvalTimesheets
-      .filter((id: any) => id && mongoose.Types.ObjectId.isValid(id))
-      .map((id: any) => new mongoose.Types.ObjectId(id));
+    // Build a map of project_id -> Set of approved timesheet IDs for that project
+    const projectTimesheetMap = new Map<string, Set<string>>();
+    for (const approval of approvalDocs) {
+      const projId = approval.project_id.toString();
+      if (!projectTimesheetMap.has(projId)) {
+        projectTimesheetMap.set(projId, new Set());
+      }
+      projectTimesheetMap.get(projId)!.add(approval.timesheet_id.toString());
+    }
 
-    console.log(`[ProjectBilling] Found ${approvedTimesheetIds.length} approved timesheets for task breakdown`);
+    // Get all unique timesheet IDs across all projects (for the aggregation)
+    const allTimesheetIds = new Set<string>();
+    for (const timesheets of projectTimesheetMap.values()) {
+      for (const tsId of timesheets) {
+        allTimesheetIds.add(tsId);
+      }
+    }
+
+    const approvedTimesheetIds = Array.from(allTimesheetIds)
+      .filter((id) => mongoose.Types.ObjectId.isValid(id))
+      .map((id) => new mongoose.Types.ObjectId(id));
 
     // Step 5: Fetch user details including hourly_rate for cost calculation
     const users = await (User as any).find({ _id: { $in: userObjectIds } })
@@ -466,7 +456,6 @@ export class ProjectBillingService {
 
       // Organize task data by user-project key
       for (const { userId, taskData } of allTaskData) {
-        console.log(`[TaskDataMap] Processing ${taskData.length} tasks for user ${userId}`);
         for (const task of taskData) {
           const projectId = task._id.project_id.toString();
           const userTaskKey = `${userId}_${projectId}`;
@@ -477,11 +466,6 @@ export class ProjectBillingService {
           taskDataMap.get(userTaskKey)!.push(task);
         }
       }
-
-      console.log(`[TaskDataMap] Total entries in map: ${taskDataMap.size}`);
-      console.log(`[TaskDataMap] Keys: ${Array.from(taskDataMap.keys()).join(', ')}`);
-    } else {
-      console.warn(`[TaskDataMap] Skipped task fetching: userObjectIds=${userObjectIds.length}, approvedTimesheetIds=${approvedTimesheetIds.length}`);
     }
 
     // Step 8: Organize approvals by project

@@ -309,9 +309,64 @@ export class BillingController {
       snapshot: result.snapshot
     });
   });
+
+  static getBillingSummary = handleAsyncError(async (req: AuthRequest, res: Response) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      throw new ValidationError(errors.array().map(err => err.msg).join(', '));
+    }
+
+    if (!req.user) {
+      throw new AuthorizationError('User not authenticated');
+    }
+
+    const { period, filterType, filterId, startDate, endDate } = req.query;
+
+    const result = await BillingService.getBillingSummary(
+      req.user,
+      period as 'weekly' | 'monthly',
+      filterType as 'project' | 'employee',
+      filterId as string | undefined,
+      startDate as string | undefined,
+      endDate as string | undefined
+    );
+
+    if (result.error) {
+      return res.status(400).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    res.json({
+      success: true,
+      summary: result.summary
+    });
+  });
 }
 
 // Validation middleware
+export const getBillingSummaryValidation = [
+  query('period')
+    .isIn(['weekly', 'monthly'])
+    .withMessage('Period must be either weekly or monthly'),
+  query('filterType')
+    .isIn(['project', 'employee'])
+    .withMessage('Filter type must be either project or employee'),
+  query('filterId')
+    .optional()
+    .isString()
+    .withMessage('Filter ID must be a string'),
+  query('startDate')
+    .optional()
+    .isISO8601()
+    .withMessage('Start date must be a valid date in ISO format'),
+  query('endDate')
+    .optional()
+    .isISO8601()
+    .withMessage('End date must be a valid date in ISO format')
+];
+
 export const generateWeeklySnapshotValidation = [
   body('weekStartDate')
     .isISO8601()
