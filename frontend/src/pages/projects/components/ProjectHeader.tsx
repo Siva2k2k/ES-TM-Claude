@@ -32,7 +32,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
           <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-2">
             Project Management
           </h1>
-          <p className="text-gray-600">Create and manage all projects across the organization</p>
+          <p className="text-gray-600 dark:text-gray-300">Create and manage all projects across the organization</p>
         </div>
         {activeTab === 'overview' && currentUser?.role !== 'manager' && (
           <button
@@ -46,14 +46,14 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
       </div>
 
       {/* Navigation Tabs */}
-      <div className="bg-white rounded-2xl shadow-sm p-2">
+      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-2">
         <nav className="flex flex-wrap gap-2">
           <button
             onClick={() => onTabChange('overview')}
             className={`flex-1 min-w-[120px] py-3 px-4 rounded-xl font-medium text-sm transition-all duration-200 ${
               activeTab === 'overview'
                 ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-50'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
             }`}
           >
             <div className="flex items-center justify-center gap-2">
@@ -68,7 +68,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
             className={`flex-1 min-w-[120px] py-3 px-4 rounded-xl font-medium text-sm transition-all duration-200 ${
               activeTab === 'create'
                 ? 'bg-gradient-to-r from-green-600 to-green-700 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-50'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
             }`}
           >
             <div className="flex items-center justify-center gap-2">
@@ -82,7 +82,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
             className={`flex-1 min-w-[120px] py-3 px-4 rounded-xl font-medium text-sm transition-all duration-200 ${
               activeTab === 'members'
                 ? 'bg-gradient-to-r from-indigo-600 to-indigo-700 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-50'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
             }`}
           >
             <div className="flex items-center justify-center gap-2">
@@ -97,7 +97,7 @@ export const ProjectHeader: React.FC<ProjectHeaderProps> = ({
             className={`flex-1 min-w-[120px] py-3 px-4 rounded-xl font-medium text-sm transition-all duration-200 ${
               activeTab === 'analytics'
                 ? 'bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-md'
-                : 'text-gray-600 hover:bg-gray-50'
+                : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
             }`}
           >
             <div className="flex items-center justify-center gap-2">

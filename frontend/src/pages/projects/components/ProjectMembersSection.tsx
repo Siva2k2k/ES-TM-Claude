@@ -27,10 +27,10 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
   onRemoveMember,
 }) => {
   return (
-    <div>
+  <div data-project-id={projectId}>
       <div className="flex items-center justify-between mb-3">
-        <h4 className="font-semibold text-gray-900 flex items-center gap-2">
-          <Users className="h-4 w-4 text-blue-600" />
+        <h4 className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
+          <Users className="h-4 w-4 text-blue-600 dark:text-blue-400" />
           Members ({members.length})
         </h4>
         <button
@@ -46,14 +46,14 @@ export const ProjectMembersSection: React.FC<ProjectMembersSectionProps> = ({
         {members.map((member) => (
           <div
             key={member.id}
-            className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+            className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
           >
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-gray-900 truncate">{member.user_name}</p>
-              <p className="text-xs text-gray-500 truncate">{member.user_email}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{member.user_name}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{member.user_email}</p>
             </div>
             <div className="flex items-center gap-2 ml-2">
-              <span className="text-xs bg-blue-100 text-blue-700 px-2.5 py-1 rounded-full font-medium whitespace-nowrap">
+              <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-2.5 py-1 rounded-full font-medium whitespace-nowrap">
                 {member.project_role}
               </span>
               {!member.is_primary_manager && (

@@ -20,12 +20,12 @@ export const EmptyProjectState: React.FC<EmptyProjectStateProps> = ({
   onCreateClick,
 }) => {
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center">
-      <div className="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-        <FolderKanban className="h-10 w-10 text-gray-400" />
+    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-12 text-center">
+      <div className="w-20 h-20 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+        <FolderKanban className="h-10 w-10 text-gray-400 dark:text-gray-300" />
       </div>
-      <h3 className="text-xl font-semibold text-gray-900 mb-2">No Projects Found</h3>
-      <p className="text-gray-600 mb-6">
+      <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">No Projects Found</h3>
+      <p className="text-gray-600 dark:text-gray-300 mb-6">
         {hasFilters
           ? 'No projects match your filters.'
           : 'Get started by creating your first project.'}

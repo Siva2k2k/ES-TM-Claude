@@ -39,13 +39,13 @@ const SlideOver: React.FC<SlideOverProps> = ({ open, onClose, title, children })
       <aside
         role="dialog"
         aria-modal="true"
-        className="relative w-full sm:w-[560px] h-[75vh] sm:h-full bg-white shadow-2xl overflow-auto rounded-t-lg sm:rounded-l-lg sm:rounded-t-none"
+        className="relative w-full sm:w-[560px] h-[75vh] sm:h-full bg-white dark:bg-gray-900 shadow-2xl overflow-auto rounded-t-lg sm:rounded-l-lg sm:rounded-t-none"
       >
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-sm border-b border-gray-100 px-4 py-3 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+        <div className="sticky top-0 z-10 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border-b border-gray-100 dark:border-gray-700 px-4 py-3 flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1 rounded-md text-gray-500 hover:text-gray-800"
+            className="p-1 rounded-md text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-100"
             aria-label="Close details"
           >
             <X className="w-5 h-5" />

@@ -122,19 +122,19 @@ export const TaskSlideOver: React.FC<Props> = ({ open, onClose, projectId, task,
     <SlideOver open={open} onClose={onClose} title={task ? 'Edit Task' : 'Add Task'}>
       <div className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700">Name</label>
-          <input value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full border border-gray-200 rounded-md px-3 py-2 text-sm" />
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Name</label>
+          <input value={name} onChange={e => setName(e.target.value)} className="mt-1 block w-full border border-gray-200 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700">Description</label>
-          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="mt-1 block w-full border border-gray-200 rounded-md px-3 py-2 text-sm" />
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Description</label>
+          <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3} className="mt-1 block w-full border border-gray-200 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Assigned to</label>
-            <select value={assignedTo || ''} onChange={e => setAssignedTo(e.target.value || undefined)} className="mt-1 block w-full border border-gray-200 rounded-md px-3 py-2 text-sm">
+            <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Assigned to</label>
+            <select value={assignedTo || ''} onChange={e => setAssignedTo(e.target.value || undefined)} className="mt-1 block w-full border border-gray-200 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
               <option value="">Unassigned</option>
               {(members && members.length > 0 ? members : users).map((u: any) => (
                 <option key={u.user_id || u.id} value={u.user_id || u.id}>{u.user_name || u.full_name || u.user_email || u.email}</option>
@@ -142,9 +142,9 @@ export const TaskSlideOver: React.FC<Props> = ({ open, onClose, projectId, task,
             </select>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Status</label>
-            <select value={status} onChange={e => setStatus(e.target.value)} className="mt-1 block w-full border border-gray-200 rounded-md px-3 py-2 text-sm">
+            <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Status</label>
+            <select value={status} onChange={e => setStatus(e.target.value)} className="mt-1 block w-full border border-gray-200 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100">
               <option value="open">Open</option>
               <option value="in_progress">In Progress</option>
               <option value="completed">Completed</option>
@@ -153,24 +153,24 @@ export const TaskSlideOver: React.FC<Props> = ({ open, onClose, projectId, task,
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm font-medium text-gray-700">Estimated hours</label>
-            <input type="number" value={estimatedHours ?? ''} onChange={e => setEstimatedHours(e.target.value ? Number(e.target.value) : undefined)} className="mt-1 block w-full border border-gray-200 rounded-md px-3 py-2 text-sm" min={0} />
+            <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Estimated hours</label>
+            <input type="number" value={estimatedHours ?? ''} onChange={e => setEstimatedHours(e.target.value ? Number(e.target.value) : undefined)} className="mt-1 block w-full border border-gray-200 dark:border-gray-600 rounded-md px-3 py-2 text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" min={0} />
           </div>
 
           <div className="flex items-center gap-3">
             <input id="is_billable" type="checkbox" checked={isBillable} onChange={e => setIsBillable(e.target.checked)} />
-            <label htmlFor="is_billable" className="text-sm text-gray-700">Billable</label>
+            <label htmlFor="is_billable" className="text-sm text-gray-700 dark:text-gray-300">Billable</label>
           </div>
         </div>
 
         <div className="flex justify-between items-center">
           {task && (
-            <button onClick={remove} disabled={loading} className="px-3 py-2 bg-red-50 text-red-600 border border-red-100 rounded-md text-sm">Delete</button>
+            <button onClick={remove} disabled={loading} className="px-3 py-2 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-300 border border-red-100 dark:border-red-900/30 rounded-md text-sm">Delete</button>
           )}
 
           <div className="ml-auto flex gap-2">
-            <button onClick={onClose} className="px-3 py-2 bg-white border border-gray-200 rounded-md text-sm">Cancel</button>
+            <button onClick={onClose} className="px-3 py-2 bg-white dark:bg-gray-700 dark:border-gray-600 border border-gray-200 rounded-md text-sm text-gray-900 dark:text-gray-100">Cancel</button>
             <button onClick={save} disabled={loading} className="px-3 py-2 bg-blue-600 text-white rounded-md text-sm">{loading ? 'Saving...' : 'Save'}</button>
           </div>
         </div>

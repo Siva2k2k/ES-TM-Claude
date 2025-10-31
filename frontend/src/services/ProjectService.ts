@@ -262,10 +262,23 @@ export class ProjectService {
           completedTasks = tasksResult.tasks.filter(task => task.status === 'completed').length;
         }
       } else {
-        // For all projects, we'd need to aggregate - simplified for now
-        // This could be optimized with a dedicated backend endpoint
-        totalTasks = 0;
-        completedTasks = 0;
+        // Aggregate across all projects by fetching all tasks client-side.
+        // This could be optimized with a dedicated backend analytics endpoint.
+        try {
+          const allTasksResult = await this.getAllTasks();
+          if (!allTasksResult.error && Array.isArray(allTasksResult.tasks)) {
+            totalTasks = allTasksResult.tasks.length;
+            completedTasks = allTasksResult.tasks.filter(task => task.status === 'completed').length;
+          } else {
+            totalTasks = 0;
+            completedTasks = 0;
+          }
+        } catch (err) {
+          // Log the failure to help debugging and fall back to zeros
+          console.warn('Error aggregating tasks in getProjectAnalytics:', err);
+          totalTasks = 0;
+          completedTasks = 0;
+        }
       }
 
       return {
@@ -897,7 +910,7 @@ export class ProjectService {
 
       for (const project of projects) {
         const projRecord = project as unknown as Record<string, unknown>;
-  const projId = (projRecord['id'] as string) || (projRecord['_id'] as string) || undefined;
+        const projId = (projRecord['id'] as string) || (projRecord['_id'] as string) || undefined;
         if (!projId) continue;
 
         try {
