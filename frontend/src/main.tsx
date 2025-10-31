@@ -1,4 +1,6 @@
 import { StrictMode } from 'react';
+// Ensure generator/polyfill runtime is available for some bundled libs (eg. react-speech-recognition)
+import 'regenerator-runtime/runtime';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './store/contexts/AuthContext';

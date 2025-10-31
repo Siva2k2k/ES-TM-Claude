@@ -202,6 +202,48 @@ export class PermissionValidator {
   static canViewAllAuditLogs(currentRole: UserRole): boolean {
     return ['super_admin', 'management'].includes(currentRole);
   }
+
+  // Holiday management permissions
+  static canManageHolidays(currentRole: UserRole): boolean {
+    return ['super_admin', 'management'].includes(currentRole);
+  }
+
+  static canViewHolidays(currentRole: UserRole): boolean {
+    return true; // All roles can view holidays
+  }
+
+  static canCreateHoliday(currentRole: UserRole): boolean {
+    return ['super_admin', 'management'].includes(currentRole);
+  }
+
+  static canUpdateHoliday(currentRole: UserRole): boolean {
+    return ['super_admin', 'management'].includes(currentRole);
+  }
+
+  static canDeleteHoliday(currentRole: UserRole): boolean {
+    return ['super_admin', 'management'].includes(currentRole);
+  }
+
+  // Calendar management permissions
+  static canManageCalendars(currentRole: UserRole): boolean {
+    return ['super_admin', 'management'].includes(currentRole);
+  }
+
+  static canViewCalendars(currentRole: UserRole): boolean {
+    return true; // All roles can view calendars
+  }
+
+  static canCreateCalendar(currentRole: UserRole): boolean {
+    return ['super_admin', 'management'].includes(currentRole);
+  }
+
+  static canUpdateCalendar(currentRole: UserRole): boolean {
+    return ['super_admin', 'management'].includes(currentRole);
+  }
+
+  static canDeleteCalendar(currentRole: UserRole): boolean {
+    return ['super_admin', 'management'].includes(currentRole);
+  }
 }
 
 // Authorization requirement functions (throw errors if unauthorized)
@@ -250,6 +292,18 @@ export function requireProjectMembership(currentUser: AuthUser, projectMembers: 
 
   if (!isMember && !hasManagementAccess) {
     throw new AuthorizationError('Access denied: Not a member of this project');
+  }
+}
+
+export function requireHolidayManagement(currentUser: AuthUser): void {
+  if (!PermissionValidator.canManageHolidays(currentUser.role)) {
+    throw new AuthorizationError('Management level access required for holiday management');
+  }
+}
+
+export function requireCalendarManagement(currentUser: AuthUser): void {
+  if (!PermissionValidator.canManageCalendars(currentUser.role)) {
+    throw new AuthorizationError('Management level access required for calendar management');
   }
 }
 

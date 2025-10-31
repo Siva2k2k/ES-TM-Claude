@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
       const result = await BackendAuthService.login({ email, password });
 
-      if (!result.success) {
+    if (!result.success) {
         return { error: result.error || result.message };
       }
 

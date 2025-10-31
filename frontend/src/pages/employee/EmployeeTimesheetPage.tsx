@@ -111,7 +111,7 @@ export const  EmployeeTimesheetPage: React.FC = () => {
   }, [openCreateDialog]);
 
   // State
-  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
+  const [viewMode, setViewMode] = useState<ViewMode>('list');
   const [weekStartDate, setWeekStartDate] = useState(getCurrentWeekMonday());
   const [calendarDate, setCalendarDate] = useState<Date>(() => startOfMonth(new Date()));
   const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
@@ -361,14 +361,14 @@ export const  EmployeeTimesheetPage: React.FC = () => {
 
       {/* View Tabs */}
       <Tabs value={viewMode} onValueChange={handleViewModeChange}>
-        <TabsList>
-          <TabsTrigger value="calendar">
-            <Calendar className="-ml-1 mr-2 h-4 w-4" />
-            Calendar View
-          </TabsTrigger>
+        <TabsList> 
           <TabsTrigger value="list">
             <List className="-ml-1 mr-2 h-4 w-4" />
             List View
+          </TabsTrigger>
+          <TabsTrigger value="calendar">
+            <Calendar className="-ml-1 mr-2 h-4 w-4" />
+            Calendar View
           </TabsTrigger>
         </TabsList>
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { Header } from './Header';
 import { Sidebar } from './Sidebar';
+import VoiceLayer from '../components/voice/VoiceLayer';
 
 /**
  * AppLayout - Main application layout with Header, Sidebar, and Content area
@@ -36,6 +37,8 @@ export function AppLayout() {
             <Outlet />
           </div>
         </main>
+        {/* Global voice layer for authenticated app pages */}
+        <VoiceLayer />
       </div>
     </div>
   );

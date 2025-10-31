@@ -1,191 +1,486 @@
 import { Router } from 'express';
-
-type HolidayType = 'public' | 'company' | 'optional';
-
-interface MockHoliday {
-  _id: string;
-  name: string;
-  date: string;
-  holiday_type: HolidayType;
-  description?: string;
-  is_active: boolean;
-  created_at?: string;
-  updated_at?: string;
-}
+import { CompanyHoliday } from '@/models/CompanyHoliday';
+import { Calendar } from '@/models/Calendar';
+import { requireHolidayManagement } from '@/utils/authorization';
+import { requireAuth, AuthRequest } from '@/middleware/auth';
 
 const router = Router();
 
-const MOCK_HOLIDAYS: MockHoliday[] = [
-  {
-    _id: 'hol-2024-01-01',
-    name: 'New Year\'s Day',
-    date: '2024-01-01',
-    holiday_type: 'public',
-    description: 'Company observed New Year holiday',
-    is_active: true,
-  },
-  {
-    _id: 'hol-2024-01-26',
-    name: 'Republic Day',
-    date: '2024-01-26',
-    holiday_type: 'public',
-    description: 'National holiday',
-    is_active: true,
-  },
-  {
-    _id: 'hol-2024-03-29',
-    name: 'Good Friday',
-    date: '2024-03-29',
-    holiday_type: 'public',
-    description: 'Company observed holiday',
-    is_active: true,
-  },
-  {
-    _id: 'hol-2024-08-15',
-    name: 'Independence Day',
-    date: '2024-08-15',
-    holiday_type: 'public',
-    description: 'National holiday',
-    is_active: true,
-  },
-  {
-    _id: 'hol-2024-10-02',
-    name: 'Gandhi Jayanti',
-    date: '2024-10-02',
-    holiday_type: 'public',
-    description: 'National holiday',
-    is_active: true,
-  },
-  {
-    _id: 'hol-2024-10-31',
-    name: 'Company Offsite',
-    date: '2024-10-31',
-    holiday_type: 'company',
-    description: 'Company sponsored offsite',
-    is_active: true,
-  },
-  {
-    _id: 'hol-2024-12-25',
-    name: 'Christmas Day',
-    date: '2024-12-25',
-    holiday_type: 'public',
-    description: 'Company observed holiday',
-    is_active: true,
-  },
-];
+// Helper function to get calendar and build holiday query
+async function getCalendarAndQuery(calendarId?: string) {
+  let calendar = null;
+  let query: any = {};
 
-function parseDate(value?: string): Date | null {
-  if (!value) return null;
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-function withinRange(date: string, start?: string, end?: string): boolean {
-  const target = parseDate(date);
-  if (!target) return false;
-  const startDate = parseDate(start);
-  const endDate = parseDate(end);
-
-  if (startDate && target < startDate) return false;
-  if (endDate) {
-    // include entire end date
-    const inclusiveEnd = new Date(endDate);
-    inclusiveEnd.setHours(23, 59, 59, 999);
-    if (target > inclusiveEnd) return false;
-  }
-
-  return true;
-}
-
-router.get('/', (req, res) => {
-  const { startDate, endDate, holiday_type, is_active, year } = req.query;
-
-  let filtered = [...MOCK_HOLIDAYS];
-
-  if (year) {
-    const yearNumber = Number(year);
-    if (!Number.isNaN(yearNumber)) {
-      filtered = filtered.filter((holiday) => new Date(holiday.date).getFullYear() === yearNumber);
+  if (calendarId) {
+    // Specific calendar requested
+    calendar = await Calendar.findById(calendarId);
+    if (!calendar) {
+      throw new Error('Calendar not found');
+    }
+    query.calendar_id = calendarId;
+  } else {
+    // No calendar specified - use default company calendar
+    calendar = await (Calendar as any).getDefaultCalendar('company');
+    if (calendar) {
+      query.calendar_id = calendar._id;
     }
   }
 
-  if (startDate || endDate) {
-    filtered = filtered.filter((holiday) =>
-      withinRange(holiday.date, startDate as string | undefined, endDate as string | undefined)
-    );
+  return { calendar, query };
+}
+
+// Helper function to build holiday type filter
+function buildHolidayTypeFilter(holidayType?: string, calendar?: any) {
+  if (holidayType) {
+    return holidayType;
   }
 
-  if (holiday_type) {
-    filtered = filtered.filter((holiday) => holiday.holiday_type === holiday_type);
+  if (calendar) {
+    // Filter by calendar's holiday type preferences
+    const allowedTypes = [];
+    if (calendar.include_public_holidays) allowedTypes.push('public');
+    if (calendar.include_company_holidays) allowedTypes.push('company');
+    allowedTypes.push('optional'); // Always include optional holidays
+    return { $in: allowedTypes };
   }
 
-  if (is_active !== undefined) {
-    const active = is_active === 'true';
-    filtered = filtered.filter((holiday) => holiday.is_active === active);
-  }
+  return undefined;
+}
 
-  res.json({
-    success: true,
-    holidays: filtered,
-  });
-});
+router.get('/', async (req, res) => {
+  try {
+    const { startDate, endDate, holiday_type, is_active, year, calendar_id } = req.query;
 
-router.get('/upcoming', (req, res) => {
-  const days = Number(req.query.days) || 30;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+    // Get calendar and base query
+    const { calendar, query } = await getCalendarAndQuery(calendar_id as string);
 
-  const future = new Date(today);
-  future.setDate(future.getDate() + days);
+    // Add date filters
+    if (year) {
+      const yearNumber = Number(year);
+      if (!Number.isNaN(yearNumber)) {
+        const startOfYear = new Date(yearNumber, 0, 1);
+        const endOfYear = new Date(yearNumber, 11, 31, 23, 59, 59, 999);
+        query.date = { $gte: startOfYear, $lte: endOfYear };
+      }
+    }
 
-  const upcoming = MOCK_HOLIDAYS.filter((holiday) => {
-    const date = parseDate(holiday.date);
-    if (!date) return false;
-    return date >= today && date <= future && holiday.is_active;
-  });
+    if (startDate || endDate) {
+      query.date = query.date || {};
+      if (startDate) {
+        query.date.$gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        const endDateObj = new Date(endDate as string);
+        endDateObj.setHours(23, 59, 59, 999);
+        query.date.$lte = endDateObj;
+      }
+    }
 
-  res.json({
-    success: true,
-    holidays: upcoming,
-    count: upcoming.length,
-  });
-});
+    // Add holiday type filter
+    const holidayTypeFilter = buildHolidayTypeFilter(holiday_type as string, calendar);
+    if (holidayTypeFilter) {
+      query.holiday_type = holidayTypeFilter;
+    }
 
-router.get('/check/:date', (req, res) => {
-  const { date } = req.params;
-  const target = parseDate(date);
+    // Add active status filter
+    query.is_active = is_active === 'true';
 
-  if (!target) {
-    return res.status(400).json({
+    const holidays = await CompanyHoliday.find(query)
+      .populate('calendar_id', 'name type')
+      .sort({ date: 1 });
+
+    res.json({
+      success: true,
+      holidays,
+      calendar: calendar ? {
+        id: calendar.id,
+        name: calendar.name,
+        type: calendar.type
+      } : null,
+    });
+  } catch (error) {
+    console.error('Error fetching holidays:', error);
+    const statusCode = error.message === 'Calendar not found' ? 404 : 500;
+    res.status(statusCode).json({
       success: false,
-      error: 'Invalid date format',
+      error: error.message || 'Failed to fetch holidays',
     });
   }
-
-  const iso = target.toISOString().split('T')[0];
-  const holiday = MOCK_HOLIDAYS.find((item) => item.date === iso && item.is_active);
-
-  res.json({
-    success: true,
-    is_holiday: Boolean(holiday),
-    holiday: holiday ?? null,
-  });
 });
 
-router.get('/:id', (req, res) => {
-  const holiday = MOCK_HOLIDAYS.find((item) => item._id === req.params.id);
+router.get('/upcoming', async (req, res) => {
+  try {
+    const { days, calendar_id } = req.query;
+    const daysAhead = Number(days) || 30;
 
-  if (!holiday) {
-    return res.status(404).json({
+    // Get calendar and base query
+    const { calendar, query } = await getCalendarAndQuery(calendar_id as string);
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const future = new Date(today);
+    future.setDate(future.getDate() + daysAhead);
+
+    query.date = { $gte: today, $lte: future };
+    query.is_active = true;
+
+    // Add holiday type filter
+    const holidayTypeFilter = buildHolidayTypeFilter(undefined, calendar);
+    if (holidayTypeFilter) {
+      query.holiday_type = holidayTypeFilter;
+    }
+
+    const upcoming = await CompanyHoliday.find(query)
+      .populate('calendar_id', 'name type')
+      .sort({ date: 1 });
+
+    res.json({
+      success: true,
+      holidays: upcoming,
+      count: upcoming.length,
+      calendar: calendar ? {
+        id: calendar.id,
+        name: calendar.name,
+        type: calendar.type
+      } : null,
+    });
+  } catch (error) {
+    console.error('Error fetching upcoming holidays:', error);
+    const statusCode = error.message === 'Calendar not found' ? 404 : 500;
+    res.status(statusCode).json({
       success: false,
-      error: 'Holiday not found',
+      error: error.message || 'Failed to fetch upcoming holidays',
     });
   }
+});
 
-  res.json({
-    success: true,
-    holiday,
-  });
+router.get('/check/:date', async (req, res) => {
+  try {
+    const { date } = req.params;
+    const { calendar_id } = req.query;
+    const target = new Date(date);
+
+    if (Number.isNaN(target.getTime())) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid date format',
+      });
+    }
+
+    // Get calendar and base query
+    const { calendar, query } = await getCalendarAndQuery(calendar_id as string);
+
+    // Set to start of day for comparison
+    target.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(target);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    query.date = { $gte: target, $lte: endOfDay };
+    query.is_active = true;
+
+    // Add holiday type filter
+    const holidayTypeFilter = buildHolidayTypeFilter(undefined, calendar);
+    if (holidayTypeFilter) {
+      query.holiday_type = holidayTypeFilter;
+    }
+
+    const holiday = await CompanyHoliday.findOne(query)
+      .populate('calendar_id', 'name type');
+
+    res.json({
+      success: true,
+      is_holiday: Boolean(holiday),
+      holiday: holiday ?? null,
+      calendar: calendar ? {
+        id: calendar.id,
+        name: calendar.name,
+        type: calendar.type
+      } : null,
+    });
+  } catch (error) {
+    console.error('Error checking holiday:', error);
+    const statusCode = error.message === 'Calendar not found' ? 404 : 500;
+    res.status(statusCode).json({
+      success: false,
+      error: error.message || 'Failed to check holiday',
+    });
+  }
+});
+
+router.get('/:id', async (req, res) => {
+  try {
+    const holiday = await CompanyHoliday.findById(req.params.id);
+
+    if (!holiday) {
+      return res.status(404).json({
+        success: false,
+        error: 'Holiday not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      holiday,
+    });
+  } catch (error) {
+    console.error('Error fetching holiday:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch holiday',
+    });
+  }
+});
+
+router.post('/', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    requireHolidayManagement(req.user);
+
+    const { name, date, holiday_type, description, is_active = true, calendar_id } = req.body;
+
+    if (!name || !date || !holiday_type) {
+      return res.status(400).json({
+        success: false,
+        error: 'Name, date, and holiday_type are required',
+      });
+    }
+
+    // Validate calendar exists if calendar_id is provided
+    if (calendar_id) {
+      const calendar = await Calendar.findById(calendar_id);
+      if (!calendar) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid calendar_id: Calendar not found',
+        });
+      }
+    }
+
+    const holiday = new CompanyHoliday({
+      name,
+      date: new Date(date),
+      holiday_type,
+      description,
+      is_active,
+      calendar_id: calendar_id || undefined, // Use undefined if not provided
+      created_by: req.user.id,
+    });
+
+    await holiday.save();
+    await holiday.populate('calendar_id', 'name type');
+
+    res.status(201).json({
+      success: true,
+      holiday,
+    });
+  } catch (error) {
+    console.error('Error creating holiday:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create holiday',
+    });
+  }
+});
+
+router.put('/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    requireHolidayManagement(req.user);
+
+    const { name, date, holiday_type, description, is_active, calendar_id } = req.body;
+
+    const holiday = await CompanyHoliday.findById(req.params.id);
+
+    if (!holiday) {
+      return res.status(404).json({
+        success: false,
+        error: 'Holiday not found',
+      });
+    }
+
+    // Validate calendar exists if calendar_id is being updated
+    if (calendar_id !== undefined) {
+      if (calendar_id) {
+        const calendar = await Calendar.findById(calendar_id);
+        if (!calendar) {
+          return res.status(400).json({
+            success: false,
+            error: 'Invalid calendar_id: Calendar not found',
+          });
+        }
+      }
+      holiday.calendar_id = calendar_id || undefined;
+    }
+
+    if (name !== undefined) holiday.name = name;
+    if (date !== undefined) holiday.date = new Date(date);
+    if (holiday_type !== undefined) holiday.holiday_type = holiday_type;
+    if (description !== undefined) holiday.description = description;
+    if (is_active !== undefined) holiday.is_active = is_active;
+
+    await holiday.save();
+    await holiday.populate('calendar_id', 'name type');
+
+    res.json({
+      success: true,
+      holiday,
+    });
+  } catch (error) {
+    console.error('Error updating holiday:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to update holiday',
+    });
+  }
+});
+
+router.delete('/:id', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    requireHolidayManagement(req.user);
+
+    const holiday = await CompanyHoliday.findByIdAndDelete(req.params.id);
+
+    if (!holiday) {
+      return res.status(404).json({
+        success: false,
+        error: 'Holiday not found',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Holiday deleted successfully',
+    });
+  } catch (error) {
+    console.error('Error deleting holiday:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to delete holiday',
+    });
+  }
+});
+
+// Get holidays for a specific calendar
+router.get('/calendar/:calendarId', async (req, res) => {
+  try {
+    const { calendarId } = req.params;
+    const { startDate, endDate, holiday_type, is_active, year } = req.query;
+
+    // Verify calendar exists
+    const calendar = await Calendar.findById(calendarId);
+    if (!calendar) {
+      return res.status(404).json({
+        success: false,
+        error: 'Calendar not found',
+      });
+    }
+
+    let query: any = { calendar_id: calendarId };
+
+    // Add date filters
+    if (year) {
+      const yearNumber = Number(year);
+      if (!Number.isNaN(yearNumber)) {
+        const startOfYear = new Date(yearNumber, 0, 1);
+        const endOfYear = new Date(yearNumber, 11, 31, 23, 59, 59, 999);
+        query.date = { $gte: startOfYear, $lte: endOfYear };
+      }
+    }
+
+    if (startDate || endDate) {
+      query.date = query.date || {};
+      if (startDate) {
+        query.date.$gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        const endDateObj = new Date(endDate as string);
+        endDateObj.setHours(23, 59, 59, 999);
+        query.date.$lte = endDateObj;
+      }
+    }
+
+    if (holiday_type) {
+      query.holiday_type = holiday_type;
+    }
+
+    query.is_active = is_active !== undefined ? is_active === 'true' : true;
+
+    const holidays = await CompanyHoliday.find(query).sort({ date: 1 });
+
+    res.json({
+      success: true,
+      holidays,
+      calendar: {
+        id: calendar.id,
+        name: calendar.name,
+        type: calendar.type
+      },
+    });
+  } catch (error) {
+    console.error('Error fetching calendar holidays:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch calendar holidays',
+    });
+  }
+});
+
+// Admin route to get all holidays across all calendars
+router.get('/admin/all', requireAuth, async (req: AuthRequest, res) => {
+  try {
+    requireHolidayManagement(req.user);
+
+    const { startDate, endDate, holiday_type, is_active, year, calendar_id } = req.query;
+
+    let query: any = {};
+
+    if (calendar_id) {
+      query.calendar_id = calendar_id;
+    }
+
+    // Add date filters
+    if (year) {
+      const yearNumber = Number(year);
+      if (!Number.isNaN(yearNumber)) {
+        const startOfYear = new Date(yearNumber, 0, 1);
+        const endOfYear = new Date(yearNumber, 11, 31, 23, 59, 59, 999);
+        query.date = { $gte: startOfYear, $lte: endOfYear };
+      }
+    }
+
+    if (startDate || endDate) {
+      query.date = query.date || {};
+      if (startDate) {
+        query.date.$gte = new Date(startDate as string);
+      }
+      if (endDate) {
+        const endDateObj = new Date(endDate as string);
+        endDateObj.setHours(23, 59, 59, 999);
+        query.date.$lte = endDateObj;
+      }
+    }
+
+    if (holiday_type) {
+      query.holiday_type = holiday_type;
+    }
+
+    query.is_active = is_active !== undefined ? is_active === 'true' : true;
+
+    const holidays = await CompanyHoliday.find(query)
+      .populate('calendar_id', 'name type')
+      .populate('created_by', 'full_name email')
+      .sort({ date: 1 });
+
+    res.json({
+      success: true,
+      holidays,
+    });
+  } catch (error) {
+    console.error('Error fetching all holidays:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch all holidays',
+    });
+  }
 });
 
 export default router;

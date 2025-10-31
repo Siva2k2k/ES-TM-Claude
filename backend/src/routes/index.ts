@@ -9,6 +9,7 @@ import projectBillingRoutes from './projectBilling';
 import invoiceRoutes from './invoice';
 import billingRateRoutes from './billingRate';
 import auditRoutes from './audit';
+import calendarRoutes from './calendar';
 import clientRoutes from './client';
 import dashboardRoutes from './dashboard';
 import reportRoutes from './reports';
@@ -31,6 +32,7 @@ export const registerRoutes = (app: Express): void => {
   app.use('/api/v1/invoices', invoiceRoutes);
   app.use('/api/v1/billing-rates', billingRateRoutes);
   app.use('/api/v1/audit', auditRoutes);
+  app.use('/api/v1/calendars', calendarRoutes);
   app.use('/api/v1/timesheets', timesheetRoutes);
   app.use('/api/v1/clients', clientRoutes);
   app.use('/api/v1/dashboard', dashboardRoutes);

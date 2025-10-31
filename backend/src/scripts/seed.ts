@@ -1,7 +1,7 @@
 import 'module-alias/register';
 import dotenv from 'dotenv';
 import { connectDB } from '../config/database';
-import { User, Client, Project, Task } from '../models';
+import { User, Client, Project, Task, Calendar, CompanyHoliday } from '../models';
 import { PasswordSecurity } from '../utils/passwordSecurity';
 import logger from '../config/logger';
 
@@ -65,6 +65,94 @@ const seedData = async (): Promise<void> => {
     ]);
 
     logger.info(`👥 Created ${users.length} users`);
+
+    // Create default calendar
+    const defaultCalendar = await (Calendar.create as any)({
+      name: 'Company Standard Calendar',
+      description: 'Default company calendar with standard working days and holidays',
+      type: 'company',
+      timezone: 'UTC',
+      is_default: true,
+      is_active: true,
+      include_public_holidays: true,
+      include_company_holidays: true,
+      working_days: [1, 2, 3, 4, 5], // Monday to Friday
+      business_hours_start: '09:00',
+      business_hours_end: '17:00',
+      working_hours_per_day: 8,
+      created_by: users[0]._id // Created by super admin
+    });
+
+    logger.info(`📅 Created default calendar: ${defaultCalendar.name}`);
+
+    // Create sample holidays for the default calendar
+    const holidays = await (CompanyHoliday.create as any)([
+      {
+        name: 'New Year\'s Day',
+        date: new Date('2025-01-01'),
+        holiday_type: 'public',
+        description: 'New Year holiday',
+        is_active: true,
+        calendar_id: defaultCalendar._id,
+        created_by: users[0]._id
+      },
+      {
+        name: 'Republic Day',
+        date: new Date('2025-01-26'),
+        holiday_type: 'public',
+        description: 'National holiday',
+        is_active: true,
+        calendar_id: defaultCalendar._id,
+        created_by: users[0]._id
+      },
+      {
+        name: 'Good Friday',
+        date: new Date('2025-04-18'),
+        holiday_type: 'public',
+        description: 'Religious holiday',
+        is_active: true,
+        calendar_id: defaultCalendar._id,
+        created_by: users[0]._id
+      },
+      {
+        name: 'Independence Day',
+        date: new Date('2025-08-15'),
+        holiday_type: 'public',
+        description: 'National holiday',
+        is_active: true,
+        calendar_id: defaultCalendar._id,
+        created_by: users[0]._id
+      },
+      {
+        name: 'Gandhi Jayanti',
+        date: new Date('2025-10-02'),
+        holiday_type: 'public',
+        description: 'National holiday',
+        is_active: true,
+        calendar_id: defaultCalendar._id,
+        created_by: users[0]._id
+      },
+      {
+        name: 'Christmas Day',
+        date: new Date('2025-12-25'),
+        holiday_type: 'public',
+        description: 'Religious holiday',
+        is_active: true,
+        calendar_id: defaultCalendar._id,
+        created_by: users[0]._id
+      },
+      {
+        name: 'Company Annual Day',
+        date: new Date('2025-12-31'),
+        holiday_type: 'company',
+        description: 'Company annual celebration',
+        is_active: true,
+        calendar_id: defaultCalendar._id,
+        created_by: users[0]._id
+      }
+    ]);
+
+    logger.info(`🎄 Created ${holidays.length} sample holidays`);
 
     // Create clients
     const clients = await (Client.create as any)([
@@ -205,6 +293,8 @@ const seedData = async (): Promise<void> => {
     logger.info('✅ Database seeding completed successfully!');
     logger.info('\n📊 Summary:');
     logger.info(`   Users: ${users.length}`);
+    logger.info(`   Calendars: 1 (Default Company Calendar)`);
+    logger.info(`   Holidays: ${holidays.length} (Sample holidays for 2025)`);
     logger.info(`   Clients: ${clients.length}`);
     logger.info(`   Projects: ${projects.length} (including Training Program)`);
     logger.info(`   Tasks: ${tasks.length}`);

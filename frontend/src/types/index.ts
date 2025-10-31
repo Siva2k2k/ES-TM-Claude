@@ -528,7 +528,42 @@ export interface UserPermissions {
 }
 
 // ==========================================================================
-// EXPORT ALL TYPES
+// CALENDAR TYPES (NEW)
 // ==========================================================================
 
-// All types are already exported above
+export type CalendarType = 'system' | 'company' | 'regional' | 'personal';
+
+export interface Calendar {
+  id: string;
+  name: string;
+  description?: string;
+  type: CalendarType;
+  timezone: string;
+  is_default: boolean;
+  is_active: boolean;
+  include_public_holidays: boolean;
+  include_company_holidays: boolean;
+  working_days: number[];
+  business_hours_start?: string;
+  business_hours_end?: string;
+  working_hours_per_day: number;
+  created_by: {
+    id: string;
+    full_name: string;
+    email: string;
+  };
+  created_at: string;
+  updated_at: string;
+  deleted_at?: string;
+}
+
+export interface CalendarWithHolidays extends Calendar {
+  holidays: Array<{
+    id: string;
+    name: string;
+    date: string;
+    holiday_type: 'public' | 'company' | 'optional';
+    description?: string;
+    is_active: boolean;
+  }>;
+}
