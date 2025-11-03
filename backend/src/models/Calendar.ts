@@ -1,19 +1,15 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
-export type CalendarType = 'system' | 'company' | 'regional' | 'personal';
-
 export interface ICalendar extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
   description?: string;
-  type: CalendarType;
   timezone: string;
-  is_default: boolean;
   is_active: boolean;
 
   // Holiday-related settings
-  include_public_holidays: boolean;
-  include_company_holidays: boolean;
+  auto_create_holiday_entries: boolean; // Automatically create holiday entries in timesheets
+  default_holiday_hours: number; // Default hours for holiday entries (adjustable by users)
 
   // Timesheet-related settings
   working_days: number[]; // Array of day numbers (0=Sunday, 1=Monday, etc.)
@@ -33,28 +29,19 @@ const CalendarSchema: Schema = new Schema({
     type: String,
     required: true,
     trim: true,
-    maxlength: 100
+    maxlength: 100,
+    default: 'Company Calendar'
   },
   description: {
     type: String,
     trim: true,
-    maxlength: 500
-  },
-  type: {
-    type: String,
-    enum: ['system', 'company', 'regional', 'personal'],
-    default: 'company',
-    required: true
+    maxlength: 500,
+    default: 'Default company calendar for holidays and timesheet settings'
   },
   timezone: {
     type: String,
     required: true,
     default: 'UTC'
-  },
-  is_default: {
-    type: Boolean,
-    default: false,
-    required: true
   },
   is_active: {
     type: Boolean,
@@ -62,16 +49,17 @@ const CalendarSchema: Schema = new Schema({
     required: true
   },
 
-  // Holiday settings
-  include_public_holidays: {
+  // Holiday settings - simplified
+  auto_create_holiday_entries: {
     type: Boolean,
     default: true,
     required: true
   },
-  include_company_holidays: {
-    type: Boolean,
-    default: true,
-    required: true
+  default_holiday_hours: {
+    type: Number,
+    default: 8,
+    min: 0,
+    max: 24
   },
 
   // Timesheet settings
@@ -128,21 +116,19 @@ const CalendarSchema: Schema = new Schema({
 });
 
 // Indexes
-CalendarSchema.index({ type: 1, is_active: 1 });
-CalendarSchema.index({ is_default: 1 });
+CalendarSchema.index({ is_active: 1 });
 CalendarSchema.index({ created_by: 1 });
 CalendarSchema.index({ deleted_at: 1 });
 
-// Pre-save middleware to ensure only one default calendar per type
+// Ensure only one active calendar exists
 CalendarSchema.pre('save', async function(next) {
-  if (this.is_default) {
+  if (this.is_active) {
     await Calendar.updateMany(
       {
-        type: this.type,
         _id: { $ne: this._id },
         deleted_at: { $exists: false }
       },
-      { is_default: false }
+      { is_active: false }
     );
   }
   next();
@@ -164,28 +150,36 @@ CalendarSchema.set('toJSON', {
 
 // Static methods
 CalendarSchema.statics = {
-  // Get default calendar for a type
-  async getDefaultCalendar(type: CalendarType = 'company'): Promise<ICalendar | null> {
+  // Get the active company calendar
+  async getCompanyCalendar(): Promise<ICalendar | null> {
     return this.findOne({
-      type,
-      is_default: true,
       is_active: true,
       deleted_at: { $exists: false }
     });
   },
 
-  // Get active calendars for a user
-  async getActiveCalendars(createdBy?: mongoose.Types.ObjectId): Promise<ICalendar[]> {
-    const query: any = {
+  // Get or create default company calendar
+  async getOrCreateCompanyCalendar(createdBy: mongoose.Types.ObjectId): Promise<ICalendar> {
+    let calendar = await this.findOne({
       is_active: true,
       deleted_at: { $exists: false }
-    };
+    });
 
-    if (createdBy) {
-      query.created_by = createdBy;
+    if (!calendar) {
+      calendar = await this.create({
+        name: 'Company Calendar',
+        description: 'Default company calendar for holidays and timesheet settings',
+        timezone: 'UTC',
+        is_active: true,
+        auto_create_holiday_entries: true,
+        default_holiday_hours: 8,
+        working_days: [1, 2, 3, 4, 5], // Monday to Friday
+        working_hours_per_day: 8,
+        created_by: createdBy
+      });
     }
 
-    return this.find(query).sort({ name: 1 });
+    return calendar;
   }
 };
 

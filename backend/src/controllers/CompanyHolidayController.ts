@@ -115,14 +115,13 @@ export class CompanyHolidayController {
       });
     }
 
-    const { name, date, holiday_type, description, calendar_id } = req.body;
+    const { name, date, holiday_type, description } = req.body;
 
     const holiday = await CompanyHolidayService.createHoliday({
       name,
       date,
       holiday_type,
       description,
-      calendar_id,
       created_by: req.user.id
     });
 

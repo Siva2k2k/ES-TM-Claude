@@ -876,6 +876,29 @@ export class TimesheetController {
       message: 'Timesheet permanently deleted'
     });
   });
+
+  /**
+   * Synchronize holiday entries for timesheet
+   */
+  static synchronizeHolidayEntries = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    const { timesheetId } = req.params;
+    const currentUser = req.user!;
+
+    const result = await TimesheetService.synchronizeHolidayEntries(timesheetId, currentUser);
+
+    if (!result.success) {
+      return res.status(400).json({
+        success: false,
+        error: result.error || 'Failed to synchronize holiday entries'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Holiday entries synchronized successfully',
+      changes: result.changes
+    });
+  });
 }
 
 export default TimesheetController;

@@ -11,7 +11,8 @@ import {
   Activity,
   Trash2,
   X,
-  ChevronDown
+  ChevronDown,
+  BarChart3
 } from 'lucide-react';
 import { useAuth } from '../store/contexts/AuthContext';
 import { cn } from '../utils/cn';
@@ -119,6 +120,7 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
         { id: 'projects', label: 'Project Management', icon: Building2, path: '/dashboard/projects' },
         { id: 'clients', label: 'Client Management', icon: UserCheck, path: '/dashboard/clients' },
         { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team-review' },
+        { id: 'user-tracking', label: 'User Tracking', icon: BarChart3, path: '/dashboard/user-tracking' },
         { id: 'reports', label: 'Reports & Analytics', icon: TrendingUp, path: '/dashboard/reports' },
         { id: 'billing', label: 'Billing Management', icon: FileText, path: '/dashboard/billing/projects', subItems: billingSubItems }
       );
@@ -130,6 +132,7 @@ export function Sidebar({ isOpen, isCollapsed, onClose }: SidebarProps) {
         { id: 'projects', label: 'Project Management', icon: Building2, path: '/dashboard/projects' },
         { id: 'timesheet', label: 'My Timesheet', icon: Clock, path: '/dashboard/timesheets' },
         { id: 'team', label: 'Team Review', icon: Users, path: '/dashboard/team-review' },
+        { id: 'user-tracking', label: 'User Tracking', icon: BarChart3, path: '/dashboard/user-tracking' },
         { id: 'timesheet-status', label: 'My Status', icon: Activity, path: '/dashboard/timesheets/status' },
         { id: 'reports', label: 'Reports & Analytics', icon: TrendingUp, path: '/dashboard/reports' }
       );

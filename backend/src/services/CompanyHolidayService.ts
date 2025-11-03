@@ -14,7 +14,6 @@ export interface CreateHolidayData {
   date: Date | string;
   holiday_type: HolidayType;
   description?: string;
-  calendar_id?: string;
   created_by: string;
 }
 
@@ -31,7 +30,6 @@ export interface HolidayFilters {
   endDate?: Date | string;
   holiday_type?: HolidayType;
   is_active?: boolean;
-  calendar_id?: string;
 }
 
 export class CompanyHolidayService {
@@ -58,7 +56,7 @@ export class CompanyHolidayService {
 
     // Validate date format
     const holidayDate = new Date(data.date);
-    if (isNaN(holidayDate.getTime())) {
+    if (Number.isNaN(holidayDate.getTime())) {
       throw new ValidationError('Invalid date format');
     }
 
@@ -81,7 +79,6 @@ export class CompanyHolidayService {
       date: holidayDate,
       holiday_type: data.holiday_type || 'public',
       description: data.description?.trim(),
-      calendar_id: data.calendar_id ? new mongoose.Types.ObjectId(data.calendar_id) : undefined,
       is_active: true,
       created_by: new mongoose.Types.ObjectId(data.created_by)
     });
@@ -123,10 +120,6 @@ export class CompanyHolidayService {
 
     if (filters?.is_active !== undefined) {
       query.is_active = filters.is_active;
-    }
-
-    if (filters?.calendar_id) {
-      query.calendar_id = new mongoose.Types.ObjectId(filters.calendar_id);
     }
 
     const holidays = await CompanyHoliday.find(query)
@@ -245,7 +238,7 @@ export class CompanyHolidayService {
 
     if (data.date !== undefined) {
       const newDate = new Date(data.date);
-      if (isNaN(newDate.getTime())) {
+      if (Number.isNaN(newDate.getTime())) {
         throw new ValidationError('Invalid date format');
       }
       newDate.setUTCHours(0, 0, 0, 0);
@@ -337,6 +330,152 @@ export class CompanyHolidayService {
     const endDate = new Date(Date.UTC(year, 11, 31, 23, 59, 59, 999));
 
     return this.getHolidaysInRange(startDate, endDate);
+  }
+
+  /**
+   * Get holidays within a week range for automatic timesheet entry creation
+   *
+   * @param weekStartDate Week start date (Monday)
+   * @param weekEndDate Week end date (Sunday)
+   * @returns Array of active holidays in the week
+   */
+  async getHolidaysInWeek(weekStartDate: Date, weekEndDate: Date): Promise<ICompanyHoliday[]> {
+    return this.getHolidaysInRange(weekStartDate, weekEndDate);
+  }
+
+  /**
+   * Create holiday time entries for a timesheet
+   *
+   * @param timesheetId Timesheet ID
+   * @param weekStartDate Week start date
+   * @param weekEndDate Week end date
+   * @param defaultHours Default hours for holiday entries
+   * @returns Array of created holiday time entries
+   */
+  async createHolidayTimeEntries(
+    timesheetId: string,
+    weekStartDate: Date,
+    weekEndDate: Date,
+    defaultHours: number = 8
+  ): Promise<any[]> {
+    const { TimeEntry } = require('@/models/TimeEntry');
+    
+    // Get holidays in the week
+    const holidays = await this.getHolidaysInWeek(weekStartDate, weekEndDate);
+    
+    if (holidays.length === 0) {
+      return [];
+    }
+
+    // Create holiday time entries
+    const holidayEntries = holidays.map(holiday => ({
+      timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+      entry_category: 'holiday',
+      date: holiday.date,
+      hours: defaultHours,
+      description: `Holiday: ${holiday.name}`,
+      is_billable: false,
+      holiday_name: holiday.name,
+      holiday_type: holiday.holiday_type,
+      is_auto_generated: true
+    }));
+
+    if (holidayEntries.length > 0) {
+      const createdEntries = await TimeEntry.insertMany(holidayEntries);
+      return createdEntries;
+    }
+
+    return [];
+  }
+
+  /**
+   * Synchronize holiday entries for a timesheet based on current week dates
+   * This handles dynamic add/remove of holiday entries during timesheet editing
+   *
+   * @param timesheetId Timesheet ID
+   * @param weekStartDate Week start date
+   * @param weekEndDate Week end date
+   * @param defaultHours Default hours for holiday entries
+   * @returns Object with added and removed holiday entries
+   */
+  async synchronizeHolidayEntries(
+    timesheetId: string,
+    weekStartDate: Date,
+    weekEndDate: Date,
+    defaultHours: number = 8
+  ): Promise<{ added: any[]; removed: any[]; existing: any[] }> {
+    const { TimeEntry } = require('@/models/TimeEntry');
+    
+    // Get current holidays in the week
+    const currentHolidays = await this.getHolidaysInWeek(weekStartDate, weekEndDate);
+    const currentHolidayDates = currentHolidays.map(h => h.date.toISOString().split('T')[0]);
+    
+    // Get existing holiday entries for this timesheet
+    const existingHolidayEntries = await TimeEntry.find({
+      timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+      entry_category: 'holiday',
+      is_auto_generated: true,
+      deleted_at: null
+    });
+
+    const existingHolidayDates = existingHolidayEntries.map(e => 
+      e.date.toISOString().split('T')[0]
+    );
+
+    // Find holidays to add (in current week but not in existing entries)
+    const holidaysToAdd = currentHolidays.filter(holiday => 
+      !existingHolidayDates.includes(holiday.date.toISOString().split('T')[0])
+    );
+
+    // Find holiday entries to remove (existing but not in current week)
+    const entriesToRemove = existingHolidayEntries.filter(entry => 
+      !currentHolidayDates.includes(entry.date.toISOString().split('T')[0])
+    );
+
+    // Add new holiday entries
+    const addedEntries = [];
+    if (holidaysToAdd.length > 0) {
+      const newHolidayEntries = holidaysToAdd.map(holiday => ({
+        timesheet_id: new mongoose.Types.ObjectId(timesheetId),
+        entry_category: 'holiday',
+        date: holiday.date,
+        hours: defaultHours,
+        description: `Holiday: ${holiday.name}`,
+        is_billable: false,
+        holiday_name: holiday.name,
+        holiday_type: holiday.holiday_type,
+        is_auto_generated: true
+      }));
+
+      const createdEntries = await TimeEntry.insertMany(newHolidayEntries);
+      addedEntries.push(...createdEntries);
+    }
+
+    // Remove outdated holiday entries (soft delete)
+    const removedEntries = [];
+    if (entriesToRemove.length > 0) {
+      await TimeEntry.updateMany(
+        { 
+          _id: { $in: entriesToRemove.map(e => e._id) }
+        },
+        { 
+          deleted_at: new Date(),
+          updated_at: new Date()
+        }
+      );
+      removedEntries.push(...entriesToRemove);
+    }
+
+    // Get remaining existing entries
+    const remainingEntries = existingHolidayEntries.filter(entry => 
+      currentHolidayDates.includes(entry.date.toISOString().split('T')[0])
+    );
+
+    return {
+      added: addedEntries,
+      removed: removedEntries,
+      existing: remainingEntries
+    };
   }
 }
 

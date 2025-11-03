@@ -90,6 +90,9 @@ export interface TimeEntryForm {
   // New entry category fields
   entry_category?: EntryCategory;
   leave_session?: LeaveSession;
+  holiday_name?: string; // For holiday entries
+  holiday_type?: string; // For holiday entries
+  is_auto_generated?: boolean; // For auto-generated holiday entries
   miscellaneous_activity?: string;
   task_type?: TaskType; // For backward compatibility with entry_type
 }
@@ -111,6 +114,8 @@ function sanitizeTimeEntryForm(entry: TimeEntryForm): TimeEntryForm {
     // Infer category from entry structure
     if (entry.leave_session) {
       sanitized.entry_category = 'leave';
+    } else if (entry.holiday_name) {
+      sanitized.entry_category = 'holiday';
     } else if (entry.miscellaneous_activity) {
       sanitized.entry_category = 'miscellaneous';
     } else if (entry.project_id) {
@@ -121,6 +126,11 @@ function sanitizeTimeEntryForm(entry: TimeEntryForm): TimeEntryForm {
     } else {
       sanitized.entry_category = 'project'; // Default fallback
     }
+  }
+
+  // For holiday entries, ensure they are non-billable
+  if (sanitized.entry_category === 'holiday') {
+    sanitized.is_billable = false;
   }
 
   return sanitized;
@@ -508,6 +518,31 @@ export class TimesheetService {
       };
 
       const timesheet = await (Timesheet.create as any)(timesheetData);
+
+      // Auto-create holiday entries if enabled
+      try {
+        const { Calendar } = require('@/models/Calendar');
+        const CompanyHolidayService = require('@/services/CompanyHolidayService').default;
+        
+        // Get company calendar settings
+        const calendar = await Calendar.getCompanyCalendar();
+        if (calendar && calendar.auto_create_holiday_entries) {
+          const holidayEntries = await CompanyHolidayService.createHolidayTimeEntries(
+            timesheet._id.toString(),
+            weekStart,
+            weekEnd,
+            calendar.default_holiday_hours || 8
+          );
+
+          if (holidayEntries.length > 0) {
+            // Update timesheet total hours to include holiday hours
+            await this.updateTimesheetTotalHours(timesheet._id.toString());
+          }
+        }
+      } catch (holidayError) {
+        // Log holiday creation error but don't fail timesheet creation
+        console.error('Error creating holiday entries for timesheet:', holidayError);
+      }
 
       // Audit log: Timesheet created
       await AuditLogService.logEvent(
@@ -1494,6 +1529,65 @@ export class TimesheetService {
   }
 
   /**
+   * Synchronize holiday entries for a timesheet
+   * This is called when timesheet dates are modified or when navigating timesheet form
+   */
+  static async synchronizeHolidayEntries(
+    timesheetId: string,
+    currentUser: AuthUser
+  ): Promise<{ success: boolean; changes?: any; error?: string }> {
+    try {
+      // Get timesheet to validate permissions and get date range
+      const timesheet = await (Timesheet.findOne as any)({
+        _id: new mongoose.Types.ObjectId(timesheetId),
+        deleted_at: null
+      }).exec();
+
+      if (!timesheet) {
+        throw new NotFoundError('Timesheet not found');
+      }
+
+      // Validate access permissions
+      validateTimesheetAccess(currentUser, timesheet.user_id.toString(), 'edit');
+
+      // Only sync holidays for editable timesheets
+      if (!['draft', 'lead_rejected', 'manager_rejected', 'management_rejected'].includes(timesheet.status)) {
+        return { success: true, changes: { added: [], removed: [], existing: [] } };
+      }
+
+      // Get company calendar settings
+      const { Calendar } = require('@/models/Calendar');
+      const calendar = await Calendar.getCompanyCalendar();
+      
+      if (!calendar || !calendar.auto_create_holiday_entries) {
+        return { success: true, changes: { added: [], removed: [], existing: [] } };
+      }
+
+      // Synchronize holiday entries
+      const CompanyHolidayService = require('@/services/CompanyHolidayService').default;
+      const changes = await CompanyHolidayService.synchronizeHolidayEntries(
+        timesheetId,
+        timesheet.week_start_date,
+        timesheet.week_end_date,
+        calendar.default_holiday_hours || 8
+      );
+
+      // Update timesheet total hours if changes were made
+      if (changes.added.length > 0 || changes.removed.length > 0) {
+        await this.updateTimesheetTotalHours(timesheetId);
+      }
+
+      return { success: true, changes };
+    } catch (error) {
+      console.error('Error synchronizing holiday entries:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to synchronize holiday entries' 
+      };
+    }
+  }
+
+  /**
    * Update timesheet total hours (called automatically after entry changes)
    */
   private static async updateTimesheetTotalHours(timesheetId: string): Promise<void> {
@@ -1647,11 +1741,21 @@ export class TimesheetService {
         throw new TimesheetError('Cannot update entries for timesheet in current status');
       }
 
-      // Fetch existing entries for this timesheet (will be soft-deleted and replaced)
+      // Fetch existing entries for this timesheet
+      // We will preserve auto-generated holiday entries and only replace manual entries
       const existingEntries = await (TimeEntry.find as any)({
         timesheet_id: new mongoose.Types.ObjectId(timesheetId),
         deleted_at: null
       }).lean().exec();
+
+      // Separate auto-generated holiday entries from manual entries
+      const autoHolidayEntries = existingEntries.filter((e: any) => 
+        e.entry_category === 'holiday' && e.is_auto_generated === true
+      );
+      
+      const manualEntries = existingEntries.filter((e: any) => 
+        !(e.entry_category === 'holiday' && e.is_auto_generated === true)
+      );
 
       const sanitizedEntries = entries.map(sanitizeTimeEntryForm);
 
@@ -1743,23 +1847,30 @@ export class TimesheetService {
 
       // existingEntries already fetched above for validation/audit logging
 
-      // Delete all existing entries for this timesheet (soft delete)
+      // Delete only manual entries (preserve auto-generated holiday entries)
       await (TimeEntry.updateMany as any)(
-        { timesheet_id: new mongoose.Types.ObjectId(timesheetId), deleted_at: null },
+        { 
+          timesheet_id: new mongoose.Types.ObjectId(timesheetId), 
+          deleted_at: null,
+          $or: [
+            { entry_category: { $ne: 'holiday' } },
+            { is_auto_generated: { $ne: true } }
+          ]
+        },
         { deleted_at: new Date(), updated_at: new Date() }
       ).exec();
 
-      // Audit log: Time entries deleted (bulk update)
-      if (existingEntries.length > 0) {
+      // Audit log: Manual time entries deleted (bulk update)
+      if (manualEntries.length > 0) {
         await AuditLogService.logEvent(
           'time_entries',
           timesheetId,
           'DELETE',
           currentUser.id,
           currentUser.full_name,
-          { timesheet_id: timesheetId, entries_deleted: existingEntries.length },
-          { bulk_update: true },
-          existingEntries,
+          { timesheet_id: timesheetId, entries_deleted: manualEntries.length },
+          { bulk_update: true, preserved_auto_holidays: autoHolidayEntries.length },
+          manualEntries,
           null
         );
       }
@@ -1836,6 +1947,14 @@ export class TimesheetService {
 
       // Update timesheet total hours
       await this.updateTimesheetTotalHours(timesheetId);
+
+      // Synchronize holiday entries after manual entry updates
+      try {
+        await this.synchronizeHolidayEntries(timesheetId, currentUser);
+      } catch (holidayError) {
+        // Log holiday sync error but don't fail the main operation
+        console.error('Error synchronizing holiday entries during timesheet update:', holidayError);
+      }
 
       return { updatedEntries };
     } catch (error) {

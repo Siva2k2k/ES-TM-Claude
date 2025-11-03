@@ -5,7 +5,7 @@ export type TaskType = 'project_task' | 'custom_task';
 export type EntryType = TaskType; // Deprecated, use TaskType
 
 // High-level entry categories
-export type EntryCategory = 'project' | 'leave' | 'training' | 'miscellaneous';
+export type EntryCategory = 'project' | 'leave' | 'training' | 'holiday' | 'miscellaneous';
 
 // Leave session types
 export type LeaveSession = 'morning' | 'afternoon' | 'full_day';
@@ -25,6 +25,11 @@ export interface ITimeEntry extends Document {
 
   // For 'leave' category
   leave_session?: LeaveSession;
+
+  // For 'holiday' category (NEW)
+  holiday_name?: string; // Name of the holiday
+  holiday_type?: string; // Type of holiday (public, company, etc.)
+  is_auto_generated?: boolean; // Whether this was auto-generated from company holidays
 
   // For 'miscellaneous' category
   miscellaneous_activity?: string;
@@ -60,7 +65,7 @@ const TimeEntrySchema: Schema = new Schema({
   // High-level category (NEW)
   entry_category: {
     type: String,
-    enum: ['project', 'leave', 'training', 'miscellaneous'],
+    enum: ['project', 'leave', 'training', 'holiday', 'miscellaneous'],
     required: true,
     default: 'project' // Default to project for backward compatibility
   },
@@ -91,6 +96,23 @@ const TimeEntrySchema: Schema = new Schema({
   leave_session: {
     type: String,
     enum: ['morning', 'afternoon', 'full_day'],
+    required: false
+  },
+
+  // For 'holiday' category (NEW)
+  holiday_name: {
+    type: String,
+    trim: true,
+    required: false
+  },
+  holiday_type: {
+    type: String,
+    enum: ['public', 'company', 'optional'],
+    required: false
+  },
+  is_auto_generated: {
+    type: Boolean,
+    default: false,
     required: false
   },
 
@@ -224,6 +246,15 @@ TimeEntrySchema.pre('save', function(next) {
         this.hours = 4;
       }
       // Force is_billable to false for leave
+      this.is_billable = false;
+      break;
+
+    case 'holiday':
+      // Require holiday_name
+      if (!this.holiday_name || (typeof this.holiday_name === 'string' && this.holiday_name.trim().length === 0)) {
+        return next(new Error('holiday_name is required for holiday entries'));
+      }
+      // Force is_billable to false for holidays
       this.is_billable = false;
       break;
 

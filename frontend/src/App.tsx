@@ -49,6 +49,10 @@ import BillingLayout from './pages/billing/BillingLayout';
 import BillingDashboardPage from './pages/billing/BillingDashboardPage';
 import ProjectBillingPage from './pages/billing/ProjectBillingPage';
 import UserBillingPage from './pages/billing/UserBillingPage';
+
+// User Tracking (Phase 9)
+import UserTrackingDashboard from './pages/dashboard/user-tracking/UserTrackingDashboard';
+import UserTrackingList from './pages/dashboard/user-tracking/UserTrackingList';
 import TaskBillingPage from './pages/billing/TaskBillingPage';
 import InvoiceManagementPage from './pages/billing/InvoiceManagementPage';
 import RateManagementPage from './pages/billing/RateManagementPage';
@@ -168,6 +172,18 @@ const App: React.FC = () => {
           <Route path="team-review" element={
             <ProtectedRoute requiredRoles={['lead', 'manager', 'management', 'super_admin']}>
               <TeamReviewPage />
+            </ProtectedRoute>
+          } />
+
+          {/* User Tracking - Phase 9 (Manager/Management Only) */}
+          <Route path="user-tracking" element={
+            <ProtectedRoute requiredRoles={['manager', 'management']}>
+              <UserTrackingDashboard />
+            </ProtectedRoute>
+          } />
+          <Route path="user-tracking/users" element={
+            <ProtectedRoute requiredRoles={['manager', 'management']}>
+              <UserTrackingList />
             </ProtectedRoute>
           } />
 

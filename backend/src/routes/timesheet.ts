@@ -263,6 +263,16 @@ router.get('/:timesheetId/entries', [
 ], TimesheetController.getTimeEntries);
 
 /**
+ * @route POST /api/v1/timesheets/:timesheetId/sync-holidays
+ * @desc Synchronize holiday entries for timesheet based on current week
+ * @access Private
+ */
+router.post('/:timesheetId/sync-holidays', [
+  param('timesheetId').isMongoId().withMessage('Invalid timesheet ID'),
+  validate
+], TimesheetController.synchronizeHolidayEntries);
+
+/**
  * @route DELETE /api/v1/timesheets/:timesheetId
  * @desc Delete entire timesheet (draft only)
  * @access Private

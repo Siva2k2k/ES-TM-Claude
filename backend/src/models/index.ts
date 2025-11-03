@@ -7,6 +7,7 @@ export { default as Project, ProjectMember, IProject, IProjectMember } from './P
 export { default as Task, ITask } from './Task';
 export { default as Timesheet, ITimesheet } from './Timesheet';
 export { default as TimeEntry, ITimeEntry } from './TimeEntry';
+export { default as UserWeekSummary, IUserWeekSummary } from './UserWeekSummary';
 export { default as BillingAdjustment, IBillingAdjustment } from './BillingAdjustment';
 export { BillingSnapshot, IBillingSnapshot } from './BillingSnapshot';
 

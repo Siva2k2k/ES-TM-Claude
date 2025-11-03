@@ -4,7 +4,6 @@ export type HolidayType = 'public' | 'company' | 'optional';
 
 export interface ICompanyHoliday extends Document {
   _id: mongoose.Types.ObjectId;
-  calendar_id?: mongoose.Types.ObjectId; // Future: Link to Calendar model
   name: string;
   date: Date;
   holiday_type: HolidayType;
@@ -17,11 +16,6 @@ export interface ICompanyHoliday extends Document {
 }
 
 const CompanyHolidaySchema: Schema = new Schema({
-  calendar_id: {
-    type: Schema.Types.ObjectId,
-    ref: 'Calendar', // Future enhancement
-    required: false
-  },
   name: {
     type: String,
     required: true,
@@ -65,9 +59,9 @@ const CompanyHolidaySchema: Schema = new Schema({
 
 // Indexes
 CompanyHolidaySchema.index({ date: 1 });
-CompanyHolidaySchema.index({ calendar_id: 1, date: 1 });
 CompanyHolidaySchema.index({ is_active: 1 });
 CompanyHolidaySchema.index({ deleted_at: 1 });
+CompanyHolidaySchema.index({ holiday_type: 1 });
 
 // Compound index for efficient queries
 CompanyHolidaySchema.index({

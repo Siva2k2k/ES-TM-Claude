@@ -317,6 +317,89 @@ export class SettingsService {
   }
 
   // ============================================================================
+  // HOLIDAY SYSTEM SETTINGS
+  // ============================================================================
+
+  /**
+   * Initialize default holiday system settings
+   */
+  static async initializeHolidaySettings(currentUser: AuthUser): Promise<{ success: boolean; error?: string }> {
+    try {
+      if (currentUser.role !== 'super_admin') {
+        throw new AuthorizationError('Only super admins can initialize holiday settings');
+      }
+
+      const defaultSettings = [
+        {
+          setting_key: 'auto_create_holiday_entries',
+          setting_value: true,
+          description: 'Automatically create holiday entries in timesheets when holidays exist in the week',
+          category: 'general',
+          data_type: 'boolean',
+          is_public: true,
+          requires_restart: false,
+          updated_by: currentUser.id
+        },
+        {
+          setting_key: 'default_holiday_hours',
+          setting_value: 8,
+          description: 'Default number of hours for automatically created holiday entries',
+          category: 'general',
+          data_type: 'number',
+          is_public: true,
+          requires_restart: false,
+          validation_rules: { min: 0, max: 24 },
+          updated_by: currentUser.id
+        },
+        {
+          setting_key: 'allow_holiday_hour_adjustment',
+          setting_value: true,
+          description: 'Allow users to adjust hours for auto-generated holiday entries',
+          category: 'general',
+          data_type: 'boolean',
+          is_public: true,
+          requires_restart: false,
+          updated_by: currentUser.id
+        }
+      ];
+
+      for (const settingData of defaultSettings) {
+        await SystemSettings.findOneAndUpdate(
+          { setting_key: settingData.setting_key },
+          settingData,
+          { upsert: true, new: true }
+        );
+      }
+
+      return { success: true };
+    } catch (error) {
+      console.error('Error initializing holiday settings:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Failed to initialize holiday settings' };
+    }
+  }
+
+  /**
+   * Get holiday settings for public access
+   */
+  static async getHolidaySettings(): Promise<{ settings?: any; error?: string }> {
+    try {
+      const settings = await SystemSettings.find({
+        setting_key: { $in: ['auto_create_holiday_entries', 'default_holiday_hours', 'allow_holiday_hour_adjustment'] }
+      }).select('setting_key setting_value description');
+
+      const settingsMap = settings.reduce((acc, setting) => {
+        acc[setting.setting_key] = setting.setting_value;
+        return acc;
+      }, {} as any);
+
+      return { settings: settingsMap };
+    } catch (error) {
+      console.error('Error getting holiday settings:', error);
+      return { error: error instanceof Error ? error.message : 'Failed to get holiday settings' };
+    }
+  }
+
+  // ============================================================================
   // VALIDATION HELPERS
   // ============================================================================
 
