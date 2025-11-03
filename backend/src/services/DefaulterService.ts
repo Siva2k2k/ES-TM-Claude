@@ -7,6 +7,8 @@
 
 import { ProjectMember, Project } from '@/models/Project';
 import { Timesheet } from '@/models/Timesheet';
+import { NotificationService } from '@/services/NotificationService';
+import { NotificationType, NotificationPriority } from '@/models/Notification';
 import { ValidationError } from '@/utils/errors';
 import mongoose from 'mongoose';
 
@@ -313,10 +315,47 @@ export class DefaulterService {
   ): Promise<number> {
     const defaulters = await this.getProjectDefaulters(projectId, weekStartDate);
 
-    // TODO: Integrate with NotificationService to send actual notifications
-    console.log(`Would send reminders to ${defaulters.length} defaulters for project ${projectId}`);
+    if (!defaulters || defaulters.length === 0) return 0;
 
-    return defaulters.length;
+    const weekLabel = weekStartDate ? new Date(weekStartDate).toISOString().split('T')[0] : undefined;
+
+    // Send notifications in parallel and return count of successful sends
+    const sendPromises = defaulters.map(async (d) => {
+      try {
+        const days = d.days_overdue || 0;
+        const priority = days >= 5 ? NotificationPriority.URGENT : (days > 0 ? NotificationPriority.HIGH : NotificationPriority.MEDIUM);
+
+        const messageParts = [];
+        if (d.project_name) messageParts.push(`on project "${d.project_name}"`);
+        if (weekLabel) messageParts.push(`for week of ${weekLabel}`);
+        const overduePart = days > 0 ? ` You are ${days} day${days > 1 ? 's' : ''} overdue.` : '';
+
+        const message = `Please submit your timesheet ${messageParts.join(' ')}.${overduePart}`;
+
+        await NotificationService.create({
+          recipient_id: d.user_id,
+          type: NotificationType.TIMESHEET_REMAINDER,
+          title: 'Timesheet Reminder',
+          message,
+          data: {
+            project_id: d.project_id,
+            project_name: d.project_name,
+            week_start_date: weekLabel
+          },
+          priority
+        } as any);
+
+        return 1;
+      } catch (err) {
+        console.error('Error sending defaulter notification for user', d.user_id, err);
+        return 0;
+      }
+    });
+
+    const results = await Promise.all(sendPromises);
+    const sent = results.reduce((sum, v) => sum + (v || 0), 0);
+
+    return sent;
   }
 
   /**

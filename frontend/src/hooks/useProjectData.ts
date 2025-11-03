@@ -137,11 +137,23 @@ export const useProjectData = () => {
     setError(null);
 
     try {
+      // Avoid running heavy analytics aggregation for managers (analytics may call getAllTasks())
+      const analyticsPromise = currentUser?.role === 'manager'
+        ? Promise.resolve({
+            totalProjects: 0,
+            activeProjects: 0,
+            completedProjects: 0,
+            totalTasks: 0,
+            completedTasks: 0,
+            budgetUtilization: 0
+          })
+        : ProjectService.getProjectAnalytics();
+
       const [projectsResult, clientsResult, usersResult, analyticsResult] = await Promise.all([
         ProjectService.getAllProjects(),
         ProjectService.getAllClients(),
         UserService.getAllUsers(),
-        ProjectService.getProjectAnalytics()
+        analyticsPromise
       ] as const);
 
       // Handle projects with deduplication
@@ -179,8 +191,11 @@ export const useProjectData = () => {
       }
 
       // Handle analytics
-      if (!analyticsResult.error) {
-        setAnalytics(analyticsResult);
+      if (analyticsResult) {
+        const analyticsTyped = analyticsResult as unknown as ProjectAnalytics & { error?: string };
+        if (!analyticsTyped.error) {
+          setAnalytics(analyticsTyped);
+        }
       }
 
       // Load members and tasks for all projects

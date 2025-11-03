@@ -18,6 +18,8 @@ import notificationRoutes from './notifications';
 import searchRoutes from './search';
 import defaulterRoutes from './defaulters';
 import holidayRoutes from './holidays';
+import voiceRoutes from './voice';
+import intentConfigRoutes from './intentConfig';
 
 export const registerRoutes = (app: Express): void => {
   // Test routes (for development and health checks)
@@ -42,7 +44,9 @@ export const registerRoutes = (app: Express): void => {
   app.use('/api/v1/search', searchRoutes);
   app.use('/api/v1/defaulters', defaulterRoutes);
   app.use('/api/v1/holidays', holidayRoutes);
-  
+  app.use('/api/v1/voice', voiceRoutes);
+  app.use('/api/v1/intent-config', intentConfigRoutes);
+
   // Health check at root
   app.get('/health', (req, res) => {
     res.json({ 

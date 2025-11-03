@@ -42,6 +42,7 @@ export enum NotificationType {
   TIMESHEET_MANAGEMENT_REJECTED = 'timesheet_management_rejected',
   TIMESHEET_FROZEN = 'timesheet_frozen',
   TIMESHEET_BILLED = 'timesheet_billed',
+  TIMESHEET_REMAINDER = 'timesheet_reminder',
   
   // Project group readiness
   PROJECT_GROUP_READY_LEAD = 'project_group_ready_lead',
