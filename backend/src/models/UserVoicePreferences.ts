@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document, Types } from 'mongoose';
+import mongoose, { Schema, Document, Types, Model } from 'mongoose';
 
 export interface IUserVoicePreferences extends Document {
   user_id: Types.ObjectId;
@@ -119,13 +119,15 @@ UserVoicePreferencesSchema.pre('save', function (next) {
 });
 
 // Virtual ID
-UserVoicePreferencesSchema.virtual('id').get(function () {
-  return this._id.toHexString();
+UserVoicePreferencesSchema.virtual('id').get(function (this: any) {
+  return this._id?.toHexString();
 });
 
-const UserVoicePreferences = mongoose.model<IUserVoicePreferences>(
-  'UserVoicePreferences',
-  UserVoicePreferencesSchema
-);
+// Prevent model overwrite error in development
+const UserVoicePreferences: Model<IUserVoicePreferences> = mongoose.models.UserVoicePreferences ||
+  mongoose.model<IUserVoicePreferences>(
+    'UserVoicePreferences',
+    UserVoicePreferencesSchema
+  );
 
 export default UserVoicePreferences;

@@ -1,5 +1,10 @@
 import mongoose, { Document, Model, Schema } from 'mongoose';
 
+export interface ICalendarModel extends Model<ICalendar> {
+  getCompanyCalendar(): Promise<ICalendar | null>;
+  getOrCreateCompanyCalendar(createdBy: mongoose.Types.ObjectId): Promise<ICalendar>;
+}
+
 export interface ICalendar extends Document {
   _id: mongoose.Types.ObjectId;
   name: string;
@@ -183,9 +188,8 @@ CalendarSchema.statics = {
   }
 };
 
-const Calendar: Model<ICalendar> =
-  mongoose.models.Calendar ||
-  mongoose.model<ICalendar>('Calendar', CalendarSchema);
+const Calendar = (mongoose.models.Calendar ||
+  mongoose.model<ICalendar, ICalendarModel>('Calendar', CalendarSchema)) as ICalendarModel;
 
 export { Calendar };
 export default Calendar;

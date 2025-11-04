@@ -1,5 +1,8 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import IntentConfigService from '../services/IntentConfigService';
+import { AuthRequest } from '../middleware/auth';
+import User from '../models/User';
+import mongoose from 'mongoose';
 import logger from '../config/logger';
 
 export class IntentConfigController {
@@ -7,7 +10,7 @@ export class IntentConfigController {
    * GET /api/v1/intent-config/intents
    * Get all active intent definitions
    */
-  async getAllIntents(req: Request, res: Response) {
+  async getAllIntents(req: AuthRequest, res: Response) {
     try {
       const intents = await IntentConfigService.getAllIntents();
 
@@ -33,7 +36,7 @@ export class IntentConfigController {
    * GET /api/v1/intent-config/intents/category/:category
    * Get intents by category
    */
-  async getIntentsByCategory(req: Request, res: Response) {
+  async getIntentsByCategory(req: AuthRequest, res: Response) {
     try {
       const { category } = req.params;
 
@@ -63,9 +66,18 @@ export class IntentConfigController {
    * GET /api/v1/intent-config/intents/user
    * Get intents allowed for current user
    */
-  async getUserIntents(req: Request, res: Response) {
+  async getUserIntents(req: AuthRequest, res: Response) {
     try {
-      const user = req.user;
+      const authUser = req.user!;
+
+      // Fetch full user data from database
+      const user = await (User as any).findById(authUser.id);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found'
+        });
+      }
 
       const { allowed, disallowed } = await IntentConfigService.getIntentsForUser(user);
 
@@ -81,7 +93,7 @@ export class IntentConfigController {
     } catch (error: any) {
       logger.error('Failed to get user intents', {
         error: error.message,
-        userId: req.user?._id
+        userId: req.user?.id
       });
 
       return res.status(500).json({
@@ -96,7 +108,7 @@ export class IntentConfigController {
    * GET /api/v1/intent-config/intents/:intent
    * Get specific intent definition
    */
-  async getIntentDefinition(req: Request, res: Response) {
+  async getIntentDefinition(req: AuthRequest, res: Response) {
     try {
       const { intent } = req.params;
 
@@ -131,7 +143,7 @@ export class IntentConfigController {
    * POST /api/v1/intent-config/intents
    * Create a new intent definition (admin only)
    */
-  async createIntent(req: Request, res: Response) {
+  async createIntent(req: AuthRequest, res: Response) {
     try {
       const intentData = req.body;
 
@@ -139,7 +151,7 @@ export class IntentConfigController {
 
       logger.info('Intent definition created', {
         intent: intent.intent,
-        createdBy: req.user._id
+        createdBy: new mongoose.Types.ObjectId(req.user!.id)
       });
 
       return res.status(201).json({
@@ -150,7 +162,7 @@ export class IntentConfigController {
     } catch (error: any) {
       logger.error('Failed to create intent', {
         error: error.message,
-        userId: req.user._id
+        userId: req.user!.id
       });
 
       return res.status(500).json({
@@ -165,7 +177,7 @@ export class IntentConfigController {
    * PUT /api/v1/intent-config/intents/:intent
    * Update an intent definition (admin only)
    */
-  async updateIntent(req: Request, res: Response) {
+  async updateIntent(req: AuthRequest, res: Response) {
     try {
       const { intent } = req.params;
       const updates = req.body;
@@ -181,7 +193,7 @@ export class IntentConfigController {
 
       logger.info('Intent definition updated', {
         intent,
-        updatedBy: req.user._id
+        updatedBy: req.user!.id
       });
 
       return res.status(200).json({
@@ -207,7 +219,7 @@ export class IntentConfigController {
    * DELETE /api/v1/intent-config/intents/:intent/deactivate
    * Deactivate an intent (admin only)
    */
-  async deactivateIntent(req: Request, res: Response) {
+  async deactivateIntent(req: AuthRequest, res: Response) {
     try {
       const { intent } = req.params;
 
@@ -222,7 +234,7 @@ export class IntentConfigController {
 
       logger.info('Intent deactivated', {
         intent,
-        deactivatedBy: req.user._id
+        deactivatedBy: new mongoose.Types.ObjectId(req.user!.id)
       });
 
       return res.status(200).json({
@@ -247,7 +259,7 @@ export class IntentConfigController {
    * DELETE /api/v1/intent-config/intents/:intent
    * Permanently delete an intent (admin only)
    */
-  async deleteIntent(req: Request, res: Response) {
+  async deleteIntent(req: AuthRequest, res: Response) {
     try {
       const { intent } = req.params;
 
@@ -262,7 +274,7 @@ export class IntentConfigController {
 
       logger.info('Intent deleted', {
         intent,
-        deletedBy: req.user._id
+        deletedBy: new mongoose.Types.ObjectId(req.user!.id)
       });
 
       return res.status(200).json({
@@ -287,12 +299,12 @@ export class IntentConfigController {
    * POST /api/v1/intent-config/intents/:intent/enable
    * Enable intent for current user
    */
-  async enableIntentForUser(req: Request, res: Response) {
+  async enableIntentForUser(req: AuthRequest, res: Response) {
     try {
       const { intent } = req.params;
-      const user = req.user;
+      const authUser = req.user!;
 
-      await IntentConfigService.enableIntentForUser(user._id, intent);
+      await IntentConfigService.enableIntentForUser(new mongoose.Types.ObjectId(authUser.id), intent);
 
       return res.status(200).json({
         success: true,
@@ -302,7 +314,7 @@ export class IntentConfigController {
       logger.error('Failed to enable intent for user', {
         error: error.message,
         intent: req.params.intent,
-        userId: req.user._id
+        userId: new mongoose.Types.ObjectId(req.user!.id)
       });
 
       return res.status(500).json({
@@ -317,12 +329,12 @@ export class IntentConfigController {
    * POST /api/v1/intent-config/intents/:intent/disable
    * Disable intent for current user
    */
-  async disableIntentForUser(req: Request, res: Response) {
+  async disableIntentForUser(req: AuthRequest, res: Response) {
     try {
       const { intent } = req.params;
-      const user = req.user;
+      const authUser = req.user!;
 
-      await IntentConfigService.disableIntentForUser(user._id, intent);
+      await IntentConfigService.disableIntentForUser(new mongoose.Types.ObjectId(authUser.id), intent);
 
       return res.status(200).json({
         success: true,
@@ -332,7 +344,7 @@ export class IntentConfigController {
       logger.error('Failed to disable intent for user', {
         error: error.message,
         intent: req.params.intent,
-        userId: req.user._id
+        userId: new mongoose.Types.ObjectId(req.user!.id)
       });
 
       return res.status(500).json({
@@ -347,7 +359,7 @@ export class IntentConfigController {
    * GET /api/v1/intent-config/statistics
    * Get intent statistics (admin only)
    */
-  async getStatistics(req: Request, res: Response) {
+  async getStatistics(req: AuthRequest, res: Response) {
     try {
       const stats = await IntentConfigService.getIntentStatistics();
 

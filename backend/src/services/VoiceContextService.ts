@@ -14,7 +14,7 @@ class VoiceContextService {
     const context: VoiceContext = {
       user: {
         id: user._id.toString(),
-        name: user.name,
+        name: user.full_name,
         role: user.role,
         email: user.email
       },
@@ -87,14 +87,27 @@ class VoiceContextService {
   // Helper methods to fetch entities from existing services
   private async getProjectsList(user: IUser) {
     try {
-      // Import dynamically to avoid circular dependencies
-      const ProjectService = (await import('./ProjectService')).default;
-      const projects = await ProjectService.getProjectsForUser(user._id.toString());
+      const { ProjectService } = await import('./ProjectService');
+      const authUser = {
+        id: user._id.toString(),
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+        hourly_rate: user.hourly_rate || 0,
+        is_active: user.is_active,
+        is_approved_by_super_admin: user.is_approved_by_super_admin
+      };
 
-      return projects.map((p: any) => ({
+      const { projects, error } = await ProjectService.getAllProjects(authUser);
+      if (error) {
+        logger.error('Failed to fetch projects', { error });
+        return [];
+      }
+
+      return projects.map(p => ({
         id: p._id.toString(),
         name: p.name,
-        client: p.client?.name
+        client: p.client?.name || 'Unknown Client'
       }));
     } catch (error) {
       logger.error('Failed to fetch projects list', { error });
@@ -104,14 +117,28 @@ class VoiceContextService {
 
   private async getUsersList(user: IUser) {
     try {
-      const UserService = (await import('./UserService')).default;
-      const users = await UserService.getAllUsers();
+      const { UserService } = await import('./UserService');
+      const authUser = {
+        id: user._id.toString(),
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+        hourly_rate: user.hourly_rate || 0,
+        is_active: user.is_active,
+        is_approved_by_super_admin: user.is_approved_by_super_admin
+      };
 
-      return users.map((u: any) => ({
+      const { users, error } = await UserService.getAllUsers(authUser);
+      if (error) {
+        logger.error('Failed to fetch users', { error });
+        return [];
+      }
+
+      return users.map(u => ({
         id: u._id.toString(),
-        name: u.name,
-        email: u.email,
-        role: u.role
+        name: u.full_name,
+        role: u.role,
+        email: u.email
       }));
     } catch (error) {
       logger.error('Failed to fetch users list', { error });
@@ -121,10 +148,24 @@ class VoiceContextService {
 
   private async getClientsList(user: IUser) {
     try {
-      const ClientService = (await import('./ClientService')).default;
-      const clients = await ClientService.getAllClients();
+      const { ClientService } = await import('./ClientService');
+      const authUser = {
+        id: user._id.toString(),
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+        hourly_rate: user.hourly_rate || 0,
+        is_active: user.is_active,
+        is_approved_by_super_admin: user.is_approved_by_super_admin
+      };
 
-      return clients.map((c: any) => ({
+      const { clients, error } = await ClientService.getAllClients(authUser);
+      if (error) {
+        logger.error('Failed to fetch clients', { error });
+        return [];
+      }
+
+      return clients.map(c => ({
         id: c._id.toString(),
         name: c.name,
         contactPerson: c.contact_person
@@ -137,25 +178,36 @@ class VoiceContextService {
 
   private async getTasksList(user: IUser) {
     try {
-      const ProjectService = (await import('./ProjectService')).default;
-      const projects = await ProjectService.getProjectsForUser(user._id.toString());
-      const tasksByProject: Record<string, Array<{ id: string; name: string; assignedTo?: string }>> = {};
+      const { ProjectService } = await import('./ProjectService');
+      const authUser = {
+        id: user._id.toString(),
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+        hourly_rate: user.hourly_rate || 0,
+        is_active: user.is_active,
+        is_approved_by_super_admin: user.is_approved_by_super_admin
+      };
 
+      const { projects, error } = await ProjectService.getAllProjects(authUser);
+      if (error) {
+        logger.error('Failed to fetch projects for tasks', { error });
+        return {};
+      }
+
+      // Group tasks by project
+      const tasksRecord: Record<string, Array<{ id: string; name: string; assignedTo?: string }>> = {};
       for (const project of projects) {
-        try {
-          const tasks = await ProjectService.getProjectTasks(project._id.toString());
-          tasksByProject[project.name] = tasks.map((t: any) => ({
-            id: t._id.toString(),
-            name: t.name,
-            assignedTo: t.assigned_to?.name
+        if (project.tasks && Array.isArray(project.tasks)) {
+          tasksRecord[project.name] = project.tasks.map(task => ({
+            id: task._id.toString(),
+            name: task.name,
+            assignedTo: task.assigned_to_user_id?.toString()
           }));
-        } catch (error) {
-          logger.warn('Failed to fetch tasks for project', { projectId: project._id, error });
-          tasksByProject[project.name] = [];
         }
       }
 
-      return tasksByProject;
+      return tasksRecord;
     } catch (error) {
       logger.error('Failed to fetch tasks list', { error });
       return {};
@@ -164,12 +216,26 @@ class VoiceContextService {
 
   private async getTimesheetsList(user: IUser) {
     try {
-      const TimesheetService = (await import('./TimesheetService')).default;
-      const timesheets = await TimesheetService.getTimesheetsForUser(user._id.toString());
+      const { TimesheetService } = await import('./TimesheetService');
+      const authUser = {
+        id: user._id.toString(),
+        full_name: user.full_name,
+        email: user.email,
+        role: user.role,
+        hourly_rate: user.hourly_rate || 0,
+        is_active: user.is_active,
+        is_approved_by_super_admin: user.is_approved_by_super_admin
+      };
 
-      return timesheets.map((t: any) => ({
-        weekStart: format(new Date(t.week_start), 'yyyy-MM-dd'),
-        weekEnd: format(new Date(t.week_end), 'yyyy-MM-dd'),
+      const { timesheets, error } = await TimesheetService.getAllTimesheets(authUser);
+      if (error) {
+        logger.error('Failed to fetch timesheets', { error });
+        return [];
+      }
+
+      return timesheets.map(t => ({
+        weekStart: format(new Date(t.week_start_date), 'yyyy-MM-dd'),
+        weekEnd: format(new Date(t.week_end_date), 'yyyy-MM-dd'),
         status: t.status
       }));
     } catch (error) {
@@ -180,14 +246,32 @@ class VoiceContextService {
 
   private async getProjectWeekGroups(user: IUser) {
     try {
-      // This would fetch project-week groups for team review
-      // Implementation depends on your TeamReviewService structure
-      const TeamReviewApprovalService = (await import('./TeamReviewApprovalService')).default;
+      const { TeamReviewServiceV2 } = await import('./TeamReviewServiceV2');
 
-      // Placeholder - implement based on your service methods
-      // const groups = await TeamReviewApprovalService.getProjectWeekGroups();
+      const today = new Date();
+      const weekStart = startOfWeek(today, { weekStartsOn: 1 });
+      const weekEnd = endOfWeek(today, { weekStartsOn: 1 });
 
-      return [];
+      const result = await TeamReviewServiceV2.getProjectWeekGroups(
+        user._id.toString(),
+        user.role,
+        {
+          week_start: format(weekStart, 'yyyy-MM-dd'),
+          week_end: format(weekEnd, 'yyyy-MM-dd')
+        }
+      );
+
+      if (!result.project_weeks || result.project_weeks.length === 0) {
+        logger.info('No project week groups found');
+        return [];
+      }
+
+      return result.project_weeks.map(pw => ({
+        projectId: pw.project_id,
+        projectName: pw.project_name,
+        weekStart: pw.week_start,
+        weekEnd: pw.week_end
+      }));
     } catch (error) {
       logger.error('Failed to fetch project week groups', { error });
       return [];

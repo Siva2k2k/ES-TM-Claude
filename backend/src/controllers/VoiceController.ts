@@ -1,10 +1,13 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import IntentRecognitionService from '../services/IntentRecognitionService';
 import VoiceActionDispatcher from '../services/VoiceActionDispatcher';
 import AzureSpeechService from '../services/AzureSpeechService';
 import VoiceContextService from '../services/VoiceContextService';
 import IntentConfigService from '../services/IntentConfigService';
 import { VoiceCommandRequest, VoiceExecuteRequest } from '../types/voice';
+import { AuthRequest } from '../middleware/auth';
+import User from '../models/User';
+import mongoose from 'mongoose';
 import logger from '../config/logger';
 
 export class VoiceController {
@@ -12,15 +15,24 @@ export class VoiceController {
    * POST /api/v1/voice/process-command
    * Process voice command and return structured actions
    */
-  async processCommand(req: Request, res: Response) {
+  async processCommand(req: AuthRequest, res: Response) {
     try {
       const { transcript, context }: VoiceCommandRequest = req.body;
-      const user = req.user; // Set by auth middleware
+      const authUser = req.user;
 
       if (!transcript || transcript.trim().length === 0) {
         return res.status(400).json({
           success: false,
           message: 'Transcript is required'
+        });
+      }
+
+      // Fetch full user data from database
+      const user = await (User as any).findById(authUser.id);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
         });
       }
 
@@ -64,10 +76,10 @@ export class VoiceController {
    * POST /api/v1/voice/execute-action
    * Execute confirmed voice actions
    */
-  async executeAction(req: Request, res: Response) {
+  async executeAction(req: AuthRequest, res: Response) {
     try {
       const { actions, confirmed }: VoiceExecuteRequest = req.body;
-      const user = req.user;
+      const authUser = req.user;
 
       if (!confirmed) {
         return res.status(400).json({
@@ -80,6 +92,15 @@ export class VoiceController {
         return res.status(400).json({
           success: false,
           message: 'No actions to execute'
+        });
+      }
+
+      // Fetch full user data from database
+      const user = await (User as any).findById(authUser.id);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
         });
       }
 
@@ -119,10 +140,10 @@ export class VoiceController {
    * POST /api/v1/voice/speech-to-text
    * Convert audio to text using Azure Speech (fallback for Safari/Opera)
    */
-  async speechToText(req: Request, res: Response) {
+  async speechToText(req: AuthRequest, res: Response) {
     try {
-      const { audioData, format, language } = req.body;
-      const user = req.user;
+      const { audioData, language } = req.body;
+      const authUser = req.user;
 
       if (!audioData) {
         return res.status(400).json({
@@ -140,15 +161,13 @@ export class VoiceController {
       }
 
       logger.info('Speech-to-text request', {
-        userId: user._id,
-        format,
+        userId: authUser.id,
         language,
         audioSize: audioData.length
       });
 
       const result = await AzureSpeechService.speechToText({
         audioData,
-        format: format || 'webm',
         language: language || 'en-US'
       });
 
@@ -176,10 +195,19 @@ export class VoiceController {
    * GET /api/v1/voice/context
    * Get available context for current user
    */
-  async getContext(req: Request, res: Response) {
+  async getContext(req: AuthRequest, res: Response) {
     try {
-      const user = req.user;
+      const authUser = req.user;
       const { intents } = req.query;
+
+      // Fetch full user data from database
+      const user = await (User as any).findById(authUser.id);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'User not found'
+        });
+      }
 
       let context;
       if (intents && typeof intents === 'string') {
@@ -213,11 +241,11 @@ export class VoiceController {
    * GET /api/v1/voice/preferences
    * Get user voice preferences
    */
-  async getUserPreferences(req: Request, res: Response) {
+  async getUserPreferences(req: AuthRequest, res: Response) {
     try {
-      const user = req.user;
+      const authUser = req.user;
 
-      const preferences = await IntentConfigService.getUserVoicePreferences(user._id);
+      const preferences = await IntentConfigService.getUserVoicePreferences(new mongoose.Types.ObjectId(authUser.id));
 
       return res.status(200).json({
         success: true,
@@ -250,13 +278,13 @@ export class VoiceController {
    * PUT /api/v1/voice/preferences
    * Update user voice preferences
    */
-  async updateUserPreferences(req: Request, res: Response) {
+  async updateUserPreferences(req: AuthRequest, res: Response) {
     try {
-      const user = req.user;
+      const authUser = req.user;
       const updates = req.body;
 
       const preferences = await IntentConfigService.updateUserVoicePreferences(
-        user._id,
+        new mongoose.Types.ObjectId(authUser.id),
         updates
       );
 
@@ -283,12 +311,12 @@ export class VoiceController {
    * GET /api/v1/voice/history
    * Get user command history
    */
-  async getCommandHistory(req: Request, res: Response) {
+  async getCommandHistory(req: AuthRequest, res: Response) {
     try {
-      const user = req.user;
-      const limit = parseInt(req.query.limit as string) || 20;
+      const authUser = req.user;
+      const limit = Number.parseInt(req.query.limit as string) || 20;
 
-      const history = await IntentConfigService.getUserCommandHistory(user._id, limit);
+      const history = await IntentConfigService.getUserCommandHistory(new mongoose.Types.ObjectId(authUser.id), limit);
 
       return res.status(200).json({
         success: true,
@@ -312,7 +340,7 @@ export class VoiceController {
    * GET /api/v1/voice/health
    * Check voice services health
    */
-  async healthCheck(req: Request, res: Response) {
+  async healthCheck(req: AuthRequest, res: Response) {
     try {
       const checks = {
         voiceEnabled: process.env.VOICE_ENABLED === 'true',

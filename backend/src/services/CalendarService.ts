@@ -1,4 +1,4 @@
-import { Calendar, ICalendar } from '@/models/Calendar';
+import Calendar, { ICalendar } from '@/models/Calendar';
 import { CompanyHoliday } from '@/models/CompanyHoliday';
 import { ValidationError, NotFoundError } from '@/utils/errors';
 
@@ -35,8 +35,8 @@ export class CalendarService {
       throw new NotFoundError('Calendar not found');
     }
 
+    // In the simplified system, get all active holidays (not tied to specific calendar)
     const holidays = await CompanyHoliday.find({
-      calendar_id: calendarId,
       is_active: true,
       deleted_at: { $exists: false }
     }).sort({ date: 1 });
@@ -45,10 +45,10 @@ export class CalendarService {
   }
 
   /**
-   * Get default calendar for a type
+   * Get default calendar (the active company calendar)
    */
-  static async getDefaultCalendar(type: string = 'company'): Promise<ICalendar | null> {
-    return (Calendar as any).getDefaultCalendar(type);
+  static async getDefaultCalendar(): Promise<ICalendar | null> {
+    return Calendar.getCompanyCalendar();
   }
 
   /**
@@ -57,23 +57,18 @@ export class CalendarService {
   static async createCalendar(calendarData: {
     name: string;
     description?: string;
-    type: string;
     timezone?: string;
     working_days?: number[];
     business_hours_start?: string;
     business_hours_end?: string;
     working_hours_per_day?: number;
+    auto_create_holiday_entries?: boolean;
+    default_holiday_hours?: number;
     created_by: string;
   }): Promise<ICalendar> {
     // Validate required fields
-    if (!calendarData.name || !calendarData.type) {
-      throw new ValidationError('Calendar name and type are required');
-    }
-
-    // Validate calendar type
-    const validTypes = ['system', 'company', 'regional', 'personal'];
-    if (!validTypes.includes(calendarData.type)) {
-      throw new ValidationError(`Invalid calendar type. Must be one of: ${validTypes.join(', ')}`);
+    if (!calendarData.name) {
+      throw new ValidationError('Calendar name is required');
     }
 
     // Validate working days
@@ -87,12 +82,10 @@ export class CalendarService {
     const calendar = new Calendar({
       name: calendarData.name,
       description: calendarData.description,
-      type: calendarData.type,
       timezone: calendarData.timezone || 'UTC',
-      is_default: false, // New calendars are not default by default
       is_active: true,
-      include_public_holidays: true,
-      include_company_holidays: true,
+      auto_create_holiday_entries: calendarData.auto_create_holiday_entries ?? true,
+      default_holiday_hours: calendarData.default_holiday_hours || 8,
       working_days: calendarData.working_days || [1, 2, 3, 4, 5], // Default Monday-Friday
       business_hours_start: calendarData.business_hours_start,
       business_hours_end: calendarData.business_hours_end,
@@ -149,18 +142,8 @@ export class CalendarService {
       throw new NotFoundError('Calendar not found');
     }
 
-    // Check if calendar has associated holidays
-    const holidayCount = await CompanyHoliday.countDocuments({
-      calendar_id: calendarId,
-      deleted_at: { $exists: false }
-    });
-
-    if (holidayCount > 0) {
-      throw new ValidationError(
-        `Cannot delete calendar with ${holidayCount} associated holidays. ` +
-        'Please reassign or delete the holidays first.'
-      );
-    }
+    // Note: In the simplified calendar system, holidays are not tied to specific calendars
+    // so we can proceed with deletion
 
     calendar.deleted_at = new Date();
     await calendar.save();
@@ -175,29 +158,21 @@ export class CalendarService {
   }
 
   /**
-   * Check if a date is a holiday in the calendar
+   * Check if a date is a holiday
+   * Note: In the simplified calendar system, holidays are global
    */
-  static async isHoliday(calendar: ICalendar, date: Date): Promise<boolean> {
-    // Check for holidays in this calendar
+  static async isHoliday(_calendar: ICalendar, date: Date): Promise<boolean> {
+    // Check for holidays (calendar parameter kept for API compatibility)
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
+    // The simplified calendar system includes all active holidays
     const holiday = await CompanyHoliday.findOne({
-      calendar_id: calendar._id,
       date: { $gte: startOfDay, $lte: endOfDay },
       is_active: true,
-      deleted_at: { $exists: false },
-      holiday_type: {
-        $in: calendar.include_public_holidays && calendar.include_company_holidays
-          ? ['public', 'company', 'optional']
-          : calendar.include_public_holidays
-            ? ['public', 'optional']
-            : calendar.include_company_holidays
-              ? ['company', 'optional']
-              : ['optional']
-      }
+      deleted_at: { $exists: false }
     });
 
     return !!holiday;
@@ -236,7 +211,6 @@ export class CalendarService {
     newCalendarData: {
       name: string;
       description?: string;
-      type?: string;
       created_by: string;
     }
   ): Promise<{ calendar: ICalendar; holidaysCloned: number }> {
@@ -250,12 +224,10 @@ export class CalendarService {
     const newCalendar = new Calendar({
       name: newCalendarData.name,
       description: newCalendarData.description || `Clone of ${sourceCalendar.name}`,
-      type: newCalendarData.type || sourceCalendar.type,
       timezone: sourceCalendar.timezone,
-      is_default: false,
       is_active: true,
-      include_public_holidays: sourceCalendar.include_public_holidays,
-      include_company_holidays: sourceCalendar.include_company_holidays,
+      auto_create_holiday_entries: sourceCalendar.auto_create_holiday_entries,
+      default_holiday_hours: sourceCalendar.default_holiday_hours,
       working_days: [...sourceCalendar.working_days],
       business_hours_start: sourceCalendar.business_hours_start,
       business_hours_end: sourceCalendar.business_hours_end,
@@ -265,29 +237,12 @@ export class CalendarService {
 
     const savedCalendar = await newCalendar.save();
 
-    // Clone holidays
-    const sourceHolidays = await CompanyHoliday.find({
-      calendar_id: sourceCalendarId,
-      deleted_at: { $exists: false }
-    });
-
-    const clonedHolidays = sourceHolidays.map(holiday => ({
-      name: holiday.name,
-      date: holiday.date,
-      holiday_type: holiday.holiday_type,
-      description: holiday.description,
-      is_active: holiday.is_active,
-      calendar_id: savedCalendar._id,
-      created_by: newCalendarData.created_by
-    }));
-
-    if (clonedHolidays.length > 0) {
-      await CompanyHoliday.insertMany(clonedHolidays);
-    }
+    // Note: In the simplified calendar system, holidays are global and not tied to specific calendars
+    // so we don't clone holidays
 
     return {
       calendar: savedCalendar,
-      holidaysCloned: clonedHolidays.length
+      holidaysCloned: 0
     };
   }
 }

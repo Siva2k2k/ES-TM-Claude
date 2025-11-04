@@ -1,12 +1,15 @@
 import { Router } from 'express';
-import { TimesheetController } from '@/controllers/TimesheetController';
-import { TeamReviewController } from '@/controllers/TeamReviewController';
+import TimesheetController from '@/controllers/TimesheetController';
+import TeamReviewController from '@/controllers/TeamReviewController';
 import { body, param, query } from 'express-validator';
 import { validate } from '@/middleware/validation';
 import { requireAuth } from '@/middleware/auth';
 import mongoose from 'mongoose';
 
 const router = Router();
+
+// Debug: Check if method exists
+console.log('synchronizeHolidayEntries method:', TimesheetController.synchronizeHolidayEntries);
 
 // Apply authentication middleware to all routes
 router.use(requireAuth);

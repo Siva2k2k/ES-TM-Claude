@@ -880,24 +880,39 @@ export class TimesheetController {
   /**
    * Synchronize holiday entries for timesheet
    */
-  static synchronizeHolidayEntries = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
-    const { timesheetId } = req.params;
-    const currentUser = req.user!;
+  static async synchronizeHolidayEntries(req: AuthenticatedRequest, res: Response) {
+    try {
+      const { timesheetId } = req.params;
+      const currentUser = req.user!;
 
-    const result = await TimesheetService.synchronizeHolidayEntries(timesheetId, currentUser);
+      const result = await TimesheetService.synchronizeHolidayEntries(timesheetId, currentUser);
 
-    if (!result.success) {
-      return res.status(400).json({
+      if (!result.success) {
+        return res.status(400).json({
+          success: false,
+          error: result.error || 'Failed to synchronize holiday entries'
+        });
+      }
+
+      res.json({
+        success: true,
+        message: 'Holiday entries synchronized successfully',
+        changes: result.changes
+      });
+    } catch (error) {
+      console.error('Error in synchronizeHolidayEntries:', error);
+      res.status(500).json({
         success: false,
-        error: result.error || 'Failed to synchronize holiday entries'
+        error: 'Internal server error'
       });
     }
+  }
 
-    res.json({
-      success: true,
-      message: 'Holiday entries synchronized successfully',
-      changes: result.changes
-    });
+  /**
+   * Test method to verify class structure
+   */
+  static testMethod = handleAsyncError(async (req: AuthenticatedRequest, res: Response) => {
+    res.json({ success: true, message: 'Test method works' });
   });
 }
 

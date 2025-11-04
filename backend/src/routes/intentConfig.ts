@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import IntentConfigController from '../controllers/IntentConfigController';
 import { requireAuth } from '../middleware/auth';
-import { authorizeRole } from '../middleware/authorization';
+import { requireRole } from '../middleware/authorization';
 import { body, param } from 'express-validator';
-import { validateRequest } from '../middleware/validation';
+import { validate } from '../middleware/validation';
 
 const router = Router();
 
@@ -11,6 +11,17 @@ const router = Router();
  * All intent config routes require authentication
  */
 router.use(requireAuth);
+
+/**
+ * GET /api/v1/intent-config/statistics
+ * Get intent statistics (admin only)
+ * IMPORTANT: This route must be before /intents/:intent to avoid conflicts
+ */
+router.get(
+  '/statistics',
+  requireRole(['super_admin', 'management']),
+  IntentConfigController.getStatistics
+);
 
 /**
  * GET /api/v1/intent-config/intents
@@ -29,7 +40,7 @@ router.get(
       .isIn(['project', 'user', 'client', 'timesheet', 'team_review', 'billing', 'audit'])
       .withMessage('Invalid category')
   ],
-  validateRequest,
+  validate,
   IntentConfigController.getIntentsByCategory
 );
 
@@ -52,7 +63,7 @@ router.get(
       .notEmpty()
       .withMessage('Intent name is required')
   ],
-  validateRequest,
+  validate,
   IntentConfigController.getIntentDefinition
 );
 
@@ -62,7 +73,7 @@ router.get(
  */
 router.post(
   '/intents',
-  authorizeRole(['super_admin', 'management']),
+  requireRole(['super_admin', 'management']),
   [
     body('intent')
       .isString()
@@ -98,7 +109,7 @@ router.post(
       .notEmpty()
       .withMessage('exampleCommand is required')
   ],
-  validateRequest,
+  validate,
   IntentConfigController.createIntent
 );
 
@@ -108,7 +119,7 @@ router.post(
  */
 router.put(
   '/intents/:intent',
-  authorizeRole(['super_admin', 'management']),
+  requireRole(['super_admin', 'management']),
   [
     param('intent')
       .isString()
@@ -137,7 +148,7 @@ router.put(
       .isBoolean()
       .withMessage('isActive must be a boolean')
   ],
-  validateRequest,
+  validate,
   IntentConfigController.updateIntent
 );
 
@@ -147,7 +158,7 @@ router.put(
  */
 router.delete(
   '/intents/:intent/deactivate',
-  authorizeRole(['super_admin', 'management']),
+  requireRole(['super_admin', 'management']),
   [
     param('intent')
       .isString()
@@ -155,26 +166,8 @@ router.delete(
       .notEmpty()
       .withMessage('Intent name is required')
   ],
-  validateRequest,
+  validate,
   IntentConfigController.deactivateIntent
-);
-
-/**
- * DELETE /api/v1/intent-config/intents/:intent
- * Permanently delete an intent (admin only)
- */
-router.delete(
-  '/intents/:intent',
-  authorizeRole(['super_admin']),
-  [
-    param('intent')
-      .isString()
-      .trim()
-      .notEmpty()
-      .withMessage('Intent name is required')
-  ],
-  validateRequest,
-  IntentConfigController.deleteIntent
 );
 
 /**
@@ -190,7 +183,7 @@ router.post(
       .notEmpty()
       .withMessage('Intent name is required')
   ],
-  validateRequest,
+  validate,
   IntentConfigController.enableIntentForUser
 );
 
@@ -207,18 +200,26 @@ router.post(
       .notEmpty()
       .withMessage('Intent name is required')
   ],
-  validateRequest,
+  validate,
   IntentConfigController.disableIntentForUser
 );
 
 /**
- * GET /api/v1/intent-config/statistics
- * Get intent statistics (admin only)
+ * DELETE /api/v1/intent-config/intents/:intent
+ * Permanently delete an intent (admin only)
  */
-router.get(
-  '/statistics',
-  authorizeRole(['super_admin', 'management']),
-  IntentConfigController.getStatistics
+router.delete(
+  '/intents/:intent',
+  requireRole(['super_admin']),
+  [
+    param('intent')
+      .isString()
+      .trim()
+      .notEmpty()
+      .withMessage('Intent name is required')
+  ],
+  validate,
+  IntentConfigController.deleteIntent
 );
 
 export default router;

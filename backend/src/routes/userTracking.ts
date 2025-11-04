@@ -1,7 +1,7 @@
 import express from 'express';
 import UserTrackingController from '../controllers/UserTrackingController';
-import { authenticateJWT } from '../middleware/auth';
-import { authorizeRoles } from '../middleware/authorization';
+import { requireAuth } from '../middleware/auth';
+import { requireRole } from '../middleware/authorization';
 
 const router = express.Router();
 
@@ -10,9 +10,9 @@ const router = express.Router();
  * @desc    Get dashboard overview for managers/management
  * @access  Manager, Management
  */
-router.get('/dashboard', 
-  authenticateJWT, 
-  authorizeRoles(['manager', 'management']),
+router.get('/dashboard',
+  requireAuth,
+  requireRole(['manager', 'management']),
   UserTrackingController.getDashboardOverview
 );
 
@@ -21,9 +21,9 @@ router.get('/dashboard',
  * @desc    Get user list with performance summary
  * @access  Manager, Management
  */
-router.get('/users', 
-  authenticateJWT, 
-  authorizeRoles(['manager', 'management']),
+router.get('/users',
+  requireAuth,
+  requireRole(['manager', 'management']),
   UserTrackingController.getUserList
 );
 
@@ -32,9 +32,9 @@ router.get('/users',
  * @desc    Get detailed user analytics
  * @access  Manager (for their reports), Management, Self
  */
-router.get('/users/:userId/analytics', 
-  authenticateJWT, 
-  authorizeRoles(['employee', 'manager', 'management']),
+router.get('/users/:userId/analytics',
+  requireAuth,
+  requireRole(['employee', 'manager', 'management']),
   UserTrackingController.getUserAnalytics
 );
 
@@ -43,9 +43,9 @@ router.get('/users/:userId/analytics',
  * @desc    Get utilization trends for a user
  * @access  Manager (for their reports), Management, Self
  */
-router.get('/users/:userId/trends', 
-  authenticateJWT, 
-  authorizeRoles(['employee', 'manager', 'management']),
+router.get('/users/:userId/trends',
+  requireAuth,
+  requireRole(['employee', 'manager', 'management']),
   UserTrackingController.getUtilizationTrends
 );
 
@@ -54,9 +54,9 @@ router.get('/users/:userId/trends',
  * @desc    Get team performance ranking
  * @access  Manager, Management
  */
-router.get('/team/ranking', 
-  authenticateJWT, 
-  authorizeRoles(['manager', 'management']),
+router.get('/team/ranking',
+  requireAuth,
+  requireRole(['manager', 'management']),
   UserTrackingController.getTeamRanking
 );
 
@@ -65,9 +65,9 @@ router.get('/team/ranking',
  * @desc    Get project performance breakdown
  * @access  Manager, Management
  */
-router.get('/projects/performance', 
-  authenticateJWT, 
-  authorizeRoles(['manager', 'management']),
+router.get('/projects/performance',
+  requireAuth,
+  requireRole(['manager', 'management']),
   UserTrackingController.getProjectPerformance
 );
 
@@ -76,9 +76,9 @@ router.get('/projects/performance',
  * @desc    Trigger aggregation for specific timesheet or user
  * @access  Manager, Management
  */
-router.post('/aggregate', 
-  authenticateJWT, 
-  authorizeRoles(['manager', 'management']),
+router.post('/aggregate',
+  requireAuth,
+  requireRole(['manager', 'management']),
   UserTrackingController.triggerAggregation
 );
 
@@ -87,9 +87,9 @@ router.post('/aggregate',
  * @desc    Get aggregation statistics and status
  * @access  Manager, Management
  */
-router.get('/stats', 
-  authenticateJWT, 
-  authorizeRoles(['manager', 'management']),
+router.get('/stats',
+  requireAuth,
+  requireRole(['manager', 'management']),
   UserTrackingController.getAggregationStats
 );
 

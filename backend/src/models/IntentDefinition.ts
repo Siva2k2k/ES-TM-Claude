@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document, Model } from 'mongoose';
 
 export interface IIntentDefinition extends Document {
   intent: string;
@@ -97,10 +97,12 @@ IntentDefinitionSchema.index({ isActive: 1, category: 1 });
 IntentDefinitionSchema.index({ allowedRoles: 1, isActive: 1 });
 
 // Virtual ID
-IntentDefinitionSchema.virtual('id').get(function () {
-  return this._id.toHexString();
+IntentDefinitionSchema.virtual('id').get(function (this: any) {
+  return this._id?.toHexString();
 });
 
-const IntentDefinition = mongoose.model<IIntentDefinition>('IntentDefinition', IntentDefinitionSchema);
+// Prevent model overwrite error in development
+const IntentDefinition: Model<IIntentDefinition> = mongoose.models.IntentDefinition || 
+  mongoose.model<IIntentDefinition>('IntentDefinition', IntentDefinitionSchema);
 
 export default IntentDefinition;

@@ -1,7 +1,8 @@
 import 'module-alias/register';
 import dotenv from 'dotenv';
 import { connectDB } from '../config/database';
-import { User, Client, Project, Task, Calendar, CompanyHoliday } from '../models';
+import { User, Client, Project, Task, CompanyHoliday } from '../models';
+import Calendar from '../models/Calendar';
 import { PasswordSecurity } from '../utils/passwordSecurity';
 import logger from '../config/logger';
 

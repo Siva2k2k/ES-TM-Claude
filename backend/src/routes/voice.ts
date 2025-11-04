@@ -2,7 +2,7 @@ import { Router } from 'express';
 import VoiceController from '../controllers/VoiceController';
 import { requireAuth } from '../middleware/auth';
 import { body, query } from 'express-validator';
-import { validateRequest } from '../middleware/validation';
+import { validate } from '../middleware/validation';
 
 const router = Router();
 
@@ -27,7 +27,7 @@ router.post(
       .withMessage('Transcript is too long'),
     body('context').optional().isObject().withMessage('Context must be an object')
   ],
-  validateRequest,
+  validate,
   VoiceController.processCommand
 );
 
@@ -56,7 +56,7 @@ router.post(
       .equals('true')
       .withMessage('Action must be confirmed')
   ],
-  validateRequest,
+  validate,
   VoiceController.executeAction
 );
 
@@ -80,7 +80,7 @@ router.post(
       .isString()
       .withMessage('Language must be a string')
   ],
-  validateRequest,
+  validate,
   VoiceController.speechToText
 );
 
@@ -96,7 +96,7 @@ router.get(
       .isString()
       .withMessage('Intents must be a comma-separated string')
   ],
-  validateRequest,
+  validate,
   VoiceController.getContext
 );
 
@@ -142,7 +142,7 @@ router.put(
       .isBoolean()
       .withMessage('confirmBeforeExecute must be a boolean')
   ],
-  validateRequest,
+  validate,
   VoiceController.updateUserPreferences
 );
 
@@ -158,7 +158,7 @@ router.get(
       .isInt({ min: 1, max: 100 })
       .withMessage('Limit must be between 1 and 100')
   ],
-  validateRequest,
+  validate,
   VoiceController.getCommandHistory
 );
 

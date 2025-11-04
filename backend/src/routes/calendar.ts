@@ -79,7 +79,7 @@ router.post('/', requireAuth, async (req: AuthRequest, res) => {
 
     const calendar = await CalendarService.createCalendar({
       ...req.body,
-      created_by: req.user!.id,
+      created_by: req.user.id,
     });
 
     await calendar.populate('created_by', 'full_name email');
@@ -212,7 +212,7 @@ router.post('/:id/clone', requireAuth, async (req: AuthRequest, res) => {
   try {
     requireCalendarManagement(req.user);
 
-    const { name, description, type } = req.body;
+    const { name, description } = req.body;
 
     if (!name) {
       return res.status(400).json({
@@ -224,8 +224,7 @@ router.post('/:id/clone', requireAuth, async (req: AuthRequest, res) => {
     const result = await CalendarService.cloneCalendar(req.params.id, {
       name,
       description,
-      type,
-      created_by: req.user!.id,
+      created_by: req.user.id,
     });
 
     await result.calendar.populate('created_by', 'full_name email');

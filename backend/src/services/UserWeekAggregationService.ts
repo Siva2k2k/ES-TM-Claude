@@ -41,7 +41,7 @@ export class UserWeekAggregationService {
       const approvedProjectIds = approvedProjects.map(approval => approval.project_id);
 
       // Get all time entries for this timesheet, but only for approved projects
-      const timeEntries = await TimeEntry.find({ 
+      const timeEntries = await (TimeEntry.find as any)({
         timesheet_id: timesheetId,
         deleted_at: null,
         $or: [
@@ -52,16 +52,16 @@ export class UserWeekAggregationService {
 
       // Get projects for project breakdown
       const projectIds = timeEntries
-        .filter(entry => entry.project_id)
-        .map(entry => entry.project_id);
-      
-      const projects = await Project.find({ 
+        .filter((entry: any) => entry.project_id)
+        .map((entry: any) => entry.project_id);
+
+      const projects = await (Project.find as any)({
         _id: { $in: projectIds },
-        deleted_at: null 
+        deleted_at: null
       });
 
       // Check if summary already exists
-      let summary = await UserWeekSummary.findOne({ timesheet_id: timesheetId });
+      let summary = await (UserWeekSummary.findOne as any)({ timesheet_id: timesheetId });
       
       if (!summary) {
         summary = new UserWeekSummary({
@@ -153,8 +153,8 @@ export class UserWeekAggregationService {
 
       // If not recalculating existing, only process timesheets without summaries
       if (!options.recalculateExisting) {
-        const existingSummaries = await UserWeekSummary.find({}, 'timesheet_id');
-        const existingTimesheetIds = existingSummaries.map(s => s.timesheet_id);
+        const existingSummaries = await (UserWeekSummary.find as any)({}, 'timesheet_id');
+        const existingTimesheetIds = existingSummaries.map((s: any) => s.timesheet_id);
         query._id = { $in: approvedTimesheetIds, $nin: existingTimesheetIds };
       }
 
@@ -338,7 +338,7 @@ export class UserWeekAggregationService {
     const pastWeeksStart = new Date(weekEndDate);
     pastWeeksStart.setDate(pastWeeksStart.getDate() - (8 * 7));
 
-    const recentSummaries = await UserWeekSummary.find({
+    const recentSummaries = await (UserWeekSummary.find as any)({
       user_id: userId,
       week_start_date: { $gte: pastWeeksStart, $lt: weekEndDate },
       status: { $nin: ['draft'] }
@@ -382,7 +382,7 @@ export class UserWeekAggregationService {
     const pastWeeksStart = new Date(timesheet.week_start_date);
     pastWeeksStart.setDate(pastWeeksStart.getDate() - (8 * 7));
 
-    const recentSummaries = await UserWeekSummary.find({
+    const recentSummaries = await (UserWeekSummary.find as any)({
       user_id: userId,
       week_start_date: { $gte: pastWeeksStart, $lt: timesheet.week_start_date },
       status: { $nin: ['draft'] }
@@ -693,14 +693,14 @@ export class UserWeekAggregationService {
    * Get user performance trends
    */
   async getUserPerformanceTrends(userId: mongoose.Types.ObjectId, weeks: number = 12) {
-    return UserWeekSummary.getUserUtilizationTrend(userId, weeks);
+    return (UserWeekSummary as any).getUserUtilizationTrend(userId, weeks);
   }
 
   /**
    * Get team performance ranking
    */
   async getTeamPerformanceRanking(managerIds: mongoose.Types.ObjectId[], weeks: number = 4) {
-    return UserWeekSummary.getTeamPerformanceRanking(managerIds, weeks);
+    return (UserWeekSummary as any).getTeamPerformanceRanking(managerIds, weeks);
   }
 
   /**

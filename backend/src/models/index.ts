@@ -10,6 +10,8 @@ export { default as TimeEntry, ITimeEntry } from './TimeEntry';
 export { default as UserWeekSummary, IUserWeekSummary } from './UserWeekSummary';
 export { default as BillingAdjustment, IBillingAdjustment } from './BillingAdjustment';
 export { BillingSnapshot, IBillingSnapshot } from './BillingSnapshot';
+export { default as IntentDefinition, IIntentDefinition } from './IntentDefinition';
+export { default as UserVoicePreferences, IUserVoicePreferences } from './UserVoicePreferences';
 
 // Export types
 export type { UserRole } from './User';

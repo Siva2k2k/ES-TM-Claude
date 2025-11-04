@@ -6,7 +6,7 @@
  * and automatic timesheet holiday entry creation.
  */
 
-import { Calendar } from '@/models/Calendar';
+import Calendar from '@/models/Calendar';
 import { CompanyHoliday } from '@/models/CompanyHoliday';
 import CompanyHolidayService from '@/services/CompanyHolidayService';
 import { SettingsService } from '@/services/SettingsService';
@@ -28,7 +28,7 @@ export class HolidaySystemService {
       let message = 'Holiday system initialized successfully';
 
       // 1. Ensure company calendar exists
-      const calendar = await Calendar.getOrCreateCompanyCalendar(new mongoose.Types.ObjectId(currentUser.id));
+      await Calendar.getOrCreateCompanyCalendar(new mongoose.Types.ObjectId(currentUser.id));
       
       // 2. Initialize holiday system settings
       const settingsResult = await SettingsService.initializeHolidaySettings(currentUser);

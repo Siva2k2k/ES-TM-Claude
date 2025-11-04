@@ -1,12 +1,35 @@
-import * as sdk from 'microsoft-cognitiveservices-speech-sdk';
-import { SpeechToTextRequest, SpeechToTextResponse } from '../types/voice';
+// Azure Speech SDK types (package may not be installed)
+let sdk: any;
+try {
+  sdk = require('microsoft-cognitiveservices-speech-sdk');
+} catch (e) {
+  // Package not installed, will use mock implementation
+  sdk = null;
+}
+
+export interface SpeechToTextRequest {
+  audioData: string;
+  language?: string;
+}
+
+export interface SpeechToTextResponse {
+  transcript: string;
+  confidence: number;
+  language: string;
+}
+
 import logger from '../config/logger';
 
 class AzureSpeechService {
-  private speechConfig: sdk.SpeechConfig | null = null;
+  private speechConfig: any = null;
   private isConfigured: boolean = false;
 
   constructor() {
+    if (!sdk) {
+      logger.warn('Azure Speech SDK not installed');
+      return;
+    }
+
     const subscriptionKey = process.env.AZURE_SPEECH_KEY;
     const serviceRegion = process.env.AZURE_SPEECH_REGION;
 
@@ -38,8 +61,8 @@ class AzureSpeechService {
    * Convert speech audio to text
    */
   async speechToText(request: SpeechToTextRequest): Promise<SpeechToTextResponse> {
-    if (!this.speechConfig) {
-      throw new Error('Azure Speech Service is not configured. Please add credentials to .env file.');
+    if (!sdk || !this.speechConfig) {
+      throw new Error('Azure Speech Service is not configured. Please add credentials to .env file or install the SDK package.');
     }
 
     return new Promise((resolve, reject) => {

@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './store/contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
+import { VoiceProvider } from './contexts/VoiceContext';
 import { SuspenseWrapper } from './components/common/SuspenseWrapper';
 import App from './App.tsx';
 import './index.css';
@@ -15,7 +16,9 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <ThemeProvider>
           <AuthProvider>
-            <App />
+            <VoiceProvider>
+              <App />
+            </VoiceProvider>
           </AuthProvider>
         </ThemeProvider>
       </BrowserRouter>

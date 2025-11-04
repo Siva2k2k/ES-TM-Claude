@@ -1,4 +1,4 @@
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import mongoose from 'mongoose';
 import { UserWeekSummary, IUserWeekSummary } from '../models/UserWeekSummary';
 import { User, IUser } from '../models/User';
@@ -6,6 +6,7 @@ import { Timesheet } from '../models/Timesheet';
 import { Project } from '../models/Project';
 import UserWeekAggregationService from '../services/UserWeekAggregationService';
 import logger from '../config/logger';
+import { AuthRequest } from '../middleware/auth';
 
 export interface IUserTrackingFilters {
   userId?: mongoose.Types.ObjectId;
@@ -21,30 +22,30 @@ export class UserTrackingController {
   /**
    * Get dashboard overview for managers/management
    */
-  async getDashboardOverview(req: Request, res: Response): Promise<void> {
+  async getDashboardOverview(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { role } = req.user!;
       const { weeks = 4 } = req.query;
-      
+
       let userIds: mongoose.Types.ObjectId[] = [];
-      
+
       // Get users based on role
       if (role === 'management') {
         // Management can see all users
-        const users = await User.find({ 
-          is_active: true, 
+        const users = await (User.find as any)({
+          is_active: true,
           deleted_at: null,
           role: { $in: ['employee', 'lead', 'manager'] }
         }).select('_id');
-        userIds = users.map(u => u._id);
+        userIds = users.map((u: any) => u._id);
       } else if (role === 'manager') {
         // Managers can see their direct reports
-        const users = await User.find({ 
-          manager_id: req.user!._id,
-          is_active: true, 
-          deleted_at: null 
+        const users = await (User.find as any)({
+          manager_id: new mongoose.Types.ObjectId(req.user!.id),
+          is_active: true,
+          deleted_at: null
         }).select('_id');
-        userIds = users.map(u => u._id);
+        userIds = users.map((u: any) => u._id);
       } else {
         res.status(403).json({ error: 'Insufficient permissions' });
         return;
@@ -70,21 +71,21 @@ export class UserTrackingController {
   /**
    * Get user list with performance summary
    */
-  async getUserList(req: Request, res: Response): Promise<void> {
+  async getUserList(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { role } = req.user!;
       const { weeks = 4, page = 1, limit = 20, search } = req.query;
-      
-      let userQuery: any = { 
-        is_active: true, 
-        deleted_at: null 
+
+      let userQuery: any = {
+        is_active: true,
+        deleted_at: null
       };
-      
+
       // Apply role-based filtering
       if (role === 'management') {
         userQuery.role = { $in: ['employee', 'lead', 'manager'] };
       } else if (role === 'manager') {
-        userQuery.manager_id = req.user!._id;
+        userQuery.manager_id = new mongoose.Types.ObjectId(req.user!.id);
       } else {
         res.status(403).json({ error: 'Insufficient permissions' });
         return;
@@ -99,7 +100,7 @@ export class UserTrackingController {
       }
 
       const skip = (Number(page) - 1) * Number(limit);
-      const users = await User.find(userQuery)
+      const users = await (User.find as any)(userQuery)
         .populate('manager_id', 'full_name')
         .sort({ full_name: 1 })
         .skip(skip)
@@ -147,7 +148,7 @@ export class UserTrackingController {
   /**
    * Get detailed user analytics
    */
-  async getUserAnalytics(req: Request, res: Response): Promise<void> {
+  async getUserAnalytics(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { userId } = req.params;
       const { weeks = 12 } = req.query;
@@ -180,7 +181,7 @@ export class UserTrackingController {
   /**
    * Get utilization trends
    */
-  async getUtilizationTrends(req: Request, res: Response): Promise<void> {
+  async getUtilizationTrends(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { userId } = req.params;
       const { weeks = 12 } = req.query;
@@ -209,7 +210,7 @@ export class UserTrackingController {
   /**
    * Get team performance ranking
    */
-  async getTeamRanking(req: Request, res: Response): Promise<void> {
+  async getTeamRanking(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { role } = req.user!;
       const { weeks = 4 } = req.query;
@@ -218,14 +219,14 @@ export class UserTrackingController {
       
       if (role === 'management') {
         // Get all managers
-        const managers = await User.find({ 
+        const managers = await (User.find as any)({
           role: { $in: ['manager', 'lead'] },
-          is_active: true, 
-          deleted_at: null 
+          is_active: true,
+          deleted_at: null
         }).select('_id');
-        managerIds = managers.map(m => m._id);
+        managerIds = managers.map((m: any) => m._id);
       } else if (role === 'manager') {
-        managerIds = [req.user!._id];
+        managerIds = [new mongoose.Types.ObjectId(req.user!.id)];
       } else {
         res.status(403).json({ error: 'Insufficient permissions' });
         return;
@@ -250,7 +251,7 @@ export class UserTrackingController {
   /**
    * Get project performance breakdown
    */
-  async getProjectPerformance(req: Request, res: Response): Promise<void> {
+  async getProjectPerformance(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { role } = req.user!;
       const { weeks = 4, projectId } = req.query;
@@ -259,19 +260,19 @@ export class UserTrackingController {
       
       // Get users based on role
       if (role === 'management') {
-        const users = await User.find({ 
-          is_active: true, 
+        const users = await (User.find as any)({
+          is_active: true,
           deleted_at: null,
           role: { $in: ['employee', 'lead', 'manager'] }
         }).select('_id');
-        userIds = users.map(u => u._id);
+        userIds = users.map((u: any) => u._id);
       } else if (role === 'manager') {
-        const users = await User.find({ 
-          manager_id: req.user!._id,
-          is_active: true, 
-          deleted_at: null 
+        const users = await (User.find as any)({
+          manager_id: new mongoose.Types.ObjectId(req.user!.id),
+          is_active: true,
+          deleted_at: null
         }).select('_id');
-        userIds = users.map(u => u._id);
+        userIds = users.map((u: any) => u._id);
       } else {
         res.status(403).json({ error: 'Insufficient permissions' });
         return;
@@ -300,7 +301,7 @@ export class UserTrackingController {
   /**
    * Trigger aggregation for specific timesheet or user
    */
-  async triggerAggregation(req: Request, res: Response): Promise<void> {
+  async triggerAggregation(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { timesheetId, userId, projectId, weeks } = req.body;
       
@@ -342,7 +343,7 @@ export class UserTrackingController {
   /**
    * Get aggregation statistics and status
    */
-  async getAggregationStats(req: Request, res: Response): Promise<void> {
+  async getAggregationStats(req: AuthRequest, res: Response): Promise<void> {
     try {
       const { weeks = 4 } = req.query;
       
@@ -363,7 +364,7 @@ export class UserTrackingController {
    * Helper method to calculate dashboard metrics
    */
   private async calculateDashboardMetrics(userIds: mongoose.Types.ObjectId[], startDate: Date) {
-    const summaries = await UserWeekSummary.find({
+    const summaries = await (UserWeekSummary.find as any)({
       user_id: { $in: userIds },
       week_start_date: { $gte: startDate },
       status: { $nin: ['draft'] }
@@ -419,7 +420,7 @@ export class UserTrackingController {
    * Helper method to get user performance summary
    */
   private async getUserPerformanceSummary(userId: mongoose.Types.ObjectId, startDate: Date) {
-    const summaries = await UserWeekSummary.find({
+    const summaries = await (UserWeekSummary.find as any)({
       user_id: userId,
       week_start_date: { $gte: startDate },
       status: { $nin: ['draft'] }
@@ -448,8 +449,8 @@ export class UserTrackingController {
    * Helper method to get detailed user analytics
    */
   private async getDetailedUserAnalytics(userId: mongoose.Types.ObjectId, startDate: Date) {
-    const user = await User.findById(userId).populate('manager_id', 'full_name');
-    const summaries = await UserWeekSummary.find({
+    const user = await (User.findById as any)(userId).populate('manager_id', 'full_name');
+    const summaries = await (UserWeekSummary.find as any)({
       user_id: userId,
       week_start_date: { $gte: startDate },
       status: { $nin: ['draft'] }
@@ -501,11 +502,11 @@ export class UserTrackingController {
     if (currentUser.role === 'super_admin') return true;
     
     if (currentUser.role === 'manager') {
-      const targetUser = await User.findById(targetUserId);
-      return targetUser?.manager_id?.toString() === currentUser._id.toString();
+      const targetUser = await (User.findById as any)(targetUserId);
+      return targetUser?.manager_id?.toString() === currentUser.id;
     }
-    
-    return currentUser._id.toString() === targetUserId.toString();
+
+    return currentUser.id === targetUserId.toString();
   }
 
   /**

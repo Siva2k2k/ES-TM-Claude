@@ -6,19 +6,11 @@
  * the simplified company holiday system.
  */
 
-import { Request, Response } from 'express';
+import { Response } from 'express';
 import { body, validationResult } from 'express-validator';
 import { HolidaySystemService } from '@/services/HolidaySystemService';
 import { handleAsyncError } from '@/utils/errors';
-
-interface AuthRequest extends Request {
-  user?: {
-    id: string;
-    email: string;
-    role: string;
-    full_name: string;
-  };
-}
+import { AuthRequest } from '@/middleware/auth';
 
 export class HolidaySystemController {
 
