@@ -165,4 +165,60 @@ export class DeviceDetector {
     const deviceInfo = this.detect();
     return deviceInfo.recommendedMethod;
   }
+
+  /**
+   * Check if browser is Safari
+   */
+  static isSafari(): boolean {
+    return this.detectBrowser(navigator.userAgent) === 'Safari';
+  }
+
+  /**
+   * Check if browser is Opera
+   */
+  static isOpera(): boolean {
+    return this.detectBrowser(navigator.userAgent) === 'Opera';
+  }
+
+  /**
+   * Check if browser is Firefox Mobile
+   */
+  static isFirefoxMobile(): boolean {
+    const ua = navigator.userAgent;
+    return this.detectBrowser(ua) === 'Firefox' && this.isMobileDevice(ua);
+  }
+
+  /**
+   * Check if browser is Samsung Internet
+   */
+  static isSamsungInternet(): boolean {
+    return this.detectBrowser(navigator.userAgent) === 'Samsung Internet';
+  }
+
+  /**
+   * Get Safari version number
+   */
+  static getSafariVersion(): number | null {
+    const ua = navigator.userAgent;
+    if (!this.isSafari()) return null;
+    const version = this.detectVersion(ua, 'Safari');
+    const versionNum = parseInt(version);
+    return isNaN(versionNum) ? null : versionNum;
+  }
+
+  /**
+   * Check if browser should use Azure Speech by default
+   */
+  static shouldUseAzureSpeech(): boolean {
+    const deviceInfo = this.detect();
+    return deviceInfo.recommendedMethod === 'azure-speech';
+  }
+
+  /**
+   * Get detailed browser information string
+   */
+  static getBrowserInfo(): string {
+    const deviceInfo = this.detect();
+    return `${deviceInfo.browser} ${deviceInfo.version} on ${deviceInfo.os}${deviceInfo.isMobile ? ' (Mobile)' : ''}`;
+  }
 }

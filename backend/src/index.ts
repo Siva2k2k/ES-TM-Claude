@@ -1,5 +1,6 @@
 import 'module-alias/register';
 import express from 'express';
+import { createServer } from 'http';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -16,6 +17,7 @@ import { errorHandler, notFound } from './middleware/errorHandler';
 import { checkMaintenanceMode } from './middleware/auth';
 import { registerRoutes } from './routes';
 import { SearchService } from './services/SearchService';
+import voiceSocketServer from './websocket/voiceSocketServer';
 
 dotenv.config();
 
@@ -110,11 +112,17 @@ app.get('*', (req, res) => {
 // Global error handler
 app.use(errorHandler);
 
+// Create HTTP server from Express app
+const httpServer = createServer(app);
+
+// Initialize Socket.IO for voice recognition
+voiceSocketServer.initialize(httpServer);
+
 // Database connection and server startup
 const startServer = async () => {
   try {
     await connectDB();
-    
+
     // Initialize search index on startup
     try {
       await SearchService.initializeSearchIndex();
@@ -122,13 +130,19 @@ const startServer = async () => {
     } catch (searchError) {
       logger.warn('Failed to initialize search index:', searchError);
     }
-    
+
     const listenWithRetry = (port: number, attempt: number = 0): void => {
-      const server = app.listen(port, () => {
+      const server = httpServer.listen(port, () => {
         process.env.PORT = String(port);
         logger.info(`Server is running on port ${port}`);
         logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
         logger.info(`Health check available at http://localhost:${port}/health`);
+        logger.info(`WebSocket server ready for voice recognition`);
+
+        // Log Socket.IO stats
+        const stats = voiceSocketServer.getStats();
+        logger.info(`Active WebSocket connections: ${stats.connections}`);
+        logger.info(`Active voice sessions: ${stats.activeSessions}`);
       });
 
       server.on('error', (err: NodeJS.ErrnoException) => {
@@ -167,6 +181,37 @@ process.on('uncaughtException', (err: Error) => {
   logger.error('Uncaught Exception:', err);
   process.exit(1);
 });
+
+// Graceful shutdown
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`${signal} signal received. Starting graceful shutdown...`);
+
+  try {
+    // Shutdown voice WebSocket server
+    await voiceSocketServer.shutdown();
+
+    // Close HTTP server
+    httpServer.close(() => {
+      logger.info('HTTP server closed');
+      process.exit(0);
+    });
+
+    // Force close after 10 seconds
+    setTimeout(() => {
+      logger.error('Could not close connections in time, forcefully shutting down');
+      process.exit(1);
+    }, 10000);
+  } catch (error) {
+    logger.error('Error during shutdown:', error);
+    process.exit(1);
+  }
+};
+
+// Handle SIGTERM signal
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+
+// Handle SIGINT signal (Ctrl+C)
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 startServer();
 

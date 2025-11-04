@@ -18,6 +18,8 @@
   "dependencies": {
     "@azure/openai": "^2.0.0",
     "@types/puppeteer": "^5.4.7",
+    "@types/socket.io": "^3.0.2",
+    "@types/uuid": "^10.0.0",
     "axios": "^1.12.2",
     "bcryptjs": "^3.0.2",
     "compression": "^1.8.1",
@@ -31,6 +33,7 @@
     "express-validator": "^7.2.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
+    "microsoft-cognitiveservices-speech-sdk": "^1.46.0",
     "module-alias": "^2.2.3",
     "mongodb": "^6.20.0",
     "mongoose": "^8.18.2",
@@ -42,7 +45,9 @@
     "passport-local": "^1.0.0",
     "pdfkit": "^0.15.1",
     "puppeteer": "^24.23.0",
+    "socket.io": "^4.7.2",
     "timesheet-management-system": "file:..",
+    "uuid": "^13.0.0",
     "winston": "^3.17.0"
   },
   "devDependencies": {

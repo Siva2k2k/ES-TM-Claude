@@ -1,10 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import SpeechRecognition, { useSpeechRecognition } from 'react-speech-recognition';
 import { useVoice } from '../../contexts/VoiceContext';
 import { voiceService } from '../../services/VoiceService';
 import { DeviceDetector } from '../../utils/deviceDetection';
-import { useAzureSpeech } from '../../hooks/useAzureSpeech';
-import { parseVoiceError } from '../../types/voiceErrors';
 import VoiceConfirmationModal from './VoiceConfirmationModal';
 
 const IconMicrophone = ({ size = 20 }: { size?: number }) => (
@@ -31,10 +29,8 @@ const IconLoader = ({ size = 16 }: { size?: number }) => (
 
 const VoiceLayer: React.FC = () => {
   const [visible, setVisible] = useState(false);
-  const [shouldUseAzureSpeech, setShouldUseAzureSpeech] = useState(false);
+  const [useAzureSpeech, setUseAzureSpeech] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [useContinuousMode, setUseContinuousMode] = useState(true); // Use continuous Azure Speech by default
-
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
 
@@ -50,37 +46,9 @@ const VoiceLayer: React.FC = () => {
     startListening,
     stopListening,
     processTranscript,
+    clearPendingActions,
     setError,
   } = useVoice();
-
-  // Azure Speech Hook (Continuous Recognition via WebSocket)
-  const [azureState, azureActions] = useAzureSpeech({
-    language: state.preferences?.voiceSettings?.language || 'en-US',
-    autoStop: true, // Default to auto-stop after silence
-    silenceDuration: 2000,
-    enableQualityMonitoring: true,
-    enableVoiceActivity: true,
-    onInterim: (transcript) => {
-      console.debug('Azure interim:', transcript);
-    },
-    onFinal: useCallback((transcript: string, confidence: number) => {
-      console.log('Azure final:', transcript, 'confidence:', confidence);
-      if (transcript.trim()) {
-        processTranscript(transcript).catch(console.error);
-      }
-    }, [processTranscript]),
-    onError: useCallback((error: unknown) => {
-      console.error('Azure Speech error:', error);
-      const voiceError = parseVoiceError(error);
-      setError(voiceError.message);
-    }, [setError]),
-    onQualityChange: useCallback(() => {
-      // Audio quality monitoring is available but not used in this implementation
-    }, []),
-    onVoiceActivityChange: useCallback(() => {
-      // Voice activity detection is available but not used in this implementation
-    }, []),
-  });
 
   // Determine speech method on mount
   useEffect(() => {
@@ -88,25 +56,14 @@ const VoiceLayer: React.FC = () => {
     const preferredMethod = state.preferences?.speechMethod || 'auto';
 
     if (preferredMethod === 'azure-speech') {
-      setShouldUseAzureSpeech(true);
+      setUseAzureSpeech(true);
     } else if (preferredMethod === 'web-speech') {
-      setShouldUseAzureSpeech(false);
+      setUseAzureSpeech(false);
     } else {
       // Auto: use recommended method from device detection
-      setShouldUseAzureSpeech(deviceInfo.recommendedMethod === 'azure-speech');
+      setUseAzureSpeech(deviceInfo.recommendedMethod === 'azure-speech');
     }
   }, [state.preferences]);
-
-  // Connect Azure Speech WebSocket if using continuous mode
-  useEffect(() => {
-    if (shouldUseAzureSpeech && useContinuousMode && !azureState.isConnected) {
-      azureActions.connect().catch((error) => {
-        console.error('Failed to connect Azure Speech:', error);
-        // Fallback to batch mode if connection fails
-        setUseContinuousMode(false);
-      });
-    }
-  }, [shouldUseAzureSpeech, useContinuousMode, azureState.isConnected, azureActions]);
 
   // Start Web Speech API
   const startWebSpeech = () => {
@@ -121,24 +78,8 @@ const VoiceLayer: React.FC = () => {
     stopListening();
   };
 
-  // Start Azure Speech (Continuous Mode via WebSocket)
-  const startAzureSpeechContinuous = async () => {
-    try {
-      await azureActions.startRecording();
-      startListening();
-      setIsRecording(true);
-    } catch (error: any) {
-      const voiceError = parseVoiceError(error);
-      setError(voiceError.getUserMessage());
-      // Fallback to batch mode on error
-      console.warn('Continuous mode failed, falling back to batch mode');
-      setUseContinuousMode(false);
-      await startAzureSpeechBatch();
-    }
-  };
-
-  // Start Azure Speech (Batch Mode - legacy)
-  const startAzureSpeechBatch = async () => {
+  // Start Azure Speech (MediaRecorder)
+  const startAzureSpeech = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const mediaRecorder = new MediaRecorder(stream);
@@ -186,24 +127,8 @@ const VoiceLayer: React.FC = () => {
     }
   };
 
-  // Start Azure Speech (dispatches to continuous or batch mode)
-  const startAzureSpeech = async () => {
-    if (useContinuousMode && azureState.isConnected) {
-      await startAzureSpeechContinuous();
-    } else {
-      await startAzureSpeechBatch();
-    }
-  };
-
-  // Stop Azure Speech (Continuous Mode)
-  const stopAzureSpeechContinuous = async () => {
-    await azureActions.stopRecording();
-    setIsRecording(false);
-    stopListening();
-  };
-
-  // Stop Azure Speech (Batch Mode)
-  const stopAzureSpeechBatch = () => {
+  // Stop Azure Speech
+  const stopAzureSpeech = () => {
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
@@ -211,18 +136,9 @@ const VoiceLayer: React.FC = () => {
     }
   };
 
-  // Stop Azure Speech (dispatches to continuous or batch mode)
-  const stopAzureSpeech = async () => {
-    if (useContinuousMode && azureState.isRecording) {
-      await stopAzureSpeechContinuous();
-    } else {
-      stopAzureSpeechBatch();
-    }
-  };
-
   // Unified start handler
   const handleStart = () => {
-    if (shouldUseAzureSpeech) {
+    if (useAzureSpeech) {
       startAzureSpeech();
     } else {
       startWebSpeech();
@@ -231,7 +147,7 @@ const VoiceLayer: React.FC = () => {
 
   // Unified stop handler
   const handleStop = () => {
-    if (shouldUseAzureSpeech) {
+    if (useAzureSpeech) {
       stopAzureSpeech();
     } else {
       stopWebSpeech();
@@ -257,13 +173,13 @@ const VoiceLayer: React.FC = () => {
   };
 
   // Don't render if Web Speech is required but not supported and Azure is not enabled
-  if (!shouldUseAzureSpeech && !browserSupportsSpeechRecognition) {
+  if (!useAzureSpeech && !browserSupportsSpeechRecognition) {
     return null;
   }
 
   const isListening = state.isListening || isRecording;
-  const currentTranscript = shouldUseAzureSpeech ? '' : transcript; // Azure shows transcript after recording stops
-  const currentInterim = shouldUseAzureSpeech ? '' : interimTranscript;
+  const currentTranscript = useAzureSpeech ? '' : transcript; // Azure shows transcript after recording stops
+  const currentInterim = useAzureSpeech ? '' : interimTranscript;
 
   return (
     <>
@@ -273,7 +189,7 @@ const VoiceLayer: React.FC = () => {
             <div className="w-80 max-w-xs bg-white dark:bg-slate-800 border rounded-lg shadow-lg p-3 text-sm text-slate-800 dark:text-slate-100">
               <div className="flex justify-between items-start">
                 <div className="font-semibold">
-                  Voice {shouldUseAzureSpeech ? '(Azure)' : '(Web Speech)'}
+                  Voice {useAzureSpeech ? '(Azure)' : '(Web Speech)'}
                 </div>
                 <button
                   className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-700"
@@ -293,10 +209,10 @@ const VoiceLayer: React.FC = () => {
 
               {/* Transcript display */}
               <div className="mt-2 h-24 overflow-auto text-sm leading-relaxed">
-                {isListening && !shouldUseAzureSpeech && (
+                {isListening && !useAzureSpeech && (
                   <div className="text-blue-500 dark:text-blue-400 text-xs mb-1">Listening...</div>
                 )}
-                {isRecording && shouldUseAzureSpeech && (
+                {isRecording && useAzureSpeech && (
                   <div className="text-red-500 dark:text-red-400 text-xs mb-1 flex items-center gap-1">
                     <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
                     Recording...
@@ -323,7 +239,7 @@ const VoiceLayer: React.FC = () => {
                 >
                   Clear
                 </button>
-                {!shouldUseAzureSpeech && currentTranscript && !isListening && (
+                {!useAzureSpeech && currentTranscript && !isListening && (
                   <button
                     onClick={handleSubmit}
                     disabled={state.isProcessing}
@@ -349,11 +265,11 @@ const VoiceLayer: React.FC = () => {
               {/* Speech method toggle */}
               <div className="mt-2 pt-2 border-t border-gray-200 dark:border-slate-700">
                 <button
-                  onClick={() => setShouldUseAzureSpeech(!shouldUseAzureSpeech)}
+                  onClick={() => setUseAzureSpeech(!useAzureSpeech)}
                   disabled={isListening || state.isProcessing}
                   className="text-xs text-blue-600 dark:text-blue-400 hover:underline disabled:opacity-50"
                 >
-                  Switch to {shouldUseAzureSpeech ? 'Web Speech' : 'Azure Speech'}
+                  Switch to {useAzureSpeech ? 'Web Speech' : 'Azure Speech'}
                 </button>
               </div>
             </div>
