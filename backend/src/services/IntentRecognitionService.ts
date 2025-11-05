@@ -168,12 +168,14 @@ Parse this command and return the structured JSON response.`;
     for (const fieldName of intentDef.requiredFields) {
       const fieldType = intentDef.fieldTypes.get(fieldName) || 'string';
       const enumValues = intentDef.enumValues?.get(fieldName);
+      const referenceType = intentDef.referenceTypes?.get(fieldName);
 
       fields.push({
         name: fieldName,
         type: fieldType,
         required: true,
         enumValues: enumValues || undefined,
+        referenceType: referenceType || undefined,
         label: this.formatFieldLabel(fieldName)
       });
 
@@ -187,12 +189,14 @@ Parse this command and return the structured JSON response.`;
     for (const fieldName of intentDef.optionalFields) {
       const fieldType = intentDef.fieldTypes.get(fieldName) || 'string';
       const enumValues = intentDef.enumValues?.get(fieldName);
+      const referenceType = intentDef.referenceTypes?.get(fieldName);
 
       fields.push({
         name: fieldName,
         type: fieldType,
         required: false,
         enumValues: enumValues || undefined,
+        referenceType: referenceType || undefined,
         label: this.formatFieldLabel(fieldName)
       });
 

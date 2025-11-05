@@ -115,6 +115,20 @@ export class VoiceController {
       const successCount = results.filter(r => r.success).length;
       const failureCount = results.length - successCount;
 
+      // Log field-level errors for debugging
+      const failedResults = results.filter(r => !r.success);
+      if (failedResults.length > 0) {
+        failedResults.forEach(result => {
+          if (result.fieldErrors && result.fieldErrors.length > 0) {
+            logger.warn('Action failed with field errors', {
+              intent: result.intent,
+              fieldErrors: result.fieldErrors,
+              error: result.error
+            });
+          }
+        });
+      }
+
       return res.status(200).json({
         success: failureCount === 0,
         results,

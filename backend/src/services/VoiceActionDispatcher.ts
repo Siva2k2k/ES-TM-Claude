@@ -7,6 +7,7 @@ import { UserService } from './UserService';
 import { ClientService } from './ClientService';
 import TimesheetService from './TimesheetService';
 import DefaulterService from './DefaulterService';
+import VoiceFieldMapper from './VoiceFieldMapper';
 import logger from '../config/logger';
 import { format, startOfWeek } from 'date-fns';
 
@@ -248,23 +249,41 @@ class VoiceActionDispatcher {
   // Implementation methods for each intent
   private async createProject(data: any, user: IUser): Promise<ActionExecutionResult> {
     const authUser = toAuthUser(user);
-    const result = await ProjectService.createProject({
-      name: data.projectName,
-      description: data.description,
-      client_id: data.clientId,
-      primary_manager_id: data.managerId,
-      start_date: data.startDate,
-      end_date: data.endDate,
-      status: data.status?.toLowerCase(),
-      budget: data.budget
-    }, authUser);
+
+    // Map and validate fields
+    const mappingResult = await VoiceFieldMapper.mapProjectCreation(data);
+
+    if (!mappingResult.success) {
+      logger.warn('Project creation field mapping failed', {
+        errors: mappingResult.errors,
+        receivedData: data
+      });
+
+      return {
+        intent: 'create_project',
+        success: false,
+        error: 'Validation failed: ' + mappingResult.errors?.map(e => e.message).join(', '),
+        fieldErrors: mappingResult.errors
+      };
+    }
+
+    // Create project with mapped data
+    const result = await ProjectService.createProject(mappingResult.data!, authUser);
 
     if (result.error) {
-      throw new Error(result.error);
+      return {
+        intent: 'create_project',
+        success: false,
+        error: result.error
+      };
     }
 
     if (!result.project) {
-      throw new Error('Failed to create project');
+      return {
+        intent: 'create_project',
+        success: false,
+        error: 'Failed to create project'
+      };
     }
 
     return {
@@ -378,19 +397,41 @@ class VoiceActionDispatcher {
   // USER MANAGEMENT
   private async createUser(data: any, user: IUser): Promise<ActionExecutionResult> {
     const authUser = toAuthUser(user);
-    const result = await UserService.createUser({
-      full_name: data.userName,  // Use full_name instead of name
-      email: data.email,
-      role: data.role.toLowerCase(),
-      hourly_rate: data.hourlyRate
-    }, authUser);
+
+    // Map and validate fields
+    const mappingResult = await VoiceFieldMapper.mapUserCreation(data);
+
+    if (!mappingResult.success) {
+      logger.warn('User creation field mapping failed', {
+        errors: mappingResult.errors,
+        receivedData: data
+      });
+
+      return {
+        intent: 'create_user',
+        success: false,
+        error: 'Validation failed: ' + mappingResult.errors?.map(e => e.message).join(', '),
+        fieldErrors: mappingResult.errors
+      };
+    }
+
+    // Create user with mapped data
+    const result = await UserService.createUser(mappingResult.data!, authUser);
 
     if (result.error) {
-      throw new Error(result.error);
+      return {
+        intent: 'create_user',
+        success: false,
+        error: result.error
+      };
     }
 
     if (!result.user) {
-      throw new Error('Failed to create user');
+      return {
+        intent: 'create_user',
+        success: false,
+        error: 'Failed to create user'
+      };
     }
 
     return {
@@ -400,7 +441,7 @@ class VoiceActionDispatcher {
       affectedEntities: [{
         type: 'user',
         id: result.user._id.toString(),
-        name: result.user.full_name  // Use full_name
+        name: result.user.full_name
       }]
     };
   }
@@ -458,19 +499,41 @@ class VoiceActionDispatcher {
   // CLIENT MANAGEMENT
   private async createClient(data: any, user: IUser): Promise<ActionExecutionResult> {
     const authUser = toAuthUser(user);
-    const result = await ClientService.createClient({
-      name: data.clientName,
-      contact_person: data.contactPerson,
-      contact_email: data.contactEmail,
-      is_active: data.isActive ?? true
-    }, authUser);
+
+    // Map and validate fields
+    const mappingResult = await VoiceFieldMapper.mapClientCreation(data);
+
+    if (!mappingResult.success) {
+      logger.warn('Client creation field mapping failed', {
+        errors: mappingResult.errors,
+        receivedData: data
+      });
+
+      return {
+        intent: 'create_client',
+        success: false,
+        error: 'Validation failed: ' + mappingResult.errors?.map(e => e.message).join(', '),
+        fieldErrors: mappingResult.errors
+      };
+    }
+
+    // Create client with mapped data
+    const result = await ClientService.createClient(mappingResult.data!, authUser);
 
     if (result.error) {
-      throw new Error(result.error);
+      return {
+        intent: 'create_client',
+        success: false,
+        error: result.error
+      };
     }
 
     if (!result.client) {
-      throw new Error('Failed to create client');
+      return {
+        intent: 'create_client',
+        success: false,
+        error: 'Failed to create client'
+      };
     }
 
     return {

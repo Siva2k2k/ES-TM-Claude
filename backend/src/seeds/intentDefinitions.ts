@@ -11,8 +11,8 @@ export const intentDefinitions = [
     fieldTypes: {
       projectName: 'string',
       description: 'string',
-      clientName: 'string',
-      managerName: 'string',
+      clientName: 'reference',
+      managerName: 'reference',
       startDate: 'date',
       endDate: 'date',
       status: 'enum',
@@ -20,6 +20,10 @@ export const intentDefinitions = [
     },
     enumValues: {
       status: ['Active', 'Completed', 'Archived']
+    },
+    referenceTypes: {
+      clientName: 'client',
+      managerName: 'manager'
     },
     contextRequired: ['clients', 'users', 'projects'],
     allowedRoles: ['super_admin', 'management', 'manager'],
@@ -34,9 +38,16 @@ export const intentDefinitions = [
     requiredFields: ['projectName', 'role', 'name'],
     optionalFields: [],
     fieldTypes: {
-      projectName: 'string',
-      role: 'string',
-      name: 'string'
+      projectName: 'reference',
+      role: 'enum',
+      name: 'reference'
+    },
+    enumValues: {
+      role: ['Employee', 'Designer', 'QA', 'DevOps', 'Lead']
+    },
+    referenceTypes: {
+      projectName: 'project',
+      name: 'user'
     },
     contextRequired: ['projects', 'users'],
     allowedRoles: ['super_admin', 'management', 'manager'],
@@ -51,9 +62,16 @@ export const intentDefinitions = [
     requiredFields: ['projectName', 'role', 'name'],
     optionalFields: [],
     fieldTypes: {
-      projectName: 'string',
-      role: 'string',
-      name: 'string'
+      projectName: 'reference',
+      role: 'enum',
+      name: 'reference'
+    },
+    enumValues: {
+      role: ['Employee', 'Designer', 'QA', 'DevOps', 'Lead']
+    },
+    referenceTypes: {
+      projectName: 'project',
+      name: 'user'
     },
     contextRequired: ['projects', 'users'],
     allowedRoles: ['super_admin', 'management', 'manager'],
@@ -68,9 +86,9 @@ export const intentDefinitions = [
     requiredFields: ['projectName', 'taskName', 'assignedMemberName'],
     optionalFields: ['description', 'estimatedHours', 'status', 'isBillable'],
     fieldTypes: {
-      projectName: 'string',
+      projectName: 'reference',
       taskName: 'string',
-      assignedMemberName: 'string',
+      assignedMemberName: 'reference',
       description: 'string',
       estimatedHours: 'number',
       status: 'enum',
@@ -78,6 +96,10 @@ export const intentDefinitions = [
     },
     enumValues: {
       status: ['Open', 'InProgress', 'Completed']
+    },
+    referenceTypes: {
+      projectName: 'project',
+      assignedMemberName: 'projectMember'
     },
     contextRequired: ['projects', 'users'],
     allowedRoles: ['super_admin', 'management', 'manager', 'lead'],
@@ -92,10 +114,10 @@ export const intentDefinitions = [
     requiredFields: ['projectName'],
     optionalFields: ['managerName', 'description', 'clientName', 'startDate', 'endDate', 'status', 'budget'],
     fieldTypes: {
-      projectName: 'string',
-      managerName: 'string',
+      projectName: 'reference',
+      managerName: 'reference',
       description: 'string',
-      clientName: 'string',
+      clientName: 'reference',
       startDate: 'date',
       endDate: 'date',
       status: 'enum',
@@ -103,6 +125,11 @@ export const intentDefinitions = [
     },
     enumValues: {
       status: ['Active', 'Completed', 'Archived']
+    },
+    referenceTypes: {
+      projectName: 'project',
+      managerName: 'manager',
+      clientName: 'client'
     },
     contextRequired: ['projects', 'clients', 'users'],
     allowedRoles: ['super_admin', 'management', 'manager'],
@@ -115,13 +142,22 @@ export const intentDefinitions = [
     category: 'project',
     description: 'Update task details',
     requiredFields: ['projectName', 'taskName'],
-    optionalFields: ['assignedMemberName', 'description', 'estimatedHours'],
+    optionalFields: ['assignedMemberName', 'description', 'estimatedHours', 'status'],
     fieldTypes: {
-      projectName: 'string',
-      taskName: 'string',
-      assignedMemberName: 'string',
+      projectName: 'reference',
+      taskName: 'reference',
+      assignedMemberName: 'reference',
       description: 'string',
-      estimatedHours: 'number'
+      estimatedHours: 'number',
+      status: 'enum'
+    },
+    enumValues: {
+      status: ['Open', 'InProgress', 'Completed']
+    },
+    referenceTypes: {
+      projectName: 'project',
+      taskName: 'task',
+      assignedMemberName: 'projectMember'
     },
     contextRequired: ['projects', 'tasks', 'users'],
     allowedRoles: ['super_admin', 'management', 'manager', 'lead'],
@@ -136,9 +172,13 @@ export const intentDefinitions = [
     requiredFields: ['projectName', 'reason'],
     optionalFields: ['managerName'],
     fieldTypes: {
-      projectName: 'string',
-      managerName: 'string',
+      projectName: 'reference',
+      managerName: 'reference',
       reason: 'string'
+    },
+    referenceTypes: {
+      projectName: 'project',
+      managerName: 'manager'
     },
     contextRequired: ['projects'],
     allowedRoles: ['super_admin', 'management'],
@@ -176,13 +216,16 @@ export const intentDefinitions = [
     requiredFields: ['userName'],
     optionalFields: ['email', 'role', 'hourlyRate'],
     fieldTypes: {
-      userName: 'string',
+      userName: 'reference',
       email: 'string',
       role: 'enum',
       hourlyRate: 'number'
     },
     enumValues: {
       role: ['Management', 'Manager', 'Lead', 'Employee']
+    },
+    referenceTypes: {
+      userName: 'user'
     },
     contextRequired: ['users'],
     allowedRoles: ['super_admin', 'management'],
@@ -197,9 +240,15 @@ export const intentDefinitions = [
     requiredFields: ['userName', 'reason'],
     optionalFields: ['role'],
     fieldTypes: {
-      userName: 'string',
-      role: 'string',
+      userName: 'reference',
+      role: 'enum',
       reason: 'string'
+    },
+    enumValues: {
+      role: ['Management', 'Manager', 'Lead', 'Employee']
+    },
+    referenceTypes: {
+      userName: 'user'
     },
     contextRequired: ['users'],
     allowedRoles: ['super_admin', 'management'],
@@ -234,10 +283,13 @@ export const intentDefinitions = [
     requiredFields: ['clientName'],
     optionalFields: ['contactPerson', 'contactEmail', 'isActive'],
     fieldTypes: {
-      clientName: 'string',
+      clientName: 'reference',
       contactPerson: 'string',
       contactEmail: 'string',
       isActive: 'boolean'
+    },
+    referenceTypes: {
+      clientName: 'client'
     },
     contextRequired: ['clients'],
     allowedRoles: ['super_admin', 'management'],
@@ -252,8 +304,11 @@ export const intentDefinitions = [
     requiredFields: ['clientName', 'reason'],
     optionalFields: [],
     fieldTypes: {
-      clientName: 'string',
+      clientName: 'reference',
       reason: 'string'
+    },
+    referenceTypes: {
+      clientName: 'client'
     },
     contextRequired: ['clients'],
     allowedRoles: ['super_admin', 'management'],
@@ -286,8 +341,8 @@ export const intentDefinitions = [
     requiredFields: ['projectName', 'taskName', 'date', 'hours', 'entryType'],
     optionalFields: ['taskType', 'description'],
     fieldTypes: {
-      projectName: 'string',
-      taskName: 'string',
+      projectName: 'reference',
+      taskName: 'reference',
       taskType: 'enum',
       date: 'date',
       hours: 'number',
@@ -297,6 +352,10 @@ export const intentDefinitions = [
     enumValues: {
       taskType: ['project_task', 'custom_task'],
       entryType: ['Project', 'Training', 'Leave', 'Miscellaneous']
+    },
+    referenceTypes: {
+      projectName: 'project',
+      taskName: 'task'
     },
     contextRequired: ['timesheets', 'projects', 'tasks'],
     allowedRoles: ['super_admin', 'management', 'manager', 'lead', 'employee'],
@@ -312,8 +371,8 @@ export const intentDefinitions = [
     optionalFields: ['taskType', 'date', 'hours', 'description', 'entryType'],
     fieldTypes: {
       weekStart: 'date',
-      projectName: 'string',
-      taskName: 'string',
+      projectName: 'reference',
+      taskName: 'reference',
       taskType: 'enum',
       date: 'date',
       hours: 'number',
@@ -323,6 +382,10 @@ export const intentDefinitions = [
     enumValues: {
       taskType: ['project_task', 'custom_task'],
       entryType: ['Project', 'Training', 'Leave', 'Miscellaneous']
+    },
+    referenceTypes: {
+      projectName: 'project',
+      taskName: 'task'
     },
     contextRequired: ['timesheets', 'projects', 'tasks'],
     allowedRoles: ['super_admin', 'management', 'manager', 'lead', 'employee'],
@@ -353,8 +416,12 @@ export const intentDefinitions = [
     optionalFields: [],
     fieldTypes: {
       weekStart: 'date',
-      projectName: 'string',
-      taskName: 'string'
+      projectName: 'reference',
+      taskName: 'reference'
+    },
+    referenceTypes: {
+      projectName: 'project',
+      taskName: 'task'
     },
     contextRequired: ['timesheets', 'projects', 'tasks'],
     allowedRoles: ['super_admin', 'management', 'manager', 'lead', 'employee'],
@@ -367,12 +434,22 @@ export const intentDefinitions = [
     category: 'timesheet',
     description: 'Copy a time entry to multiple dates',
     requiredFields: ['projectName', 'taskName', 'date', 'weekDates'],
-    optionalFields: [],
+    optionalFields: ['taskType', 'entryType'],
     fieldTypes: {
-      projectName: 'string',
-      taskName: 'string',
+      projectName: 'reference',
+      taskName: 'reference',
+      taskType: 'enum',
       date: 'date',
-      weekDates: 'array'
+      weekDates: 'array',
+      entryType: 'enum'
+    },
+    enumValues: {
+      taskType: ['project_task', 'custom_task'],
+      entryType: ['Project', 'Training', 'Leave', 'Miscellaneous']
+    },
+    referenceTypes: {
+      projectName: 'project',
+      taskName: 'task'
     },
     contextRequired: ['timesheets', 'projects', 'tasks'],
     allowedRoles: ['super_admin', 'management', 'manager', 'lead', 'employee'],
@@ -391,8 +468,12 @@ export const intentDefinitions = [
     fieldTypes: {
       weekStart: 'date',
       weekEnd: 'date',
-      userName: 'string',
-      projectName: 'string'
+      userName: 'reference',
+      projectName: 'reference'
+    },
+    referenceTypes: {
+      userName: 'user',
+      projectName: 'project'
     },
     contextRequired: ['users', 'projects', 'projectWeekGroups'],
     allowedRoles: ['super_admin', 'management', 'manager', 'lead'],
@@ -409,7 +490,10 @@ export const intentDefinitions = [
     fieldTypes: {
       weekStart: 'date',
       weekEnd: 'date',
-      projectName: 'string'
+      projectName: 'reference'
+    },
+    referenceTypes: {
+      projectName: 'project'
     },
     contextRequired: ['projects', 'projectWeekGroups'],
     allowedRoles: ['super_admin', 'management', 'manager'],
@@ -426,9 +510,13 @@ export const intentDefinitions = [
     fieldTypes: {
       weekStart: 'date',
       weekEnd: 'date',
-      userName: 'string',
-      projectName: 'string',
+      userName: 'reference',
+      projectName: 'reference',
       reason: 'string'
+    },
+    referenceTypes: {
+      userName: 'user',
+      projectName: 'project'
     },
     contextRequired: ['users', 'projects', 'projectWeekGroups'],
     allowedRoles: ['super_admin', 'management', 'manager', 'lead'],
@@ -445,8 +533,11 @@ export const intentDefinitions = [
     fieldTypes: {
       weekStart: 'date',
       weekEnd: 'date',
-      projectName: 'string',
+      projectName: 'reference',
       reason: 'string'
+    },
+    referenceTypes: {
+      projectName: 'project'
     },
     contextRequired: ['projects', 'projectWeekGroups'],
     allowedRoles: ['super_admin', 'management', 'manager'],
@@ -463,7 +554,10 @@ export const intentDefinitions = [
     fieldTypes: {
       weekStart: 'date',
       weekEnd: 'date',
-      projectName: 'string'
+      projectName: 'reference'
+    },
+    referenceTypes: {
+      projectName: 'project'
     },
     contextRequired: ['projects', 'projectWeekGroups', 'users'],
     allowedRoles: ['super_admin', 'management', 'manager', 'lead'],

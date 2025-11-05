@@ -6,8 +6,9 @@ export interface IIntentDefinition extends Document {
   description: string;
   requiredFields: string[];
   optionalFields: string[];
-  fieldTypes: Map<string, 'string' | 'number' | 'boolean' | 'date' | 'enum' | 'array'>;
+  fieldTypes: Map<string, 'string' | 'number' | 'boolean' | 'date' | 'enum' | 'array' | 'reference'>;
   enumValues?: Map<string, string[]>;
+  referenceTypes?: Map<string, 'client' | 'user' | 'project' | 'task' | 'manager' | 'projectMember'>;
   contextRequired: Array<'projects' | 'users' | 'clients' | 'tasks' | 'timesheets' | 'projectWeekGroups'>;
   allowedRoles: Array<'super_admin' | 'management' | 'manager' | 'lead' | 'employee'>;
   exampleCommand: string;
@@ -53,6 +54,10 @@ const IntentDefinitionSchema = new Schema<IIntentDefinition>(
     enumValues: {
       type: Map,
       of: [String]
+    },
+    referenceTypes: {
+      type: Map,
+      of: String
     },
     contextRequired: [{
       type: String,

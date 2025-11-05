@@ -11,6 +11,7 @@ import { voiceService } from '../services/VoiceService';
 import { DeviceDetector } from '../utils/deviceDetection';
 import { SpeechFallbackManager } from '../services/SpeechFallbackManager';
 import { VoiceError } from '../types/voiceErrors';
+import { showSuccess, showError, showInfo } from '../utils/toast';
 
 // Initial state
 const initialState: VoiceState = {
@@ -167,8 +168,40 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         true
       );
 
+      // Process results and show toast notifications for each action
+      const successfulActions = response.results.filter(r => r.success);
+      const failedActions = response.results.filter(r => !r.success);
+
+      // Show success toasts
+      successfulActions.forEach(result => {
+        const intentName = result.intent.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        showSuccess(`${intentName} completed successfully!`);
+      });
+
+      // Show error toasts with field-level details
+      failedActions.forEach(result => {
+        const intentName = result.intent.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+
+        if (result.fieldErrors && result.fieldErrors.length > 0) {
+          // Show detailed field errors
+          result.fieldErrors.forEach(fieldError => {
+            let errorMsg = `${intentName}: ${fieldError.message}`;
+
+            // Add suggestions if available
+            if (fieldError.suggestions && fieldError.suggestions.length > 0) {
+              errorMsg += ` (Try: ${fieldError.suggestions.slice(0, 3).join(', ')})`;
+            }
+
+            showError(errorMsg, { autoClose: 8000 }); // Longer duration for detailed errors
+          });
+        } else {
+          // Show generic error
+          showError(`${intentName}: ${result.error || 'Action failed'}`, { autoClose: 6000 });
+        }
+      });
+
       if (response.success) {
-        // Clear pending actions
+        // All actions succeeded - clear pending actions
         dispatch({ type: 'CLEAR_PENDING_ACTIONS' });
 
         // Check for redirect URLs
@@ -177,14 +210,20 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           // Navigate to the redirect URL
           window.location.href = redirectResult.redirectUrl;
         }
+      } else if (successfulActions.length > 0) {
+        // Partial success - show summary and clear pending actions
+        showInfo(`Completed ${successfulActions.length} of ${response.results.length} actions`);
+        dispatch({ type: 'CLEAR_PENDING_ACTIONS' });
       } else {
+        // All failed - keep pending actions (maybe user wants to retry)
         dispatch({
           type: 'SET_ERROR',
-          payload: response.message || 'Failed to execute actions',
+          payload: 'All actions failed. Please review the errors above.',
         });
       }
     } catch (error: any) {
       console.error('Failed to execute actions:', error);
+      showError(error.message || 'Failed to execute voice actions');
       dispatch({ type: 'SET_ERROR', payload: error.message });
     } finally {
       dispatch({ type: 'SET_PROCESSING', payload: false });

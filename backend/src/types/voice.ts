@@ -17,9 +17,10 @@ export interface VoiceCommandRequest {
 
 export interface VoiceActionField {
   name: string;
-  type: 'string' | 'number' | 'boolean' | 'date' | 'enum' | 'array';
+  type: 'string' | 'number' | 'boolean' | 'date' | 'enum' | 'array' | 'reference';
   required: boolean;
   enumValues?: string[];
+  referenceType?: 'client' | 'user' | 'project' | 'task' | 'manager' | 'projectMember';
   label?: string;
 }
 
@@ -116,12 +117,21 @@ export interface SpeechToTextResponse {
   language?: string;
 }
 
+// Field mapping and validation error types
+export interface FieldValidationError {
+  field: string;
+  message: string;
+  suggestions?: string[];
+  receivedValue?: any;
+}
+
 // Action execution types
 export interface ActionExecutionResult {
   intent: Intent;
   success: boolean;
   data?: any;
   error?: string;
+  fieldErrors?: FieldValidationError[];  // Detailed field-level errors
   affectedEntities?: Array<{
     type: string;
     id: string;

@@ -2,9 +2,10 @@
 
 export interface VoiceActionField {
   name: string;
-  type: 'string' | 'number' | 'boolean' | 'date' | 'enum' | 'array';
+  type: 'string' | 'number' | 'boolean' | 'date' | 'enum' | 'array' | 'reference';
   required: boolean;
   enumValues?: string[];
+  referenceType?: 'client' | 'user' | 'project' | 'task' | 'manager' | 'projectMember';
   label?: string;
 }
 
@@ -16,6 +17,13 @@ export interface VoiceAction {
   warnings?: string[];
   fields?: VoiceActionField[]; // Field definitions for rendering the form
   description?: string;
+}
+
+export interface FieldValidationError {
+  field: string;
+  message: string;
+  suggestions?: string[];
+  receivedValue?: any;
 }
 
 export interface VoiceCommandResponse {
@@ -35,9 +43,10 @@ export interface VoiceExecuteResponse {
 export interface ActionExecutionResult {
   intent: string;
   success: boolean;
-  message: string;
+  message?: string;
   data?: any;
   error?: string;
+  fieldErrors?: FieldValidationError[];  // Detailed field-level errors
   redirectUrl?: string;
   affectedEntities?: {
     projectId?: string;

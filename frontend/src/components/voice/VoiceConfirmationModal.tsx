@@ -53,18 +53,71 @@ const FieldRenderer: React.FC<FieldRendererProps> = ({ field, value, onChange, e
     return String(val);
   };
 
-  const displayValue = renderFieldValue(value);
+  // Determine if field should use dropdown
+  // Priority: 1) API-fetched options (reference fields), 2) enumValues (enum fields)
+  let dropdownOptions = options;
 
+  // If no API options provided, check for enumValues
+  if (!dropdownOptions && field.enumValues && field.enumValues.length > 0) {
+    dropdownOptions = field.enumValues.map(val => ({ value: val, label: val }));
+  }
+
+  // A field should use dropdown if it's a reference type or enum type with options
+  const shouldUseDropdown = (field.type === 'reference' || field.type === 'enum') &&
+                           dropdownOptions &&
+                           dropdownOptions.length > 0;
+
+  // Debug logging for reference/enum fields
+  if ((field.type === 'reference' || field.type === 'enum') && process.env.NODE_ENV === 'development') {
+    console.log('Dropdown field:', {
+      fieldName: field.name,
+      fieldType: field.type,
+      referenceType: field.referenceType,
+      hasOptions: !!dropdownOptions,
+      optionsCount: dropdownOptions?.length || 0,
+      enumValues: field.enumValues,
+      currentValue: value
+    });
+  }
+
+  // Display mode
   if (!editMode) {
+    let displayText = renderFieldValue(value);
+
+    // Show label instead of value if dropdown options exist
+    if (shouldUseDropdown && dropdownOptions) {
+      const option = dropdownOptions.find(opt => opt.value === value);
+      if (option) displayText = option.label;
+    }
+
     return (
       <div className="px-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded text-sm text-gray-900 dark:text-white">
-        {displayValue || <span className="text-gray-400 dark:text-gray-500 italic">Not specified</span>}
+        {displayText || <span className="text-gray-400 dark:text-gray-500 italic">Not specified</span>}
       </div>
     );
   }
 
   const baseInputClasses = "px-3 py-2 border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 w-full";
 
+  // Render dropdown if options are available (from API or enumValues)
+  if (shouldUseDropdown && dropdownOptions) {
+    return (
+      <select
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        className={baseInputClasses}
+      >
+        <option value="">-- Select {field.label || field.name} --</option>
+        {dropdownOptions.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
+
+  // Otherwise render based on field type
   switch (field.type) {
     case 'boolean':
       return (
@@ -100,25 +153,6 @@ const FieldRenderer: React.FC<FieldRendererProps> = ({ field, value, onChange, e
           onChange={(e) => onChange(e.target.value)}
           className={baseInputClasses}
         />
-      );
-
-    case 'enum':
-      // Check if we have dynamic options (from API) or static enum values
-      const selectOptions = options || (field.enumValues || []).map(val => ({ value: val, label: val }));
-
-      return (
-        <select
-          value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          className={baseInputClasses}
-        >
-          <option value="">-- Select {field.label || field.name} --</option>
-          {selectOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
       );
 
     case 'array':
@@ -168,65 +202,131 @@ const VoiceConfirmationModal: React.FC = () => {
     const options: Record<string, Array<{ value: string; label: string }>> = {};
 
     try {
-      // Check which entities we need to fetch
-      const needsClients = actions.some(action =>
-        action.fields?.some(f => f.name === 'client_id' || f.name.includes('client'))
-      );
-      const needsManagers = actions.some(action =>
-        action.fields?.some(f => f.name === 'primary_manager_id' || f.name.includes('manager'))
-      );
-      const needsUsers = actions.some(action =>
-        action.fields?.some(f => f.name === 'user_id' || f.name.includes('user'))
-      );
-      const needsProjects = actions.some(action =>
-        action.fields?.some(f => f.name === 'project_id' || f.name.includes('project'))
-      );
+      // Collect all reference types needed
+      const referenceTypes = new Set<string>();
+      let projectIdForTasks: string | null = null;
+      let projectIdForMembers: string | null = null;
+
+      actions.forEach(action => {
+        action.fields?.forEach(field => {
+          if (field.referenceType) {
+            referenceTypes.add(field.referenceType);
+
+            // Track project ID for task/member fetching
+            if (field.referenceType === 'task' || field.referenceType === 'projectMember') {
+              // Look for project_id in action data
+              const projectId = action.data.project_id || action.data.projectName || action.data.project;
+              if (projectId) {
+                if (field.referenceType === 'task') projectIdForTasks = projectId;
+                if (field.referenceType === 'projectMember') projectIdForMembers = projectId;
+              }
+            }
+          }
+        });
+      });
 
       // Fetch clients
-      if (needsClients) {
+      if (referenceTypes.has('client')) {
         try {
-          const clientsData = await backendApi.get<{ clients: any[] }>('/api/clients');
-          options['client_id'] = clientsData.clients.map((c: any) => ({
-            value: c.id || c._id,
-            label: c.name || c.client_name
-          }));
+          const clientsResponse = await backendApi.get<{ success: boolean; data: any[] }>('/clients');
+          if (clientsResponse.success && clientsResponse.data) {
+            const clientOptions = clientsResponse.data.map((c: any) => ({
+              value: c.id || c._id,
+              label: c.name || c.client_name
+            }));
+            options['client'] = clientOptions;
+            options['client_id'] = clientOptions;
+            options['clientName'] = clientOptions;
+          }
         } catch (error) {
           console.error('Failed to fetch clients:', error);
         }
       }
 
-      // Fetch managers/users
-      if (needsManagers || needsUsers) {
+      // Fetch users
+      if (referenceTypes.has('user') || referenceTypes.has('manager')) {
         try {
-          const usersData = await backendApi.get<{ users: any[] }>('/api/users');
-          const managers = usersData.users.filter((u: any) =>
-            ['manager', 'management', 'lead', 'super_admin'].includes(u.role?.toLowerCase())
-          );
+          const usersResponse = await backendApi.get<{ success: boolean; users: any[] }>('/users');
+          if (usersResponse.success && usersResponse.users) {
+            const allUsers = usersResponse.users.map((u: any) => ({
+              value: u.id || u._id,
+              label: u.full_name || u.name
+            }));
 
-          options['primary_manager_id'] = managers.map((u: any) => ({
-            value: u.id || u._id,
-            label: u.full_name || u.name
-          }));
+            const managers = usersResponse.users
+              .filter((u: any) => ['manager', 'management', 'lead', 'super_admin'].includes(u.role?.toLowerCase()))
+              .map((u: any) => ({
+                value: u.id || u._id,
+                label: u.full_name || u.name
+              }));
 
-          options['user_id'] = usersData.users.map((u: any) => ({
-            value: u.id || u._id,
-            label: u.full_name || u.name
-          }));
+            if (referenceTypes.has('user')) {
+              options['user'] = allUsers;
+              options['user_id'] = allUsers;
+              options['userName'] = allUsers;
+            }
+
+            if (referenceTypes.has('manager')) {
+              options['manager'] = managers;
+              options['primary_manager_id'] = managers;
+              options['managerName'] = managers;
+            }
+          }
         } catch (error) {
           console.error('Failed to fetch users:', error);
         }
       }
 
       // Fetch projects
-      if (needsProjects) {
+      if (referenceTypes.has('project')) {
         try {
-          const projectsData = await backendApi.get<{ projects: any[] }>('/api/projects');
-          options['project_id'] = projectsData.projects.map((p: any) => ({
-            value: p.id || p._id,
-            label: p.name || p.project_name
-          }));
+          const projectsResponse = await backendApi.get<{ success: boolean; projects: any[] }>('/projects');
+          if (projectsResponse.success && projectsResponse.projects) {
+            const projectOptions = projectsResponse.projects.map((p: any) => ({
+              value: p.id || p._id,
+              label: p.name || p.project_name
+            }));
+            options['project'] = projectOptions;
+            options['project_id'] = projectOptions;
+            options['projectName'] = projectOptions;
+          }
         } catch (error) {
           console.error('Failed to fetch projects:', error);
+        }
+      }
+
+      // Fetch tasks for specific project
+      if (referenceTypes.has('task') && projectIdForTasks) {
+        try {
+          const tasksResponse = await backendApi.get<{ success: boolean; tasks: any[] }>(`/projects/${projectIdForTasks}/tasks`);
+          if (tasksResponse.success && tasksResponse.tasks) {
+            const taskOptions = tasksResponse.tasks.map((t: any) => ({
+              value: t.id || t._id,
+              label: t.name || t.task_name
+            }));
+            options['task'] = taskOptions;
+            options['task_id'] = taskOptions;
+            options['taskName'] = taskOptions;
+          }
+        } catch (error) {
+          console.error('Failed to fetch tasks:', error);
+        }
+      }
+
+      // Fetch project members for specific project
+      if (referenceTypes.has('projectMember') && projectIdForMembers) {
+        try {
+          const membersResponse = await backendApi.get<{ success: boolean; members: any[] }>(`/projects/${projectIdForMembers}/members`);
+          if (membersResponse.success && membersResponse.members) {
+            const memberOptions = membersResponse.members.map((m: any) => ({
+              value: m.user_id || m.id || m._id,
+              label: m.full_name || m.name
+            }));
+            options['projectMember'] = memberOptions;
+            options['assignedMemberName'] = memberOptions;
+          }
+        } catch (error) {
+          console.error('Failed to fetch project members:', error);
         }
       }
 
@@ -236,6 +336,59 @@ const VoiceConfirmationModal: React.FC = () => {
     } finally {
       setLoadingOptions(false);
     }
+  };
+
+  // Helper function to get dropdown options for a field
+  const getOptionsForField = (field: VoiceActionField): Array<{ value: string; label: string }> | undefined => {
+    // First try exact field name match
+    if (dropdownOptions[field.name]) {
+      return dropdownOptions[field.name];
+    }
+
+    // For reference fields, use referenceType to find options
+    if (field.referenceType) {
+      // Direct referenceType match
+      if (dropdownOptions[field.referenceType]) {
+        return dropdownOptions[field.referenceType];
+      }
+
+      // Try common variations based on referenceType
+      const variations: Record<string, string[]> = {
+        project: ['project', 'project_id', 'projectName'],
+        client: ['client', 'client_id', 'clientName'],
+        user: ['user', 'user_id', 'userName'],
+        manager: ['manager', 'primary_manager_id', 'managerName'],
+        task: ['task', 'task_id', 'taskName'],
+        projectMember: ['projectMember', 'assignedMemberName']
+      };
+
+      const possibleKeys = variations[field.referenceType] || [];
+      for (const key of possibleKeys) {
+        if (dropdownOptions[key]) {
+          return dropdownOptions[key];
+        }
+      }
+    }
+
+    // Fallback: try to infer from field name
+    const lowerName = field.name.toLowerCase();
+    if (lowerName.includes('project')) {
+      return dropdownOptions['project'] || dropdownOptions['project_id'];
+    }
+    if (lowerName.includes('client')) {
+      return dropdownOptions['client'] || dropdownOptions['client_id'];
+    }
+    if (lowerName.includes('manager')) {
+      return dropdownOptions['manager'] || dropdownOptions['primary_manager_id'];
+    }
+    if (lowerName.includes('user') && !lowerName.includes('manager')) {
+      return dropdownOptions['user'] || dropdownOptions['user_id'];
+    }
+    if (lowerName.includes('task')) {
+      return dropdownOptions['task'] || dropdownOptions['task_id'];
+    }
+
+    return undefined;
   };
 
   const handleConfirm = async () => {
@@ -389,34 +542,67 @@ const VoiceConfirmationModal: React.FC = () => {
                           value={action.data[field.name]}
                           onChange={(value) => handleFieldChange(idx, field.name, value)}
                           editMode={editMode}
-                          options={dropdownOptions[field.name]}
+                          options={getOptionsForField(field)}
                         />
                       </div>
                     ))
                   ) : (
-                    // Fallback: Render all data fields as text inputs
-                    Object.entries(action.data).map(([field, value]) => (
-                      <div key={field} className="flex flex-col gap-1">
-                        <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                          {field
-                            .split(/(?=[A-Z])/)
-                            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-                            .join(' ')}
-                        </label>
-                        {editMode ? (
-                          <input
-                            type="text"
-                            value={String(value || '')}
-                            onChange={(e) => handleFieldChange(idx, field, e.target.value)}
-                            className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                          />
-                        ) : (
-                          <div className="px-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded text-sm text-gray-900 dark:text-white">
-                            {String(value || '')}
-                          </div>
-                        )}
-                      </div>
-                    ))
+                    // Fallback: Render all data fields as text inputs or dropdowns
+                    Object.entries(action.data).map(([field, value]) => {
+                      const isProjectField = field === 'project_id' || 
+                                            field === 'projectName' || 
+                                            field === 'project_name' || 
+                                            field === 'project' ||
+                                            field.toLowerCase().includes('project');
+                      
+                      const fieldOptions = dropdownOptions[field] || 
+                                          (isProjectField ? dropdownOptions['project_id'] : undefined);
+                      
+                      return (
+                        <div key={field} className="flex flex-col gap-1">
+                          <label className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                            {field
+                              .split(/(?=[A-Z])/)
+                              .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+                              .join(' ')}
+                          </label>
+                          {editMode ? (
+                            fieldOptions && fieldOptions.length > 0 ? (
+                              <select
+                                value={String(value || '')}
+                                onChange={(e) => handleFieldChange(idx, field, e.target.value)}
+                                className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              >
+                                <option value="">-- Select {field} --</option>
+                                {fieldOptions.map((opt) => (
+                                  <option key={opt.value} value={opt.value}>
+                                    {opt.label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                type="text"
+                                value={String(value || '')}
+                                onChange={(e) => handleFieldChange(idx, field, e.target.value)}
+                                className="px-3 py-2 border border-gray-300 dark:border-slate-600 rounded bg-white dark:bg-slate-800 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              />
+                            )
+                          ) : (
+                            <div className="px-3 py-2 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded text-sm text-gray-900 dark:text-white">
+                              {(() => {
+                                // Show label instead of value for dropdown fields
+                                if (fieldOptions && fieldOptions.length > 0) {
+                                  const option = fieldOptions.find(opt => opt.value === value);
+                                  return option ? option.label : String(value || '');
+                                }
+                                return String(value || '');
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               </div>
