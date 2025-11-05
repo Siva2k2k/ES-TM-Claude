@@ -15,11 +15,22 @@ export interface VoiceCommandRequest {
   };
 }
 
+export interface VoiceActionField {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'date' | 'enum' | 'array';
+  required: boolean;
+  enumValues?: string[];
+  label?: string;
+}
+
 export interface VoiceAction {
   intent: string;
   data: Record<string, any>;
   errors: string[];
   description: string;
+  fields?: VoiceActionField[]; // Field definitions for the form
+  confidence?: number;
+  warnings?: string[];
 }
 
 export interface VoiceCommandResponse {

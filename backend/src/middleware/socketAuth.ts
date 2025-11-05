@@ -56,28 +56,29 @@ export const socketAuthMiddleware = async (
       return next(new Error('Invalid or expired token.'));
     }
 
-    if (!decoded || !decoded.userId) {
+    if (!decoded || !decoded.id) {
       logger.warn('Socket connection with malformed token', {
         socketId: socket.id,
+        decoded: decoded ? 'exists but missing id' : 'null',
       });
       return next(new Error('Invalid token payload.'));
     }
 
     // Fetch user from database
-    const user = await (User as any).findById(decoded.userId)
-      .select('+role +isActive +isApproved')
+    const user = await (User as any).findById(decoded.id)
+      .select('+role +is_active +is_approved_by_super_admin')
       .lean();
 
     if (!user) {
       logger.warn('Socket connection for non-existent user', {
         socketId: socket.id,
-        userId: decoded.userId,
+        userId: decoded.id,
       });
       return next(new Error('User not found.'));
     }
 
     // Check if user is active
-    if (!user.isActive) {
+    if (!user.is_active) {
       logger.warn('Socket connection for inactive user', {
         socketId: socket.id,
         userId: user._id,
@@ -86,7 +87,7 @@ export const socketAuthMiddleware = async (
     }
 
     // Check if user is approved
-    if (!user.isApproved) {
+    if (!user.is_approved_by_super_admin) {
       logger.warn('Socket connection for unapproved user', {
         socketId: socket.id,
         userId: user._id,

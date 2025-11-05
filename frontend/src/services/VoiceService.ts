@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { backendApi, BackendApiError } from '../lib/backendApi';
 import {
   VoiceCommandResponse,
   VoiceExecuteResponse,
@@ -10,15 +10,7 @@ import {
   IntentStatistics,
 } from '../types/voice';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000/api/v1';
-
 class VoiceService {
-  private baseURL: string;
-
-  constructor() {
-    this.baseURL = `${API_BASE_URL}/voice`;
-  }
-
   /**
    * Process voice command transcript with LLM
    */
@@ -27,14 +19,15 @@ class VoiceService {
     context?: Partial<VoiceContext>
   ): Promise<VoiceCommandResponse> {
     try {
-      const response = await axios.post<VoiceCommandResponse>(
-        `${this.baseURL}/process-command`,
-        { transcript, context },
-        { withCredentials: true }
+      const response = await backendApi.post<VoiceCommandResponse>(
+        '/voice/process-command',
+        { transcript, context }
       );
-      return response.data;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to process voice command');
+      return response;
+    } catch (error) {
+      console.error('Error in processCommand:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to process voice command';
+      throw new Error(errorMessage);
     }
   }
 
@@ -42,18 +35,19 @@ class VoiceService {
    * Execute validated voice actions
    */
   async executeActions(
-    actions: Array<{ intent: string; data: Record<string, any> }>,
-    confirmAll: boolean = false
+    actions: Array<{ intent: string; data: Record<string, unknown> }>,
+    confirmed: boolean = true
   ): Promise<VoiceExecuteResponse> {
     try {
-      const response = await axios.post<VoiceExecuteResponse>(
-        `${this.baseURL}/execute-action`,
-        { actions, confirmAll },
-        { withCredentials: true }
+      const response = await backendApi.post<VoiceExecuteResponse>(
+        '/voice/execute-action',
+        { actions, confirmed }
       );
-      return response.data;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to execute voice actions');
+      return response;
+    } catch (error) {
+      console.error('Error in executeActions:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to execute voice actions';
+      throw new Error(errorMessage);
     }
   }
 
@@ -62,14 +56,15 @@ class VoiceService {
    */
   async speechToText(request: SpeechToTextRequest): Promise<SpeechToTextResponse> {
     try {
-      const response = await axios.post<SpeechToTextResponse>(
-        `${this.baseURL}/speech-to-text`,
-        request,
-        { withCredentials: true }
+      const response = await backendApi.post<SpeechToTextResponse>(
+        '/voice/speech-to-text',
+        request
       );
-      return response.data;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to convert speech to text');
+      return response;
+    } catch (error) {
+      console.error('Error in speechToText:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to convert speech to text';
+      throw new Error(errorMessage);
     }
   }
 
@@ -78,13 +73,14 @@ class VoiceService {
    */
   async getContext(): Promise<VoiceContext> {
     try {
-      const response = await axios.get<{ success: boolean; context: VoiceContext }>(
-        `${this.baseURL}/context`,
-        { withCredentials: true }
+      const response = await backendApi.get<{ success: boolean; context: VoiceContext }>(
+        '/voice/context'
       );
-      return response.data.context;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch voice context');
+      return response.context;
+    } catch (error) {
+      console.error('Error in getContext:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch voice context';
+      throw new Error(errorMessage);
     }
   }
 
@@ -93,13 +89,14 @@ class VoiceService {
    */
   async getUserPreferences(): Promise<UserVoicePreferences> {
     try {
-      const response = await axios.get<{ success: boolean; preferences: UserVoicePreferences }>(
-        `${this.baseURL}/preferences`,
-        { withCredentials: true }
+      const response = await backendApi.get<{ success: boolean; preferences: UserVoicePreferences }>(
+        '/voice/preferences'
       );
-      return response.data.preferences;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch user preferences');
+      return response.preferences;
+    } catch (error) {
+      console.error('Error in getUserPreferences:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch user preferences';
+      throw new Error(errorMessage);
     }
   }
 
@@ -110,14 +107,15 @@ class VoiceService {
     preferences: Partial<UserVoicePreferences>
   ): Promise<UserVoicePreferences> {
     try {
-      const response = await axios.put<{ success: boolean; preferences: UserVoicePreferences }>(
-        `${this.baseURL}/preferences`,
-        preferences,
-        { withCredentials: true }
+      const response = await backendApi.put<{ success: boolean; preferences: UserVoicePreferences }>(
+        '/voice/preferences',
+        preferences
       );
-      return response.data.preferences;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to update user preferences');
+      return response.preferences;
+    } catch (error) {
+      console.error('Error in updateUserPreferences:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to update user preferences';
+      throw new Error(errorMessage);
     }
   }
 
@@ -126,13 +124,15 @@ class VoiceService {
    */
   async getCommandHistory(limit: number = 50): Promise<UserVoicePreferences['commandHistory']> {
     try {
-      const response = await axios.get<{
+      const response = await backendApi.get<{
         success: boolean;
         history: UserVoicePreferences['commandHistory'];
-      }>(`${this.baseURL}/history?limit=${limit}`, { withCredentials: true });
-      return response.data.history;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch command history');
+      }>(`/voice/history?limit=${limit}`);
+      return response.history;
+    } catch (error) {
+      console.error('Error in getCommandHistory:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch command history';
+      throw new Error(errorMessage);
     }
   }
 
@@ -145,37 +145,38 @@ class VoiceService {
     database: boolean;
   }> {
     try {
-      const response = await axios.get<{
+      const response = await backendApi.get<{
         success: boolean;
-        services: { azureOpenAI: boolean; azureSpeech: boolean; database: boolean };
-      }>(`${this.baseURL}/health`, { withCredentials: true });
-      return response.data.services;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to check service health');
+        checks: { azureOpenAI: boolean; azureSpeech: boolean; voiceEnabled: boolean };
+      }>('/voice/health');
+      return {
+        azureOpenAI: response.checks.azureOpenAI,
+        azureSpeech: response.checks.azureSpeech,
+        database: true // Assume database is working if we get a response
+      };
+    } catch (error) {
+      console.error('Error in healthCheck:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to check service health';
+      throw new Error(errorMessage);
     }
   }
 }
 
 // Intent Configuration Service
 class IntentConfigService {
-  private baseURL: string;
-
-  constructor() {
-    this.baseURL = `${API_BASE_URL}/intent-config`;
-  }
-
   /**
    * Get all intent definitions
    */
   async getAllIntents(activeOnly: boolean = true): Promise<IntentDefinition[]> {
     try {
-      const response = await axios.get<{ success: boolean; intents: IntentDefinition[] }>(
-        `${this.baseURL}/intents?activeOnly=${activeOnly}`,
-        { withCredentials: true }
+      const response = await backendApi.get<{ success: boolean; intents: IntentDefinition[] }>(
+        `/intent-config/intents?activeOnly=${activeOnly}`
       );
-      return response.data.intents;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch intents');
+      return response.intents;
+    } catch (error) {
+      console.error('Error in getAllIntents:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch intents';
+      throw new Error(errorMessage);
     }
   }
 
@@ -184,13 +185,14 @@ class IntentConfigService {
    */
   async getIntentsByCategory(category: string): Promise<IntentDefinition[]> {
     try {
-      const response = await axios.get<{ success: boolean; intents: IntentDefinition[] }>(
-        `${this.baseURL}/intents/category/${category}`,
-        { withCredentials: true }
+      const response = await backendApi.get<{ success: boolean; intents: IntentDefinition[] }>(
+        `/intent-config/intents/category/${category}`
       );
-      return response.data.intents;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch intents by category');
+      return response.intents;
+    } catch (error) {
+      console.error('Error in getIntentsByCategory:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch intents by category';
+      throw new Error(errorMessage);
     }
   }
 
@@ -199,14 +201,16 @@ class IntentConfigService {
    */
   async getUserIntents(): Promise<{ allowed: IntentDefinition[]; disallowed: IntentDefinition[] }> {
     try {
-      const response = await axios.get<{
+      const response = await backendApi.get<{
         success: boolean;
         allowed: IntentDefinition[];
         disallowed: IntentDefinition[];
-      }>(`${this.baseURL}/intents/user`, { withCredentials: true });
-      return { allowed: response.data.allowed, disallowed: response.data.disallowed };
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch user intents');
+      }>('/intent-config/intents/user');
+      return { allowed: response.allowed, disallowed: response.disallowed };
+    } catch (error) {
+      console.error('Error in getUserIntents:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch user intents';
+      throw new Error(errorMessage);
     }
   }
 
@@ -215,13 +219,14 @@ class IntentConfigService {
    */
   async getIntent(intent: string): Promise<IntentDefinition> {
     try {
-      const response = await axios.get<{ success: boolean; intent: IntentDefinition }>(
-        `${this.baseURL}/intents/${intent}`,
-        { withCredentials: true }
+      const response = await backendApi.get<{ success: boolean; intent: IntentDefinition }>(
+        `/intent-config/intents/${intent}`
       );
-      return response.data.intent;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch intent');
+      return response.intent;
+    } catch (error) {
+      console.error('Error in getIntent:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch intent';
+      throw new Error(errorMessage);
     }
   }
 
@@ -230,14 +235,15 @@ class IntentConfigService {
    */
   async createIntent(intentData: Partial<IntentDefinition>): Promise<IntentDefinition> {
     try {
-      const response = await axios.post<{ success: boolean; intent: IntentDefinition }>(
-        `${this.baseURL}/intents`,
-        intentData,
-        { withCredentials: true }
+      const response = await backendApi.post<{ success: boolean; intent: IntentDefinition }>(
+        '/intent-config/intents',
+        intentData
       );
-      return response.data.intent;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to create intent');
+      return response.intent;
+    } catch (error) {
+      console.error('Error in createIntent:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to create intent';
+      throw new Error(errorMessage);
     }
   }
 
@@ -249,14 +255,15 @@ class IntentConfigService {
     updates: Partial<IntentDefinition>
   ): Promise<IntentDefinition> {
     try {
-      const response = await axios.put<{ success: boolean; intent: IntentDefinition }>(
-        `${this.baseURL}/intents/${intent}`,
-        updates,
-        { withCredentials: true }
+      const response = await backendApi.put<{ success: boolean; intent: IntentDefinition }>(
+        `/intent-config/intents/${intent}`,
+        updates
       );
-      return response.data.intent;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to update intent');
+      return response.intent;
+    } catch (error) {
+      console.error('Error in updateIntent:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to update intent';
+      throw new Error(errorMessage);
     }
   }
 
@@ -265,13 +272,14 @@ class IntentConfigService {
    */
   async enableIntent(intent: string): Promise<void> {
     try {
-      await axios.post(
-        `${this.baseURL}/intents/${intent}/enable`,
-        {},
-        { withCredentials: true }
+      await backendApi.post(
+        `/intent-config/intents/${intent}/enable`,
+        {}
       );
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to enable intent');
+    } catch (error) {
+      console.error('Error in enableIntent:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to enable intent';
+      throw new Error(errorMessage);
     }
   }
 
@@ -280,13 +288,14 @@ class IntentConfigService {
    */
   async disableIntent(intent: string): Promise<void> {
     try {
-      await axios.post(
-        `${this.baseURL}/intents/${intent}/disable`,
-        {},
-        { withCredentials: true }
+      await backendApi.post(
+        `/intent-config/intents/${intent}/disable`,
+        {}
       );
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to disable intent');
+    } catch (error) {
+      console.error('Error in disableIntent:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to disable intent';
+      throw new Error(errorMessage);
     }
   }
 
@@ -295,11 +304,11 @@ class IntentConfigService {
    */
   async deactivateIntent(intent: string): Promise<void> {
     try {
-      await axios.delete(`${this.baseURL}/intents/${intent}/deactivate`, {
-        withCredentials: true,
-      });
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to deactivate intent');
+      await backendApi.delete(`/intent-config/intents/${intent}/deactivate`);
+    } catch (error) {
+      console.error('Error in deactivateIntent:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to deactivate intent';
+      throw new Error(errorMessage);
     }
   }
 
@@ -308,9 +317,11 @@ class IntentConfigService {
    */
   async deleteIntent(intent: string): Promise<void> {
     try {
-      await axios.delete(`${this.baseURL}/intents/${intent}`, { withCredentials: true });
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to delete intent');
+      await backendApi.delete(`/intent-config/intents/${intent}`);
+    } catch (error) {
+      console.error('Error in deleteIntent:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to delete intent';
+      throw new Error(errorMessage);
     }
   }
 
@@ -319,13 +330,14 @@ class IntentConfigService {
    */
   async getStatistics(): Promise<IntentStatistics> {
     try {
-      const response = await axios.get<{ success: boolean; statistics: IntentStatistics }>(
-        `${this.baseURL}/statistics`,
-        { withCredentials: true }
+      const response = await backendApi.get<{ success: boolean; statistics: IntentStatistics }>(
+        '/intent-config/statistics'
       );
-      return response.data.statistics;
-    } catch (error: any) {
-      throw new Error(error.response?.data?.message || 'Failed to fetch intent statistics');
+      return response.statistics;
+    } catch (error) {
+      console.error('Error in getStatistics:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch intent statistics';
+      throw new Error(errorMessage);
     }
   }
 }

@@ -1,13 +1,10 @@
-// Temporarily disable Azure OpenAI to fix build issues
-// TODO: Fix the correct imports for @azure/openai package
-/*
-import { OpenAIClient, AzureKeyCredential } from '@azure/openai';
-*/
+import { AzureOpenAI } from 'openai';
+import '@azure/openai/types'; // Azure-specific type definitions
 import { AzureOpenAIConfig, LLMPrompt, LLMResponse } from '../types/voice';
 import logger from '../config/logger';
 
 class AzureOpenAIService {
-  private client: any | null = null;
+  private client: AzureOpenAI | null = null;
   private readonly deploymentName: string;
   private readonly config: AzureOpenAIConfig;
 
@@ -24,17 +21,20 @@ class AzureOpenAIService {
     // Initialize client if credentials are available
     if (this.config.endpoint && this.config.apiKey) {
       try {
-        // TODO: Fix Azure OpenAI client initialization
-        /*
-        this.client = new OpenAIClient(
-          this.config.endpoint,
-          new AzureKeyCredential(this.config.apiKey)
-        );
-        */
+        // Remove trailing slash from endpoint if present
+        const endpoint = this.config.endpoint.replace(/\/$/, '');
 
-        logger.info('Azure OpenAI Service temporarily disabled - TODO: Fix imports', {
-          endpoint: this.config.endpoint,
-          deployment: this.deploymentName
+        this.client = new AzureOpenAI({
+          apiKey: this.config.apiKey,
+          endpoint: endpoint,
+          apiVersion: this.config.apiVersion
+          // Note: deployment is NOT passed here, it's used as 'model' in API calls
+        });
+
+        logger.info('Azure OpenAI Service initialized successfully', {
+          endpoint: endpoint,
+          deployment: this.deploymentName,
+          apiVersion: this.config.apiVersion
         });
       } catch (error: any) {
         logger.error('Failed to initialize Azure OpenAI Service', {
@@ -78,25 +78,23 @@ class AzureOpenAIService {
         });
       }
 
-      const result = await this.client.getChatCompletions(
-        this.deploymentName,
-        messages,
-        {
-          temperature: prompt.temperature || 0.1,
-          maxTokens: prompt.maxTokens || 2000,
-          responseFormat: { type: 'json_object' } as any // Force JSON response
-        }
-      );
+      const result = await this.client.chat.completions.create({
+        model: this.deploymentName,
+        messages: messages,
+        temperature: prompt.temperature || 0.1,
+        max_tokens: prompt.maxTokens || 2000,
+        response_format: { type: 'json_object' } // Force JSON response
+      });
 
       const duration = Date.now() - startTime;
 
       const response: LLMResponse = {
         content: result.choices[0]?.message?.content || '',
-        finishReason: result.choices[0]?.finishReason || '',
+        finishReason: result.choices[0]?.finish_reason || '',
         usage: {
-          promptTokens: result.usage?.promptTokens || 0,
-          completionTokens: result.usage?.completionTokens || 0,
-          totalTokens: result.usage?.totalTokens || 0
+          promptTokens: result.usage?.prompt_tokens || 0,
+          completionTokens: result.usage?.completion_tokens || 0,
+          totalTokens: result.usage?.total_tokens || 0
         }
       };
 
@@ -114,9 +112,34 @@ class AzureOpenAIService {
 
       return response;
     } catch (error: any) {
+      // Enhanced error handling for common Azure OpenAI issues
+      if (error.status === 404) {
+        const errorMsg = `Azure OpenAI deployment '${this.deploymentName}' not found. Please check:
+1. Deployment name is correct in your Azure OpenAI resource
+2. Deployment is active and available
+3. Endpoint URL is correct: ${this.config.endpoint}`;
+        
+        logger.error('Azure OpenAI 404 Error - Deployment not found', {
+          deploymentName: this.deploymentName,
+          endpoint: this.config.endpoint,
+          apiVersion: this.config.apiVersion,
+          error: error.message
+        });
+        throw new Error(errorMsg);
+      }
+      
+      if (error.status === 401 || error.status === 403) {
+        logger.error('Azure OpenAI Authentication Error', {
+          status: error.status,
+          error: error.message
+        });
+        throw new Error('Azure OpenAI authentication failed. Please check your API key.');
+      }
+
       logger.error('Azure OpenAI Error', {
         error: error.message,
-        stack: error.stack
+        stack: error.stack,
+        status: error.status
       });
       throw new Error(`Azure OpenAI failed: ${error.message}`);
     }

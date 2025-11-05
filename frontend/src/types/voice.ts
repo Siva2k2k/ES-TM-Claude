@@ -1,11 +1,21 @@
 // Voice command and action types for frontend
 
+export interface VoiceActionField {
+  name: string;
+  type: 'string' | 'number' | 'boolean' | 'date' | 'enum' | 'array';
+  required: boolean;
+  enumValues?: string[];
+  label?: string;
+}
+
 export interface VoiceAction {
   intent: string;
   data: Record<string, any>;
   confidence: number;
   errors?: string[];
   warnings?: string[];
+  fields?: VoiceActionField[]; // Field definitions for rendering the form
+  description?: string;
 }
 
 export interface VoiceCommandResponse {

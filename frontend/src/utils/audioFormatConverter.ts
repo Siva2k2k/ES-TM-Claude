@@ -84,7 +84,8 @@ export class AudioFormatConverter {
         success: true,
       };
     } catch (error: any) {
-      console.error('Audio conversion error:', error);
+      // Use warn instead of error since partial failures are expected during streaming
+      console.warn('Audio conversion warning:', error.message || error);
       return {
         wavBuffer: new ArrayBuffer(0),
         duration: 0,
@@ -205,7 +206,7 @@ export class AudioFormatConverter {
   /**
    * Create WAV file with RIFF header
    */
-  private static createWavFile(
+  public static createWavFile(
     pcmData: Int16Array,
     sampleRate: number,
     numChannels: number,

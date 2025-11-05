@@ -5,6 +5,7 @@ import { voiceService } from '../../services/VoiceService';
 import { DeviceDetector } from '../../utils/deviceDetection';
 import { useAzureSpeech } from '../../hooks/useAzureSpeech';
 import { parseVoiceError } from '../../types/voiceErrors';
+import { AudioFormatConverter } from '../../utils/audioFormatConverter';
 import VoiceConfirmationModal from './VoiceConfirmationModal';
 
 const IconMicrophone = ({ size = 20 }: { size?: number }) => (
@@ -34,6 +35,7 @@ const VoiceLayer: React.FC = () => {
   const [shouldUseAzureSpeech, setShouldUseAzureSpeech] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [useContinuousMode, setUseContinuousMode] = useState(true); // Use continuous Azure Speech by default
+  const [accumulatedTranscript, setAccumulatedTranscript] = useState(''); // Accumulate transcript during recording
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -56,19 +58,24 @@ const VoiceLayer: React.FC = () => {
   // Azure Speech Hook (Continuous Recognition via WebSocket)
   const [azureState, azureActions] = useAzureSpeech({
     language: state.preferences?.voiceSettings?.language || 'en-US',
-    autoStop: true, // Default to auto-stop after silence
-    silenceDuration: 2000,
+    autoStop: false, // Manual control - user starts/stops recording
+    silenceDuration: 2000, // Still detect silence for UI feedback
     enableQualityMonitoring: true,
     enableVoiceActivity: true,
     onInterim: (transcript) => {
       console.debug('Azure interim:', transcript);
+      // Interim transcripts are shown via azureState.interimTranscript
     },
     onFinal: useCallback((transcript: string, confidence: number) => {
       console.log('Azure final:', transcript, 'confidence:', confidence);
+      // Accumulate final transcripts instead of processing immediately
       if (transcript.trim()) {
-        processTranscript(transcript).catch(console.error);
+        setAccumulatedTranscript((prev) => {
+          const newText = prev ? `${prev} ${transcript}` : transcript;
+          return newText;
+        });
       }
-    }, [processTranscript]),
+    }, []),
     onError: useCallback((error: unknown) => {
       console.error('Azure Speech error:', error);
       const voiceError = parseVoiceError(error);
@@ -110,23 +117,35 @@ const VoiceLayer: React.FC = () => {
 
   // Start Web Speech API
   const startWebSpeech = () => {
+    // Clear accumulated transcript when starting
+    setAccumulatedTranscript('');
     const language = state.preferences?.voiceSettings?.language || 'en-US';
     SpeechRecognition.startListening({ continuous: true, language });
     startListening();
   };
 
   // Stop Web Speech API
-  const stopWebSpeech = () => {
+  const stopWebSpeech = async () => {
     SpeechRecognition.stopListening();
     stopListening();
+
+    // Process accumulated transcript (Web Speech accumulates in 'transcript' directly)
+    // Note: Web Speech already accumulates, so we just need to process on stop
+    if (transcript.trim()) {
+      console.log('Processing Web Speech transcript:', transcript);
+      await processTranscript(transcript);
+      resetTranscript(); // Clear after processing
+    }
   };
 
   // Start Azure Speech (Continuous Mode via WebSocket)
   const startAzureSpeechContinuous = async () => {
     try {
+      // Clear accumulated transcript when starting
+      setAccumulatedTranscript('');
       await azureActions.startRecording();
       startListening();
-      setIsRecording(true);
+      // Note: setIsRecording not needed here as azureState.isRecording handles it
     } catch (error: any) {
       const voiceError = parseVoiceError(error);
       setError(voiceError.getUserMessage());
@@ -140,8 +159,27 @@ const VoiceLayer: React.FC = () => {
   // Start Azure Speech (Batch Mode - legacy)
   const startAzureSpeechBatch = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
+      // Clear accumulated transcript when starting
+      setAccumulatedTranscript('');
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          sampleRate: 48000, // Higher quality input for better conversion
+        }
+      });
+      
+      // Choose the best available audio format
+      let mimeType = 'audio/webm';
+      if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+        mimeType = 'audio/webm;codecs=opus';
+      } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+        mimeType = 'audio/mp4';
+      }
+      
+      console.log('Using MediaRecorder with:', { mimeType });
+      
+      const mediaRecorder = new MediaRecorder(stream, { mimeType });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -152,16 +190,63 @@ const VoiceLayer: React.FC = () => {
       };
 
       mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.readAsDataURL(audioBlob);
-        reader.onloadend = async () => {
-          const base64Audio = reader.result?.toString().split(',')[1];
+        const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
+        
+        console.log('Audio blob created:', {
+          size: audioBlob.size,
+          type: audioBlob.type,
+          chunks: audioChunksRef.current.length
+        });
+        
+        try {
+          // Validate minimum audio size
+          if (audioBlob.size < 1000) {
+            setError('Audio recording too short. Please try speaking longer.');
+            return;
+          }
+
+          // Convert WebM to WAV format using AudioFormatConverter
+          console.log('Starting audio conversion...');
+          const conversionResult = await AudioFormatConverter.convertToAzureFormat(audioBlob);
+          
+          console.log('Conversion result:', {
+            success: conversionResult.success,
+            error: conversionResult.error,
+            wavBufferSize: conversionResult.wavBuffer?.byteLength,
+            duration: conversionResult.duration
+          });
+          
+          if (!conversionResult.success) {
+            setError(`Audio conversion failed: ${conversionResult.error}`);
+            return;
+          }
+
+          // Convert WAV buffer to base64
+          const base64Audio = AudioFormatConverter.arrayBufferToBase64(conversionResult.wavBuffer);
+          
+          // Validate that the base64 audio starts with WAV signature
+          const wavHeader = atob(base64Audio.substring(0, 8));
+          console.log('WAV header check:', {
+            headerBytes: Array.from(wavHeader).map(c => c.charCodeAt(0)),
+            headerString: wavHeader,
+            startsWithRIFF: wavHeader.startsWith('RIFF')
+          });
+          
+          if (!wavHeader.startsWith('RIFF')) {
+            setError('Audio conversion produced invalid WAV format. Please try again.');
+            return;
+          }
+          
+          console.log('Base64 audio created:', {
+            base64Length: base64Audio.length,
+            firstChars: base64Audio.substring(0, 20)
+          });
+          
           if (base64Audio) {
             try {
               const response = await voiceService.speechToText({
                 audioData: base64Audio,
-                format: 'webm',
+                format: 'wav', // Now sending WAV format
                 language: state.preferences?.voiceSettings?.language || 'en-US',
               });
               if (response.success && response.transcript) {
@@ -170,12 +255,19 @@ const VoiceLayer: React.FC = () => {
                 setError('Failed to convert speech to text');
               }
             } catch (error: any) {
+              console.error('Speech-to-text API error:', error);
               setError(error.message);
             }
           }
-        };
+        } catch (error: any) {
+          console.error('Audio processing error:', error);
+          setError(`Audio processing failed: ${error.message}`);
+        }
+        
         // Stop all tracks
-        stream.getTracks().forEach((track) => track.stop());
+        for (const track of stream.getTracks()) {
+          track.stop();
+        }
       };
 
       mediaRecorder.start();
@@ -188,9 +280,14 @@ const VoiceLayer: React.FC = () => {
 
   // Start Azure Speech (dispatches to continuous or batch mode)
   const startAzureSpeech = async () => {
+    // Clear any previous transcripts
+    azureActions.reset();
+    
     if (useContinuousMode && azureState.isConnected) {
+      console.log('Starting Azure Speech in continuous mode');
       await startAzureSpeechContinuous();
     } else {
+      console.log('Starting Azure Speech in batch mode');
       await startAzureSpeechBatch();
     }
   };
@@ -198,8 +295,14 @@ const VoiceLayer: React.FC = () => {
   // Stop Azure Speech (Continuous Mode)
   const stopAzureSpeechContinuous = async () => {
     await azureActions.stopRecording();
-    setIsRecording(false);
     stopListening();
+
+    // Process accumulated transcript after stopping
+    if (accumulatedTranscript.trim()) {
+      console.log('Processing accumulated transcript:', accumulatedTranscript);
+      await processTranscript(accumulatedTranscript);
+      setAccumulatedTranscript(''); // Clear after processing
+    }
   };
 
   // Stop Azure Speech (Batch Mode)
@@ -214,8 +317,10 @@ const VoiceLayer: React.FC = () => {
   // Stop Azure Speech (dispatches to continuous or batch mode)
   const stopAzureSpeech = async () => {
     if (useContinuousMode && azureState.isRecording) {
+      console.log('Stopping Azure Speech continuous mode');
       await stopAzureSpeechContinuous();
-    } else {
+    } else if (isRecording) {
+      console.log('Stopping Azure Speech batch mode');
       stopAzureSpeechBatch();
     }
   };
@@ -239,20 +344,22 @@ const VoiceLayer: React.FC = () => {
   };
 
   // Submit transcript for processing
-  const handleSubmit = async () => {
-    const finalTranscript = transcript.trim();
-    if (!finalTranscript) {
-      setError('No transcript to process');
-      return;
-    }
+  // const handleSubmit = async () => {
+  //   const finalTranscript = transcript.trim();
+  //   if (!finalTranscript) {
+  //     setError('No transcript to process');
+  //     return;
+  //   }
 
-    await processTranscript(finalTranscript);
-    resetTranscript();
-  };
+  //   await processTranscript(finalTranscript);
+  //   resetTranscript();
+  // };
 
   // Clear transcript and errors
   const handleClear = () => {
     resetTranscript();
+    azureActions.reset(); // Clear Azure transcripts too
+    setAccumulatedTranscript(''); // Clear accumulated transcript
     setError(null);
   };
 
@@ -261,9 +368,13 @@ const VoiceLayer: React.FC = () => {
     return null;
   }
 
-  const isListening = state.isListening || isRecording;
-  const currentTranscript = shouldUseAzureSpeech ? '' : transcript; // Azure shows transcript after recording stops
-  const currentInterim = shouldUseAzureSpeech ? '' : interimTranscript;
+  const isListening = state.isListening || isRecording || azureState.isRecording;
+
+  // Show transcripts from appropriate source
+  // For Azure: show accumulated transcript + current interim
+  // For Web Speech: show transcript directly (already accumulates)
+  const currentTranscript = shouldUseAzureSpeech ? accumulatedTranscript : transcript;
+  const currentInterim = shouldUseAzureSpeech ? azureState.interimTranscript : interimTranscript;
 
   return (
     <>
@@ -296,10 +407,16 @@ const VoiceLayer: React.FC = () => {
                 {isListening && !shouldUseAzureSpeech && (
                   <div className="text-blue-500 dark:text-blue-400 text-xs mb-1">Listening...</div>
                 )}
-                {isRecording && shouldUseAzureSpeech && (
+                {shouldUseAzureSpeech && (azureState.isRecording || isRecording) && (
                   <div className="text-red-500 dark:text-red-400 text-xs mb-1 flex items-center gap-1">
                     <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                    Recording...
+                    {useContinuousMode ? 'Recording (Live)...' : 'Recording (Batch)...'}
+                  </div>
+                )}
+                {shouldUseAzureSpeech && azureState.isProcessing && (
+                  <div className="text-blue-500 dark:text-blue-400 text-xs mb-1 flex items-center gap-1">
+                    <IconLoader size={12} />
+                    Processing audio...
                   </div>
                 )}
                 {state.isProcessing && (
@@ -323,19 +440,10 @@ const VoiceLayer: React.FC = () => {
                 >
                   Clear
                 </button>
-                {!shouldUseAzureSpeech && currentTranscript && !isListening && (
-                  <button
-                    onClick={handleSubmit}
-                    disabled={state.isProcessing}
-                    className="px-3 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
-                  >
-                    {state.isProcessing ? <IconLoader size={12} /> : null}
-                    Process
-                  </button>
-                )}
+                
                 <button
                   onClick={() => (isListening ? handleStop() : handleStart())}
-                  disabled={state.isProcessing}
+                  disabled={state.isProcessing && !isListening}
                   className={`ml-auto px-3 py-1 rounded text-sm font-medium ${
                     isListening
                       ? 'bg-red-600 text-white hover:bg-red-700'
@@ -374,7 +482,7 @@ const VoiceLayer: React.FC = () => {
             }}
             aria-label="Toggle voice"
             title="Voice (toggle)"
-            disabled={state.isProcessing}
+            disabled={state.isProcessing && !isListening}
             className={`w-14 h-14 rounded-full flex items-center justify-center shadow-xl transition-transform transform hover:scale-105
               ${
                 isListening
@@ -382,7 +490,7 @@ const VoiceLayer: React.FC = () => {
                   : 'bg-gradient-to-br from-purple-600 to-blue-500'
               } text-white disabled:opacity-50`}
           >
-            {state.isProcessing ? <IconLoader size={20} /> : <IconMicrophone size={20} />}
+            {state.isProcessing && !isListening ? <IconLoader size={20} /> : <IconMicrophone size={20} />}
           </button>
         </div>
       </div>

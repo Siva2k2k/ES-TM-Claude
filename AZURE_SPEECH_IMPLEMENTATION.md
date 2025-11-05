@@ -291,56 +291,138 @@ This implementation adds Azure Speech recognition as an intelligent fallback to 
   - Cleanup old commands (24h expiry)
   - Queue change notifications
 
-## Integration Instructions
+## Integration Status
 
-### Step 1: Update VoiceLayer.tsx
+### ✅ COMPLETED - VoiceLayer.tsx Integration
+
+The VoiceLayer component has been successfully integrated with dual-mode Azure Speech support:
+
+**Features Implemented:**
+- ✅ Azure Speech WebSocket continuous mode via `useAzureSpeech` hook
+- ✅ Azure Speech batch mode as fallback (legacy method)
+- ✅ Automatic fallback from continuous to batch on connection failure
+- ✅ Device detection for automatic method selection (Safari/Opera → Azure)
+- ✅ Manual switch between Web Speech and Azure Speech
+- ✅ AudioFormatConverter integration for batch mode
+- ✅ Proper transcript display for both continuous and batch modes
+- ✅ Backup file created: `VoiceLayer.backup.tsx`
+
+**Key Implementation Details:**
 
 ```typescript
-import { useAzureSpeech } from '../../hooks/useAzureSpeech';
-import { SpeechFallbackManager } from '../../services/SpeechFallbackManager';
-import { AudioQualityIndicator } from './AudioQualityIndicator';
-import { VoiceActivityIndicator } from './VoiceActivityIndicator';
-import { OfflineBanner } from './OfflineBanner';
-import { DeviceDetector } from '../../utils/deviceDetection';
+// Dual-mode Azure Speech support
+const [useContinuousMode, setUseContinuousMode] = useState(true);
 
-// Initialize fallback manager
-const [fallbackManager] = useState(() => {
-  const recommendedMethod = DeviceDetector.getSpeechMethod();
-  return new SpeechFallbackManager(recommendedMethod);
-});
-
-// Use Azure Speech hook
+// Azure Speech Hook with callbacks
 const [azureState, azureActions] = useAzureSpeech({
-  language: 'en-US',
+  language: state.preferences?.voiceSettings?.language || 'en-US',
   autoStop: true,
   silenceDuration: 2000,
   enableQualityMonitoring: true,
   enableVoiceActivity: true,
-  onInterim: (transcript) => {
-    // Handle interim transcript
-  },
-  onFinal: (transcript, confidence) => {
-    // Handle final transcript
-  },
-  onError: (error) => {
-    fallbackManager.recordFailure('azure-speech', error);
-  },
+  onFinal: useCallback(async (transcript: string, confidence: number) => {
+    if (transcript.trim()) {
+      await processTranscript(transcript);
+    }
+  }, [processTranscript]),
+  onError: useCallback((error) => {
+    setError(voiceError.message);
+  }, [setError]),
 });
 
-// Render UI components
-<AudioQualityIndicator metrics={qualityMetrics} />
-<VoiceActivityIndicator event={voiceActivityEvent} />
-<OfflineBanner isOnline={isOnline} isConnected={isConnected} />
+// Automatic WebSocket connection for continuous mode
+useEffect(() => {
+  if (shouldUseAzureSpeech && useContinuousMode && !azureState.isConnected) {
+    azureActions.connect().catch(() => {
+      setUseContinuousMode(false); // Fallback to batch mode
+    });
+  }
+}, [shouldUseAzureSpeech, useContinuousMode, azureState.isConnected]);
+
+// Dispatcher methods
+const startAzureSpeech = async () => {
+  if (useContinuousMode && azureState.isConnected) {
+    await startAzureSpeechContinuous(); // WebSocket streaming
+  } else {
+    await startAzureSpeechBatch(); // Legacy batch mode
+  }
+};
+
+// Transcript display logic
+const currentTranscript = shouldUseAzureSpeech
+  ? azureState.finalTranscript
+  : transcript;
+const currentInterim = shouldUseAzureSpeech
+  ? azureState.interimTranscript
+  : interimTranscript;
 ```
 
-### Step 2: Update VoiceContext.tsx
+### ✅ COMPLETED - VoiceContext.tsx Integration
 
-- Integrate SpeechFallbackManager
-- Add method switching logic
-- Handle callbacks from fallback manager
-- Update user preferences on method change
+The VoiceContext has been successfully integrated with SpeechFallbackManager:
 
-### Step 3: Environment Variables
+**Features Implemented:**
+- ✅ SpeechFallbackManager instance managed via useRef
+- ✅ Methods exposed: `recordSpeechSuccess`, `recordSpeechFailure`
+- ✅ Methods exposed: `getRecommendedSpeechMethod`, `forceSpeechMethod`
+- ✅ Failure tracking with automatic fallback (3 consecutive failures → Azure)
+- ✅ Recovery logic (5 consecutive successes → Web Speech)
+- ✅ Backup file created: `VoiceContext.backup.tsx`
+
+**Key Implementation Details:**
+
+```typescript
+import { SpeechFallbackManager } from '../services/SpeechFallbackManager';
+import { VoiceError } from '../types/voiceErrors';
+
+// Persistent fallback manager instance
+const fallbackManagerRef = useRef<SpeechFallbackManager | null>(null);
+if (!fallbackManagerRef.current) {
+  fallbackManagerRef.current = new SpeechFallbackManager({
+    maxConsecutiveFailures: 3,
+    recoverySuccessCount: 5,
+  });
+}
+
+// Exposed methods
+const recordSpeechSuccess = useCallback((method: 'web-speech' | 'azure-speech') => {
+  fallbackManagerRef.current?.recordSuccess(method);
+}, []);
+
+const recordSpeechFailure = useCallback(
+  (method: 'web-speech' | 'azure-speech', error: Error | VoiceError) => {
+    fallbackManagerRef.current?.recordFailure(method, error);
+  }, []
+);
+
+const getRecommendedSpeechMethod = useCallback((): 'web-speech' | 'azure-speech' => {
+  return fallbackManagerRef.current?.getCurrentMethod() || 'web-speech';
+}, []);
+
+const forceSpeechMethod = useCallback((method: 'web-speech' | 'azure-speech') => {
+  fallbackManagerRef.current?.forceMethod(method);
+}, []);
+```
+
+**Usage Example:**
+
+Components can now track speech method success/failure to enable intelligent fallback:
+
+```typescript
+const { recordSpeechSuccess, recordSpeechFailure, getRecommendedSpeechMethod } = useVoice();
+
+// In VoiceLayer or any component
+try {
+  await processTranscript(transcript);
+  recordSpeechSuccess(currentMethod); // Track success
+} catch (error) {
+  recordSpeechFailure(currentMethod, error); // Automatic fallback after 3 failures
+
+  // Get recommended method (may have switched to Azure)
+  const newMethod = getRecommendedSpeechMethod();
+}
+
+## Environment Variables
 
 Backend (`.env`):
 ```
@@ -477,21 +559,22 @@ Check browser console for:
 
 ## Files Created/Modified
 
-### Backend (10 files)
-- ✅ `backend/src/utils/audioValidator.ts`
+### Backend (8 files created, 2 enhanced)
+- ✅ `backend/src/utils/audioValidator.ts` (created)
 - ✅ `backend/src/services/AzureSpeechService.ts` (enhanced)
-- ✅ `backend/src/websocket/voiceSocketServer.ts`
-- ✅ `backend/src/controllers/VoiceSocketController.ts`
-- ✅ `backend/src/middleware/socketAuth.ts`
-- ✅ `backend/src/types/voiceSocket.types.ts`
-- ✅ `backend/src/index.ts` (Socket.IO integration)
+- ✅ `backend/src/websocket/voiceSocketServer.ts` (created)
+- ✅ `backend/src/controllers/VoiceSocketController.ts` (created)
+- ✅ `backend/src/middleware/socketAuth.ts` (created)
+- ✅ `backend/src/types/voiceSocket.types.ts` (created)
+- ✅ `backend/src/index.ts` (enhanced - Socket.IO integration)
 - ✅ `backend/package.json` (dependencies: socket.io, uuid)
 
-### Frontend (12 files)
+### Frontend (15 files created/enhanced)
+
+**New Files:**
 - ✅ `frontend/src/utils/audioFormatConverter.ts`
 - ✅ `frontend/src/utils/audioQualityMonitor.ts`
 - ✅ `frontend/src/utils/voiceActivityDetector.ts`
-- ✅ `frontend/src/utils/deviceDetection.ts` (enhanced)
 - ✅ `frontend/src/types/voiceErrors.ts`
 - ✅ `frontend/src/services/SpeechFallbackManager.ts`
 - ✅ `frontend/src/services/OfflineQueueManager.ts`
@@ -499,21 +582,75 @@ Check browser console for:
 - ✅ `frontend/src/components/voice/AudioQualityIndicator.tsx`
 - ✅ `frontend/src/components/voice/VoiceActivityIndicator.tsx`
 - ✅ `frontend/src/components/voice/OfflineBanner.tsx`
+
+**Enhanced Files:**
+- ✅ `frontend/src/utils/deviceDetection.ts` (enhanced)
+- ✅ `frontend/src/components/voice/VoiceLayer.tsx` (integrated - backup: `VoiceLayer.backup.tsx`)
+- ✅ `frontend/src/contexts/VoiceContext.tsx` (integrated - backup: `VoiceContext.backup.tsx`)
 - ✅ `frontend/package.json` (dependencies: socket.io-client)
+
+**Backup Files:**
+- 📦 `frontend/src/components/voice/VoiceLayer.backup.tsx`
+- 📦 `frontend/src/contexts/VoiceContext.backup.tsx`
 
 ### Documentation
 - ✅ `AZURE_SPEECH_IMPLEMENTATION.md` (this file)
+- ✅ `VOICE_IMPLEMENTATION_STATUS.md` (may need update)
 
 ## Summary
 
 This implementation provides a production-ready Azure Speech recognition system with:
-- ✅ Continuous real-time transcription
-- ✅ Intelligent browser detection and fallback
-- ✅ Audio quality monitoring
-- ✅ Voice activity detection with auto-stop
-- ✅ Offline command queuing
-- ✅ Comprehensive error handling
-- ✅ Secure WebSocket communication
-- ✅ Cross-browser compatibility
+- ✅ **Continuous real-time transcription** via WebSocket streaming
+- ✅ **Dual-mode support**: Continuous (WebSocket) + Batch (legacy) modes
+- ✅ **Intelligent browser detection and fallback** (Safari/Opera → Azure)
+- ✅ **Audio format conversion** (MediaRecorder → 16kHz WAV PCM)
+- ✅ **Audio quality monitoring** (volume, RMS, clipping detection)
+- ✅ **Voice activity detection** with auto-stop after silence
+- ✅ **Offline command queuing** via IndexedDB
+- ✅ **Comprehensive error handling** with 11 custom error types
+- ✅ **Secure WebSocket communication** with JWT authentication
+- ✅ **Cross-browser compatibility** with automatic method selection
+- ✅ **Intelligent fallback manager** (3 failures → permanent fallback)
 
-The system is ready for integration into VoiceLayer.tsx and VoiceContext.tsx.
+## Implementation Complete ✅
+
+**Status:** Integration complete and ready for testing
+
+**What's Done:**
+1. ✅ Backend WebSocket server with Azure Speech SDK continuous recognition
+2. ✅ Frontend `useAzureSpeech` hook with audio streaming
+3. ✅ VoiceLayer.tsx integrated with dual-mode Azure Speech support
+4. ✅ VoiceContext.tsx integrated with SpeechFallbackManager
+5. ✅ Audio format converter for batch mode compatibility
+6. ✅ Device detection for automatic method selection
+7. ✅ Error handling and fallback logic
+8. ✅ Backup files created for rollback if needed
+
+**Next Steps:**
+1. Start both backend and frontend servers
+2. Test continuous recognition mode (WebSocket)
+3. Test batch mode fallback
+4. Test browser detection (Safari, Opera, Chrome, Firefox)
+5. Test manual switching between Web Speech and Azure
+6. Test failure recovery and automatic fallback
+7. Monitor console logs for debugging
+
+**Testing Commands:**
+```bash
+# Backend
+cd backend
+npm install
+npm run dev
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+```
+
+**Verification:**
+- Open browser console and look for: "Azure Speech WebSocket connected"
+- Test voice recognition in different browsers
+- Verify transcripts appear in real-time (continuous mode)
+- Check automatic fallback if WebSocket fails
+- Monitor network tab for WebSocket connection

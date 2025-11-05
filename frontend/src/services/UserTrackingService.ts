@@ -1,266 +1,135 @@
-import { ApiResponse, axiosInstance as apiClient } from '../config/axios.config';
-
-export interface UtilizationMetrics {
-  utilization_percentage: number;
-  billable_efficiency: number;
-  productivity_score: number;
-}
-
-export interface PunctualityMetrics {
-  submission_timeliness: number;
-  is_on_time: boolean;
-  submission_streak: number;
-  punctuality_score: number;
-}
-
-export interface QualityMetrics {
-  rejection_count: number;
-  approval_level_reached: string;
-  quality_score: number;
-  consecutive_approvals: number;
-}
-
-export interface PerformanceMetrics {
-  project_count: number;
-  avg_hours_per_project: number;
-  project_diversity_score: number;
-  consistency_score: number;
-}
-
-export interface ProjectBreakdown {
-  project_id: string;
-  project_name: string;
-  total_hours: number;
-  billable_hours: number;
-  percentage_of_week: number;
-  is_training: boolean;
-}
-
-export interface UserWeekSummary {
-  id: string;
-  user_id: string;
-  timesheet_id: string;
-  week_start_date: string;
-  week_end_date: string;
-  total_worked_hours: number;
-  billable_hours: number;
-  non_billable_hours: number;
-  training_hours: number;
-  leave_hours: number;
-  holiday_hours: number;
-  miscellaneous_hours: number;
-  avg_daily_hours: number;
-  working_days_count: number;
-  max_daily_hours: number;
-  min_daily_hours: number;
-  utilization_metrics: UtilizationMetrics;
-  punctuality_metrics: PunctualityMetrics;
-  quality_metrics: QualityMetrics;
-  performance_metrics: PerformanceMetrics;
-  project_breakdown: ProjectBreakdown[];
-  submitted_at?: string;
-  status: string;
-  last_aggregated_at: string;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface UserPerformanceSummary {
-  avg_utilization: number;
-  avg_punctuality: number;
-  avg_quality: number;
-  total_hours: number;
-  weeks_tracked: number;
-}
-
-export interface User {
-  id: string;
-  full_name: string;
-  email: string;
-  role: string;
-  manager?: {
-    id: string;
-    full_name: string;
-  };
-}
-
-export interface UserListItem extends User {
-  avg_utilization: number;
-  avg_punctuality: number;
-  avg_quality: number;
-  total_hours: number;
-  weeks_tracked: number;
-}
-
-export interface DashboardOverview {
-  overview: {
-    total_users: number;
-    active_users: number;
-    avg_utilization: number;
-    avg_punctuality: number;
-    avg_quality: number;
-  };
-  trends: Array<{
-    _id: string;
-    avg_utilization: number;
-    avg_punctuality: number;
-    avg_quality: number;
-    total_hours: number;
-    user_count: number;
-  }>;
-  top_performers: Array<{
-    user_id: string;
-    full_name: string;
-    role: string;
-    avg_utilization: number;
-    avg_punctuality: number;
-    avg_quality: number;
-    overall_score: number;
-    total_hours: number;
-  }>;
-  alerts: Array<{
-    type: 'warning' | 'info' | 'error';
-    title: string;
-    message: string;
-    count: number;
-  }>;
-}
-
-export interface UserAnalytics {
-  user: User;
-  summary: UserPerformanceSummary;
-  trends: {
-    utilization: Array<{
-      week: string;
-      utilization: number;
-      billable_hours: number;
-      total_hours: number;
-    }>;
-    punctuality: Array<{
-      week: string;
-      score: number;
-      on_time: boolean;
-    }>;
-    quality: Array<{
-      week: string;
-      score: number;
-      rejections: number;
-    }>;
-  };
-  project_breakdown: Array<{
-    project_id: string;
-    project_name: string;
-    total_hours: number;
-    billable_hours: number;
-    weeks_worked: number;
-    is_training: boolean;
-  }>;
-  performance_scores: {
-    utilization: number;
-    punctuality: number;
-    quality: number;
-    consistency: number;
-    project_diversity: number;
-  };
-}
-
-export interface TeamRankingItem {
-  user_id: string;
-  user_name: string;
-  avg_utilization: number;
-  avg_punctuality: number;
-  avg_quality: number;
-  overall_score: number;
-  total_hours: number;
-  total_weeks: number;
-}
-
-export interface ProjectPerformance {
-  _id: string;
-  project_name: string;
-  total_hours: number;
-  billable_hours: number;
-  user_count: number;
-  weeks_count: number;
-  avg_hours_per_week: number;
-  utilization_rate: number;
-  is_training: boolean;
-}
-
-export interface UserTrackingFilters {
-  weeks?: number;
-  page?: number;
-  limit?: number;
-  search?: string;
-  projectId?: string;
-}
+import { backendApi, BackendApiError } from '../lib/backendApi';
+import type {
+  DashboardOverview,
+  UserAnalytics,
+  TeamRankingItem,
+  ProjectPerformance,
+  UserTrackingFilters,
+  UserTrackingDashboardResponse,
+  UtilizationTrendItem,
+  AggregationRequest,
+  AggregationResponse
+} from '../types/userTracking';
 
 export class UserTrackingService {
 
   /**
    * Get dashboard overview
    */
-  async getDashboardOverview(filters: { weeks?: number } = {}): Promise<ApiResponse<DashboardOverview>> {
-    return apiClient.get('/user-tracking/dashboard', { params: filters });
+  async getDashboardOverview(filters: { weeks?: number } = {}): Promise<DashboardOverview> {
+    try {
+      const response = await backendApi.get<{ success: boolean; data: DashboardOverview }>(
+        '/user-tracking/dashboard',
+        { params: filters }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error in getDashboardOverview:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch dashboard overview';
+      throw new Error(errorMessage);
+    }
   }
 
   /**
    * Get user list with performance summary
    */
-  async getUserList(filters: UserTrackingFilters = {}): Promise<ApiResponse<{
-    users: UserListItem[];
-    pagination: {
-      page: number;
-      limit: number;
-      total: number;
-      pages: number;
-    };
-  }>> {
-    return apiClient.get('/user-tracking/users', { params: filters });
+  async getUserList(filters: UserTrackingFilters = {}): Promise<UserTrackingDashboardResponse> {
+    try {
+      const response = await backendApi.get<{ success: boolean; data: UserTrackingDashboardResponse }>(
+        '/user-tracking/users',
+        { params: filters }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error in getUserList:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch user list';
+      throw new Error(errorMessage);
+    }
   }
 
   /**
    * Get detailed user analytics
    */
-  async getUserAnalytics(userId: string, filters: { weeks?: number } = {}): Promise<ApiResponse<UserAnalytics>> {
-    return apiClient.get(`/user-tracking/users/${userId}/analytics`, { params: filters });
+  async getUserAnalytics(userId: string, filters: { weeks?: number } = {}): Promise<UserAnalytics> {
+    try {
+      const response = await backendApi.get<{ success: boolean; data: UserAnalytics }>(
+        `/user-tracking/users/${userId}/analytics`,
+        { params: filters }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error in getUserAnalytics:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch user analytics';
+      throw new Error(errorMessage);
+    }
   }
 
   /**
    * Get utilization trends for a user
    */
-  async getUtilizationTrends(userId: string, filters: { weeks?: number } = {}): Promise<ApiResponse<Array<{
-    week_start_date: string;
-    utilization_metrics: { utilization_percentage: number };
-    total_worked_hours: number;
-    billable_hours: number;
-  }>>> {
-    return apiClient.get(`/user-tracking/users/${userId}/trends`, { params: filters });
+  async getUtilizationTrends(userId: string, filters: { weeks?: number } = {}): Promise<UtilizationTrendItem[]> {
+    try {
+      const response = await backendApi.get<{ success: boolean; data: UtilizationTrendItem[] }>(
+        `/user-tracking/users/${userId}/trends`,
+        { params: filters }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error in getUtilizationTrends:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch utilization trends';
+      throw new Error(errorMessage);
+    }
   }
 
   /**
    * Get team performance ranking
    */
-  async getTeamRanking(filters: { weeks?: number } = {}): Promise<ApiResponse<TeamRankingItem[]>> {
-    return apiClient.get('/user-tracking/team/ranking', { params: filters });
+  async getTeamRanking(filters: { weeks?: number } = {}): Promise<TeamRankingItem[]> {
+    try {
+      const response = await backendApi.get<{ success: boolean; data: TeamRankingItem[] }>(
+        '/user-tracking/team/ranking',
+        { params: filters }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error in getTeamRanking:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch team ranking';
+      throw new Error(errorMessage);
+    }
   }
 
   /**
    * Get project performance breakdown
    */
-  async getProjectPerformance(filters: UserTrackingFilters = {}): Promise<ApiResponse<ProjectPerformance[]>> {
-    return apiClient.get('/user-tracking/projects/performance', { params: filters });
+  async getProjectPerformance(filters: UserTrackingFilters = {}): Promise<ProjectPerformance[]> {
+    try {
+      const response = await backendApi.get<{ success: boolean; data: ProjectPerformance[] }>(
+        '/user-tracking/projects/performance',
+        { params: filters }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error in getProjectPerformance:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to fetch project performance';
+      throw new Error(errorMessage);
+    }
   }
 
   /**
    * Trigger aggregation
    */
-  async triggerAggregation(data: {
-    timesheetId?: string;
-    userId?: string;
-    weeks?: number;
-  }): Promise<ApiResponse<{ processed: number }>> {
-    return apiClient.post('/user-tracking/aggregate', data);
+  async triggerAggregation(data: AggregationRequest): Promise<AggregationResponse> {
+    try {
+      const response = await backendApi.post<{ success: boolean; data: AggregationResponse }>(
+        '/user-tracking/aggregate',
+        data
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Error in triggerAggregation:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to trigger aggregation';
+      throw new Error(errorMessage);
+    }
   }
 }
 

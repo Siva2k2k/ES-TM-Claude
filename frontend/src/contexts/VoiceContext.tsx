@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useReducer, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useReducer, useEffect, useCallback, useRef } from 'react';
 import {
   VoiceState,
   VoiceActionType,
@@ -9,6 +9,8 @@ import {
 } from '../types/voice';
 import { voiceService } from '../services/VoiceService';
 import { DeviceDetector } from '../utils/deviceDetection';
+import { SpeechFallbackManager } from '../services/SpeechFallbackManager';
+import { VoiceError } from '../types/voiceErrors';
 
 // Initial state
 const initialState: VoiceState = {
@@ -63,6 +65,11 @@ interface VoiceContextType {
   clearPendingActions: () => void;
   refreshContext: () => Promise<void>;
   setError: (error: string | null) => void;
+  // Fallback manager methods
+  recordSpeechSuccess: (method: 'web-speech' | 'azure-speech') => void;
+  recordSpeechFailure: (method: 'web-speech' | 'azure-speech', error: Error | VoiceError) => void;
+  getRecommendedSpeechMethod: () => 'web-speech' | 'azure-speech';
+  forceSpeechMethod: (method: 'web-speech' | 'azure-speech') => void;
 }
 
 const VoiceContext = createContext<VoiceContextType | undefined>(undefined);
@@ -70,6 +77,15 @@ const VoiceContext = createContext<VoiceContextType | undefined>(undefined);
 // Provider component
 export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, dispatch] = useReducer(voiceReducer, initialState);
+
+  // Create fallback manager instance (persists across re-renders)
+  const fallbackManagerRef = useRef<SpeechFallbackManager | null>(null);
+  if (!fallbackManagerRef.current) {
+    fallbackManagerRef.current = new SpeechFallbackManager({
+      maxConsecutiveFailures: 3,
+      recoverySuccessCount: 5,
+    });
+  }
 
   // Initialize device info and load user preferences
   useEffect(() => {
@@ -207,6 +223,26 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     dispatch({ type: 'SET_ERROR', payload: error });
   }, []);
 
+  // Fallback manager methods
+  const recordSpeechSuccess = useCallback((method: 'web-speech' | 'azure-speech') => {
+    fallbackManagerRef.current?.recordSuccess(method);
+  }, []);
+
+  const recordSpeechFailure = useCallback(
+    (method: 'web-speech' | 'azure-speech', error: Error | VoiceError) => {
+      fallbackManagerRef.current?.recordFailure(method, error);
+    },
+    []
+  );
+
+  const getRecommendedSpeechMethod = useCallback((): 'web-speech' | 'azure-speech' => {
+    return fallbackManagerRef.current?.getCurrentMethod() || 'web-speech';
+  }, []);
+
+  const forceSpeechMethod = useCallback((method: 'web-speech' | 'azure-speech') => {
+    fallbackManagerRef.current?.forceMethod(method);
+  }, []);
+
   const value: VoiceContextType = {
     state,
     startListening,
@@ -217,6 +253,10 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     clearPendingActions,
     refreshContext,
     setError,
+    recordSpeechSuccess,
+    recordSpeechFailure,
+    getRecommendedSpeechMethod,
+    forceSpeechMethod,
   };
 
   return <VoiceContext.Provider value={value}>{children}</VoiceContext.Provider>;

@@ -56,11 +56,12 @@ class IntentRecognitionService {
    * Step 1: Detect intents from user command (minimal prompt)
    */
   private async detectIntents(transcript: string, user: IUser): Promise<string[]> {
-    const context = await VoiceContextService.getContext(user);
+    try {
+      const context = await VoiceContextService.getContext(user);
 
-    const allowedIntentNames = context.allowedIntents.map(i => i.intent);
+      const allowedIntentNames = context.allowedIntents.map(i => i.intent);
 
-    const systemPrompt = `You are an intent classifier for a timesheet management system.
+      const systemPrompt = `You are an intent classifier for a timesheet management system.
 Your task is to identify the user's intents from their voice command.
 
 Available Intents:
@@ -77,11 +78,10 @@ Response Format:
   "intents": ["intent1", "intent2"]
 }`;
 
-    const userPrompt = `User Command: "${transcript}"
+      const userPrompt = `User Command: "${transcript}"
 
 Identify the intents from this command.`;
 
-    try {
       const response = await AzureOpenAIService.generateCompletion({
         systemPrompt,
         userPrompt,
@@ -98,8 +98,10 @@ Identify the intents from this command.`;
 
       return parsed.intents;
     } catch (error) {
-      logger.error('Intent detection failed', { error, transcript });
-      return [];
+      logger.error('Intent detection failed, falling back to keyword matching', { error, transcript });
+      
+      // Fallback: Use keyword-based intent detection
+      return this.fallbackIntentDetection(transcript, user);
     }
   }
 
@@ -130,12 +132,21 @@ Parse this command and return the structured JSON response.`;
 
       const parsed = AzureOpenAIService.parseJSONResponse<DataExtractionResponse>(response);
 
-      logger.info('Data extracted', {
-        actionsCount: parsed.actions.length,
-        intents: parsed.actions.map(a => a.intent)
+      // Enrich actions with field definitions from intent definitions
+      const enrichedActions = parsed.actions.map(action => {
+        const intentDef = context.allowedIntents.find(i => i.intent === action.intent);
+        if (intentDef) {
+          return this.enrichActionWithFields(action, intentDef);
+        }
+        return action;
       });
 
-      return parsed.actions;
+      logger.info('Data extracted', {
+        actionsCount: enrichedActions.length,
+        intents: enrichedActions.map(a => a.intent)
+      });
+
+      return enrichedActions;
     } catch (error) {
       logger.error('Data extraction failed', { error, transcript });
       return [{
@@ -144,6 +155,88 @@ Parse this command and return the structured JSON response.`;
         errors: ['Failed to parse command. Please try again.'],
         description: 'Failed to extract data from command'
       }];
+    }
+  }
+
+  /**
+   * Enrich action with field definitions from intent definition
+   */
+  private enrichActionWithFields(action: VoiceAction, intentDef: IIntentDefinition): VoiceAction {
+    const fields: any[] = [];
+
+    // Add required fields
+    for (const fieldName of intentDef.requiredFields) {
+      const fieldType = intentDef.fieldTypes.get(fieldName) || 'string';
+      const enumValues = intentDef.enumValues?.get(fieldName);
+
+      fields.push({
+        name: fieldName,
+        type: fieldType,
+        required: true,
+        enumValues: enumValues || undefined,
+        label: this.formatFieldLabel(fieldName)
+      });
+
+      // Ensure field exists in data (with empty value if not present)
+      if (!(fieldName in action.data)) {
+        action.data[fieldName] = this.getDefaultValueForType(fieldType);
+      }
+    }
+
+    // Add optional fields
+    for (const fieldName of intentDef.optionalFields) {
+      const fieldType = intentDef.fieldTypes.get(fieldName) || 'string';
+      const enumValues = intentDef.enumValues?.get(fieldName);
+
+      fields.push({
+        name: fieldName,
+        type: fieldType,
+        required: false,
+        enumValues: enumValues || undefined,
+        label: this.formatFieldLabel(fieldName)
+      });
+
+      // Ensure field exists in data if it has a value or is boolean
+      if (!(fieldName in action.data)) {
+        if (fieldType === 'boolean') {
+          action.data[fieldName] = false;
+        } else {
+          action.data[fieldName] = this.getDefaultValueForType(fieldType);
+        }
+      }
+    }
+
+    return {
+      ...action,
+      fields
+    };
+  }
+
+  /**
+   * Format field name to readable label
+   */
+  private formatFieldLabel(fieldName: string): string {
+    return fieldName
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }
+
+  /**
+   * Get default value for a field type
+   */
+  private getDefaultValueForType(type: string): any {
+    switch (type) {
+      case 'number':
+        return '';
+      case 'boolean':
+        return false;
+      case 'date':
+        return '';
+      case 'array':
+        return [];
+      default:
+        return '';
     }
   }
 
@@ -285,6 +378,61 @@ Example:
     section += `Example: ${intentDef.exampleCommand}\n`;
 
     return section;
+  }
+
+  /**
+   * Fallback intent detection using keyword matching when Azure OpenAI fails
+   */
+  private async fallbackIntentDetection(transcript: string, user: IUser): Promise<string[]> {
+    try {
+      const context = await VoiceContextService.getContext(user);
+      const allowedIntents = context.allowedIntents.map(i => i.intent);
+      const detectedIntents: string[] = [];
+
+      // Convert transcript to lowercase for matching
+      const lowerTranscript = transcript.toLowerCase();
+
+      // Keywords mapping for common intents
+      const intentKeywords: Record<string, string[]> = {
+        'add_entries': ['add', 'create', 'log', 'entry', 'timesheet', 'hours'],
+        'update_entries': ['update', 'modify', 'change', 'edit'],
+        'view_entries': ['view', 'show', 'display', 'see', 'list'],
+        'delete_entries': ['delete', 'remove', 'clear'],
+        'create_project': ['create project', 'new project', 'add project'],
+        'create_user': ['create user', 'new user', 'add user'],
+        'view_reports': ['report', 'summary', 'analytics'],
+        'manage_holidays': ['holiday', 'vacation', 'leave'],
+        'view_dashboard': ['dashboard', 'overview', 'summary']
+      };
+
+      // Check each intent against keywords
+      for (const intent of allowedIntents) {
+        const keywords = intentKeywords[intent] || [];
+        const hasKeyword = keywords.some(keyword => lowerTranscript.includes(keyword));
+        
+        if (hasKeyword) {
+          detectedIntents.push(intent);
+        }
+      }
+
+      // Default to add_entries if no specific intent found but mentions hours/time
+      if (detectedIntents.length === 0) {
+        if (lowerTranscript.includes('hour') || lowerTranscript.includes('time') || 
+            lowerTranscript.includes('project')) {
+          detectedIntents.push('add_entries');
+        }
+      }
+
+      logger.info('Fallback intent detection completed', {
+        detectedIntents,
+        transcript
+      });
+
+      return detectedIntents;
+    } catch (error) {
+      logger.error('Fallback intent detection failed', { error, transcript });
+      return ['add_entries']; // Ultimate fallback
+    }
   }
 }
 

@@ -14,12 +14,12 @@ import {
   VoiceError,
   WebSocketError,
   MicrophoneAccessError,
-  AudioConversionError,
   parseVoiceError,
 } from '../types/voiceErrors';
 
-// Backend URL from environment
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// Backend URL from environment - remove /api/v1 path for Socket.IO
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/v1';
+const BACKEND_URL = API_URL.replace('/api/v1', '');
 
 export interface UseAzureSpeechConfig {
   language?: string;
@@ -81,12 +81,15 @@ export function useAzureSpeech(
   const socketRef = useRef<Socket | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const audioProcessorRef = useRef<ScriptProcessorNode | null>(null);
   const qualityMonitorRef = useRef<AudioQualityMonitor | null>(null);
   const voiceActivityRef = useRef<VoiceActivityDetector | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const audioChunkIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const chunkIndexRef = useRef(0);
   const audioBufferRef = useRef<Blob[]>([]);
+  const sessionIdRef = useRef<string | null>(null); // Track session ID for interval access
 
   // Reconnection config
   const reconnectAttempts = useRef(0);
@@ -97,7 +100,43 @@ export function useAzureSpeech(
    * Get auth token from localStorage
    */
   const getAuthToken = useCallback((): string | null => {
-    return localStorage.getItem('accessToken');
+    const token = localStorage.getItem('accessToken');
+    
+    if (!token) {
+      console.warn('No access token found in localStorage');
+      return null;
+    }
+
+    // Basic token validation
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) {
+        console.warn('Invalid token format - not a valid JWT');
+        localStorage.removeItem('accessToken'); // Clear invalid token
+        return null;
+      }
+
+      // Decode payload to check expiration (without verification)
+      const payload = JSON.parse(atob(parts[1]));
+      if (payload.exp && Date.now() >= payload.exp * 1000) {
+        console.warn('Access token has expired');
+        localStorage.removeItem('accessToken'); // Clear expired token
+        return null;
+      }
+
+      console.log('Token validation passed', {
+        userId: payload.id || payload.userId,
+        email: payload.email,
+        role: payload.role,
+        expiresAt: payload.exp ? new Date(payload.exp * 1000).toLocaleString() : 'unknown'
+      });
+
+      return token;
+    } catch (error) {
+      console.error('Error validating token:', error);
+      localStorage.removeItem('accessToken'); // Clear corrupted token
+      return null;
+    }
   }, []);
 
   /**
@@ -139,22 +178,44 @@ export function useAzureSpeech(
         // Connection error
         socket.on('connect_error', (err) => {
           console.error('WebSocket connection error', err);
-          const error = new WebSocketError(`Connection failed: ${err.message}`, true);
+          
+          let errorMessage = `Connection failed: ${err.message}`;
+          let isRecoverable = true;
+          
+          // Handle specific authentication errors
+          if (err.message?.includes('User account is inactive')) {
+            errorMessage = 'Your account has been deactivated. Please contact an administrator to reactivate your account.';
+            isRecoverable = false;
+          } else if (err.message?.includes('User account is not approved')) {
+            errorMessage = 'Your account is pending approval. Please contact an administrator.';
+            isRecoverable = false;
+          } else if (err.message?.includes('Authentication required') || err.message?.includes('Invalid or expired token')) {
+            errorMessage = 'Your session has expired. Please log in again.';
+            isRecoverable = false;
+            // Clear invalid token
+            localStorage.removeItem('accessToken');
+          }
+          
+          const error = new WebSocketError(errorMessage, isRecoverable);
           setState((prev) => ({ ...prev, isConnected: false, error }));
           config.onError?.(error);
 
-          // Attempt reconnection
-          attemptReconnect();
+          // Only attempt reconnection for recoverable errors
+          if (isRecoverable) {
+            attemptReconnect();
+          }
           reject(error);
         });
 
         // Disconnected
         socket.on('disconnect', (reason) => {
           console.log('WebSocket disconnected', reason);
+          sessionIdRef.current = null;
           setState((prev) => ({
             ...prev,
             isConnected: false,
             isRecording: false,
+            isProcessing: false,
             sessionId: null,
           }));
 
@@ -167,7 +228,8 @@ export function useAzureSpeech(
         // Voice events
         socket.on('voice:session-started', (data: any) => {
           console.log('Voice session started', data);
-          setState((prev) => ({ ...prev, sessionId: data.sessionId, isProcessing: true }));
+          sessionIdRef.current = data.sessionId;
+          setState((prev) => ({ ...prev, sessionId: data.sessionId, isProcessing: false }));
         });
 
         socket.on('voice:interim', (data: any) => {
@@ -195,6 +257,7 @@ export function useAzureSpeech(
 
         socket.on('voice:session-stopped', (data: any) => {
           console.log('Voice session stopped', data);
+          sessionIdRef.current = null;
           setState((prev) => ({
             ...prev,
             sessionId: null,
@@ -308,10 +371,8 @@ export function useAzureSpeech(
               config.onVoiceActivityChange?.(event);
             },
             onSilenceDetected: () => {
-              if (config.autoStop) {
-                console.log('Auto-stopping due to silence');
-                stopRecording();
-              }
+              // Don't auto-stop - let user control recording manually
+              console.debug('Silence detected (waiting for user to stop)');
             },
           },
           {
@@ -320,58 +381,80 @@ export function useAzureSpeech(
         );
       }
 
-      // Create MediaRecorder
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm',
-      });
+      // Use Web Audio API to capture raw PCM audio directly (better for streaming)
+      const audioContext = new AudioContext({ sampleRate: 16000 }); // Target Azure's required rate
+      const source = audioContext.createMediaStreamSource(stream);
+      const processor = audioContext.createScriptProcessor(4096, 1, 1); // 4096 buffer size, mono
 
-      mediaRecorderRef.current = mediaRecorder;
-      audioBufferRef.current = [];
-      chunkIndexRef.current = 0;
+      // Store refs for cleanup
+      audioContextRef.current = audioContext;
+      audioProcessorRef.current = processor;
 
-      // Collect audio chunks
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioBufferRef.current.push(event.data);
+      source.connect(processor);
+      processor.connect(audioContext.destination);
+
+      let pcmBuffer: Int16Array[] = [];
+
+      // Process audio in real-time
+      processor.onaudioprocess = (e) => {
+        if (!sessionIdRef.current || !socketRef.current?.connected) {
+          return;
         }
+
+        const inputData = e.inputBuffer.getChannelData(0); // Mono channel
+
+        // Convert Float32 to Int16 PCM
+        const int16Data = new Int16Array(inputData.length);
+        for (let i = 0; i < inputData.length; i++) {
+          const s = Math.max(-1, Math.min(1, inputData[i])); // Clamp
+          int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF; // Convert to 16-bit
+        }
+
+        pcmBuffer.push(int16Data);
       };
 
-      // Start recording with timeslice for streaming
-      mediaRecorder.start(250); // Capture 250ms chunks
+      // Send accumulated PCM data periodically
+      audioChunkIntervalRef.current = setInterval(() => {
+        if (pcmBuffer.length > 0 && socketRef.current?.connected && sessionIdRef.current) {
+          // Calculate total length
+          const totalLength = pcmBuffer.reduce((sum, arr) => sum + arr.length, 0);
 
-      // Send audio chunks periodically
-      audioChunkIntervalRef.current = setInterval(async () => {
-        if (audioBufferRef.current.length > 0 && socketRef.current?.connected && state.sessionId) {
-          const audioBlob = new Blob(audioBufferRef.current, { type: 'audio/webm' });
-          audioBufferRef.current = [];
-
-          try {
-            // Convert to Azure format (16kHz WAV)
-            const result = await AudioFormatConverter.convertToAzureFormat(audioBlob);
-
-            if (!result.success) {
-              throw new AudioConversionError(result.error);
-            }
-
-            // Convert to base64
-            const base64Audio = AudioFormatConverter.arrayBufferToBase64(result.wavBuffer);
-
-            // Send to server
-            socketRef.current.emit('voice:audio-chunk', {
-              sessionId: state.sessionId,
-              audioData: base64Audio,
-              chunkIndex: chunkIndexRef.current++,
-              timestamp: Date.now(),
-            });
-
-          } catch (error: any) {
-            console.error('Audio conversion error', error);
-            const conversionError = new AudioConversionError(error.message);
-            setState((prev) => ({ ...prev, error: conversionError }));
-            config.onError?.(conversionError);
+          // Merge all PCM chunks
+          const mergedPCM = new Int16Array(totalLength);
+          let offset = 0;
+          for (const chunk of pcmBuffer) {
+            mergedPCM.set(chunk, offset);
+            offset += chunk.length;
           }
+          pcmBuffer = [];
+
+          // Create WAV header + data
+          const wavBuffer = AudioFormatConverter.createWavFile(
+            mergedPCM,
+            16000, // Sample rate
+            1,     // Channels
+            16     // Bit depth
+          );
+
+          // Convert to base64
+          const base64Audio = AudioFormatConverter.arrayBufferToBase64(wavBuffer);
+
+          // Send to server
+          socketRef.current.emit('voice:audio-chunk', {
+            sessionId: sessionIdRef.current,
+            audioData: base64Audio,
+            chunkIndex: chunkIndexRef.current++,
+            timestamp: Date.now(),
+          });
+
+          console.debug('Audio chunk sent', {
+            chunkIndex: chunkIndexRef.current - 1,
+            pcmSamples: totalLength,
+            wavSize: wavBuffer.byteLength,
+            duration: (totalLength / 16000).toFixed(2) + 's',
+          });
         }
-      }, 250);
+      }, 1000); // Send every 1 second
 
       setState((prev) => ({ ...prev, isRecording: true, error: null }));
 
@@ -396,7 +479,7 @@ export function useAzureSpeech(
       config.onError?.(voiceError);
       throw voiceError;
     }
-  }, [connect, config, state.sessionId]);
+  }, [connect, config]);
 
   /**
    * Stop recording
@@ -408,7 +491,19 @@ export function useAzureSpeech(
       audioChunkIntervalRef.current = null;
     }
 
-    // Stop media recorder
+    // Stop audio processor
+    if (audioProcessorRef.current) {
+      audioProcessorRef.current.disconnect();
+      audioProcessorRef.current = null;
+    }
+
+    // Close audio context
+    if (audioContextRef.current) {
+      await audioContextRef.current.close();
+      audioContextRef.current = null;
+    }
+
+    // Stop media recorder (for batch mode)
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
       mediaRecorderRef.current = null;
@@ -433,8 +528,8 @@ export function useAzureSpeech(
     }
 
     // Notify server to stop session
-    if (socketRef.current?.connected && state.sessionId) {
-      socketRef.current.emit('voice:stop', { sessionId: state.sessionId });
+    if (socketRef.current?.connected && sessionIdRef.current) {
+      socketRef.current.emit('voice:stop', { sessionId: sessionIdRef.current });
     }
 
     setState((prev) => ({
@@ -443,7 +538,7 @@ export function useAzureSpeech(
       audioLevel: 0,
       isSpeaking: false,
     }));
-  }, [state.sessionId]);
+  }, []);
 
   /**
    * Reset state

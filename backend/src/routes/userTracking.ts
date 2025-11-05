@@ -13,7 +13,7 @@ const router = express.Router();
 router.get('/dashboard',
   requireAuth,
   requireRole(['manager', 'management']),
-  UserTrackingController.getDashboardOverview
+  UserTrackingController.getDashboardOverview.bind(UserTrackingController)
 );
 
 /**
@@ -24,7 +24,7 @@ router.get('/dashboard',
 router.get('/users',
   requireAuth,
   requireRole(['manager', 'management']),
-  UserTrackingController.getUserList
+  UserTrackingController.getUserList.bind(UserTrackingController)
 );
 
 /**
@@ -35,7 +35,7 @@ router.get('/users',
 router.get('/users/:userId/analytics',
   requireAuth,
   requireRole(['employee', 'manager', 'management']),
-  UserTrackingController.getUserAnalytics
+  UserTrackingController.getUserAnalytics.bind(UserTrackingController)
 );
 
 /**
@@ -46,7 +46,7 @@ router.get('/users/:userId/analytics',
 router.get('/users/:userId/trends',
   requireAuth,
   requireRole(['employee', 'manager', 'management']),
-  UserTrackingController.getUtilizationTrends
+  UserTrackingController.getUtilizationTrends.bind(UserTrackingController)
 );
 
 /**
@@ -57,7 +57,7 @@ router.get('/users/:userId/trends',
 router.get('/team/ranking',
   requireAuth,
   requireRole(['manager', 'management']),
-  UserTrackingController.getTeamRanking
+  UserTrackingController.getTeamRanking.bind(UserTrackingController)
 );
 
 /**
@@ -68,7 +68,7 @@ router.get('/team/ranking',
 router.get('/projects/performance',
   requireAuth,
   requireRole(['manager', 'management']),
-  UserTrackingController.getProjectPerformance
+  UserTrackingController.getProjectPerformance.bind(UserTrackingController)
 );
 
 /**
@@ -79,7 +79,7 @@ router.get('/projects/performance',
 router.post('/aggregate',
   requireAuth,
   requireRole(['manager', 'management']),
-  UserTrackingController.triggerAggregation
+  UserTrackingController.triggerAggregation.bind(UserTrackingController)
 );
 
 /**
@@ -90,7 +90,7 @@ router.post('/aggregate',
 router.get('/stats',
   requireAuth,
   requireRole(['manager', 'management']),
-  UserTrackingController.getAggregationStats
+  UserTrackingController.getAggregationStats.bind(UserTrackingController)
 );
 
 export default router;

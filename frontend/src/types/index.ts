@@ -5,6 +5,12 @@
 // Updated to match new database schema with enhanced workflow
 // ==========================================================================
 
+// Re-export types from specialized modules
+export * from './voice';
+export * from './userTracking';
+export * from './billing';
+export * from './settings';
+
 // ==========================================================================
 // USER TYPES
 // ==========================================================================
