@@ -1,5 +1,28 @@
 // Voice command and action types for frontend
 
+export interface VoiceError {
+  type: 'validation' | 'permission' | 'data' | 'system';
+  field?: string;
+  message: string;
+  code: string;
+  details?: Record<string, unknown>;
+}
+
+export interface VoiceErrorResponse {
+  success: false;
+  errors: VoiceError[];
+  formErrors?: Record<string, string>;
+  systemError?: string;
+}
+
+export interface VoiceSuccessResponse<T = Record<string, unknown>> {
+  success: true;
+  data: T;
+  message?: string;
+}
+
+export type VoiceResponse<T = Record<string, unknown>> = VoiceSuccessResponse<T> | VoiceErrorResponse;
+
 export interface VoiceActionField {
   name: string;
   type: 'string' | 'number' | 'boolean' | 'date' | 'enum' | 'array' | 'reference';
@@ -11,7 +34,7 @@ export interface VoiceActionField {
 
 export interface VoiceAction {
   intent: string;
-  data: Record<string, any>;
+  data: Record<string, unknown>;
   confidence: number;
   errors?: string[];
   warnings?: string[];
@@ -23,7 +46,7 @@ export interface FieldValidationError {
   field: string;
   message: string;
   suggestions?: string[];
-  receivedValue?: any;
+  receivedValue?: unknown;
 }
 
 export interface VoiceCommandResponse {
@@ -44,7 +67,7 @@ export interface ActionExecutionResult {
   intent: string;
   success: boolean;
   message?: string;
-  data?: any;
+  data?: Record<string, unknown>;
   error?: string;
   fieldErrors?: FieldValidationError[];  // Detailed field-level errors
   redirectUrl?: string;
@@ -100,7 +123,7 @@ export interface UserVoicePreferences {
   customCommands: Array<{
     phrase: string;
     intent: string;
-    data: Record<string, any>;
+    data: Record<string, unknown>;
   }>;
   voiceSettings: {
     language: string;

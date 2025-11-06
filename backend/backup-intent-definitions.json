@@ -1,0 +1,1037 @@
+{
+  "timestamp": "2025-11-05T13:22:01.744Z",
+  "count": 27,
+  "data": [
+    {
+      "_id": "6909c33d3102af903d55b27b",
+      "intent": "create_project",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager"
+      ],
+      "category": "project",
+      "contextRequired": [
+        "clients",
+        "users",
+        "projects"
+      ],
+      "createdAt": "2025-11-04T09:11:24.441Z",
+      "description": "Create a new project with client and manager assignment",
+      "enumValues": {
+        "status": [
+          "Active",
+          "Completed",
+          "Archived"
+        ]
+      },
+      "exampleCommand": "Create a project named AI Platform for client Acme Corp managed by John Doe starting January 1st",
+      "fieldTypes": {
+        "projectName": "string",
+        "description": "string",
+        "clientName": "string",
+        "managerName": "string",
+        "startDate": "date",
+        "endDate": "date",
+        "status": "enum",
+        "budget": "number"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "endDate",
+        "status",
+        "budget"
+      ],
+      "redirectUrlTemplate": "/projects/{projectId}",
+      "requiredFields": [
+        "projectName",
+        "description",
+        "clientName",
+        "managerName",
+        "startDate"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.441Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b27c",
+      "intent": "add_project_member",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager"
+      ],
+      "category": "project",
+      "contextRequired": [
+        "projects",
+        "users"
+      ],
+      "createdAt": "2025-11-04T09:11:24.661Z",
+      "description": "Add a team member to a project with a specific role",
+      "exampleCommand": "Add Sarah Smith as a developer to the AI Platform project",
+      "fieldTypes": {
+        "projectName": "string",
+        "role": "string",
+        "name": "string"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/projects/{projectId}?tab=members",
+      "requiredFields": [
+        "projectName",
+        "role",
+        "name"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.661Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b27d",
+      "intent": "remove_project_member",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager"
+      ],
+      "category": "project",
+      "contextRequired": [
+        "projects",
+        "users"
+      ],
+      "createdAt": "2025-11-04T09:11:24.692Z",
+      "description": "Remove a team member from a project",
+      "exampleCommand": "Remove John Doe from the AI Platform project",
+      "fieldTypes": {
+        "projectName": "string",
+        "role": "string",
+        "name": "string"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/projects/{projectId}?tab=members",
+      "requiredFields": [
+        "projectName",
+        "role",
+        "name"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.692Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b27e",
+      "intent": "add_task",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead"
+      ],
+      "category": "project",
+      "contextRequired": [
+        "projects",
+        "users"
+      ],
+      "createdAt": "2025-11-04T09:11:24.718Z",
+      "description": "Add a task to a project and assign it to a team member",
+      "enumValues": {
+        "status": [
+          "Open",
+          "InProgress",
+          "Completed"
+        ]
+      },
+      "exampleCommand": "Add a task called Code Review to AI Platform and assign it to Sarah Smith",
+      "fieldTypes": {
+        "projectName": "string",
+        "taskName": "string",
+        "assignedMemberName": "string",
+        "description": "string",
+        "estimatedHours": "number",
+        "status": "enum",
+        "isBillable": "boolean"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "description",
+        "estimatedHours",
+        "status",
+        "isBillable"
+      ],
+      "redirectUrlTemplate": "/projects/{projectId}?tab=tasks",
+      "requiredFields": [
+        "projectName",
+        "taskName",
+        "assignedMemberName"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.718Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b27f",
+      "intent": "update_project",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager"
+      ],
+      "category": "project",
+      "contextRequired": [
+        "projects",
+        "clients",
+        "users"
+      ],
+      "createdAt": "2025-11-04T09:11:24.746Z",
+      "description": "Update project details",
+      "enumValues": {
+        "status": [
+          "Active",
+          "Completed",
+          "Archived"
+        ]
+      },
+      "exampleCommand": "Update AI Platform project status to Completed",
+      "fieldTypes": {
+        "projectName": "string",
+        "managerName": "string",
+        "description": "string",
+        "clientName": "string",
+        "startDate": "date",
+        "endDate": "date",
+        "status": "enum",
+        "budget": "number"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "managerName",
+        "description",
+        "clientName",
+        "startDate",
+        "endDate",
+        "status",
+        "budget"
+      ],
+      "redirectUrlTemplate": "/projects/{projectId}",
+      "requiredFields": [
+        "projectName"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.746Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b280",
+      "intent": "update_task",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead"
+      ],
+      "category": "project",
+      "contextRequired": [
+        "projects",
+        "tasks",
+        "users"
+      ],
+      "createdAt": "2025-11-04T09:11:24.782Z",
+      "description": "Update task details",
+      "exampleCommand": "Update Code Review task estimated hours to 10",
+      "fieldTypes": {
+        "projectName": "string",
+        "taskName": "string",
+        "assignedMemberName": "string",
+        "description": "string",
+        "estimatedHours": "number"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "assignedMemberName",
+        "description",
+        "estimatedHours"
+      ],
+      "redirectUrlTemplate": "/projects/{projectId}?tab=tasks",
+      "requiredFields": [
+        "projectName",
+        "taskName"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.782Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b281",
+      "intent": "delete_project",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management"
+      ],
+      "category": "project",
+      "contextRequired": [
+        "projects"
+      ],
+      "createdAt": "2025-11-04T09:11:24.809Z",
+      "description": "Delete a project",
+      "exampleCommand": "Delete AI Platform project because it is cancelled",
+      "fieldTypes": {
+        "projectName": "string",
+        "managerName": "string",
+        "reason": "string"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "managerName"
+      ],
+      "redirectUrlTemplate": "/projects",
+      "requiredFields": [
+        "projectName",
+        "reason"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.809Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b282",
+      "intent": "create_user",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management"
+      ],
+      "category": "user",
+      "contextRequired": [
+        "users"
+      ],
+      "createdAt": "2025-11-04T09:11:24.834Z",
+      "description": "Create a new user account",
+      "enumValues": {
+        "role": [
+          "Management",
+          "Manager",
+          "Lead",
+          "Employee"
+        ]
+      },
+      "exampleCommand": "Create a user named Jane Doe with email jane@company.com as a Manager",
+      "fieldTypes": {
+        "userName": "string",
+        "email": "string",
+        "role": "enum",
+        "hourlyRate": "number"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "hourlyRate"
+      ],
+      "redirectUrlTemplate": "/admin/users/{userId}",
+      "requiredFields": [
+        "userName",
+        "email",
+        "role"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.834Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b283",
+      "intent": "update_user",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management"
+      ],
+      "category": "user",
+      "contextRequired": [
+        "users"
+      ],
+      "createdAt": "2025-11-04T09:11:24.866Z",
+      "description": "Update user account details",
+      "enumValues": {
+        "role": [
+          "Management",
+          "Manager",
+          "Lead",
+          "Employee"
+        ]
+      },
+      "exampleCommand": "Update Jane Doe role to Lead",
+      "fieldTypes": {
+        "userName": "string",
+        "email": "string",
+        "role": "enum",
+        "hourlyRate": "number"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "email",
+        "role",
+        "hourlyRate"
+      ],
+      "redirectUrlTemplate": "/admin/users/{userId}",
+      "requiredFields": [
+        "userName"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.866Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b284",
+      "intent": "delete_user",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management"
+      ],
+      "category": "user",
+      "contextRequired": [
+        "users"
+      ],
+      "createdAt": "2025-11-04T09:11:24.895Z",
+      "description": "Delete a user account",
+      "exampleCommand": "Delete user Jane Doe because they left the company",
+      "fieldTypes": {
+        "userName": "string",
+        "role": "string",
+        "reason": "string"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "role"
+      ],
+      "redirectUrlTemplate": "/admin/users",
+      "requiredFields": [
+        "userName",
+        "reason"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.895Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b285",
+      "intent": "create_client",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management"
+      ],
+      "category": "client",
+      "contextRequired": [
+        "clients"
+      ],
+      "createdAt": "2025-11-04T09:11:24.924Z",
+      "description": "Create a new client",
+      "exampleCommand": "Create a client named Acme Corp with contact John Smith at john@acme.com",
+      "fieldTypes": {
+        "clientName": "string",
+        "contactPerson": "string",
+        "contactEmail": "string",
+        "isActive": "boolean"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "isActive"
+      ],
+      "redirectUrlTemplate": "/admin/clients/{clientId}",
+      "requiredFields": [
+        "clientName",
+        "contactPerson",
+        "contactEmail"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.924Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b286",
+      "intent": "update_client",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management"
+      ],
+      "category": "client",
+      "contextRequired": [
+        "clients"
+      ],
+      "createdAt": "2025-11-04T09:11:24.950Z",
+      "description": "Update client details",
+      "exampleCommand": "Update Acme Corp contact person to Jane Smith",
+      "fieldTypes": {
+        "clientName": "string",
+        "contactPerson": "string",
+        "contactEmail": "string",
+        "isActive": "boolean"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "contactPerson",
+        "contactEmail",
+        "isActive"
+      ],
+      "redirectUrlTemplate": "/admin/clients/{clientId}",
+      "requiredFields": [
+        "clientName"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.950Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b287",
+      "intent": "delete_client",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management"
+      ],
+      "category": "client",
+      "contextRequired": [
+        "clients"
+      ],
+      "createdAt": "2025-11-04T09:11:24.977Z",
+      "description": "Delete a client",
+      "exampleCommand": "Delete client Acme Corp because they closed their business",
+      "fieldTypes": {
+        "clientName": "string",
+        "reason": "string"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/admin/clients",
+      "requiredFields": [
+        "clientName",
+        "reason"
+      ],
+      "updatedAt": "2025-11-04T09:11:24.977Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b288",
+      "intent": "create_timesheet",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead",
+        "employee"
+      ],
+      "category": "timesheet",
+      "contextRequired": [
+        "timesheets"
+      ],
+      "createdAt": "2025-11-04T09:11:25.001Z",
+      "description": "Create a new timesheet for a week",
+      "exampleCommand": "Create a timesheet for this week",
+      "fieldTypes": {
+        "weekStart": "date",
+        "weekEnd": "date"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/timesheets?week={weekStart}",
+      "requiredFields": [
+        "weekStart",
+        "weekEnd"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.001Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b289",
+      "intent": "add_entries",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead",
+        "employee"
+      ],
+      "category": "timesheet",
+      "contextRequired": [
+        "timesheets",
+        "projects",
+        "tasks"
+      ],
+      "createdAt": "2025-11-04T09:11:25.025Z",
+      "description": "Add time entries to a timesheet",
+      "enumValues": {
+        "taskType": [
+          "project_task",
+          "custom_task"
+        ],
+        "entryType": [
+          "Project",
+          "Training",
+          "Leave",
+          "Miscellaneous"
+        ]
+      },
+      "exampleCommand": "Log 8 hours for AI Platform project on Code Review task for today",
+      "fieldTypes": {
+        "projectName": "string",
+        "taskName": "string",
+        "taskType": "enum",
+        "date": "date",
+        "hours": "number",
+        "description": "string",
+        "entryType": "enum"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "taskType",
+        "description"
+      ],
+      "redirectUrlTemplate": "/timesheets?week={weekStart}",
+      "requiredFields": [
+        "projectName",
+        "taskName",
+        "date",
+        "hours",
+        "entryType"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.025Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b28a",
+      "intent": "update_entries",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead",
+        "employee"
+      ],
+      "category": "timesheet",
+      "contextRequired": [
+        "timesheets",
+        "projects",
+        "tasks"
+      ],
+      "createdAt": "2025-11-04T09:11:25.052Z",
+      "description": "Update time entries in a timesheet",
+      "enumValues": {
+        "taskType": [
+          "project_task",
+          "custom_task"
+        ],
+        "entryType": [
+          "Project",
+          "Training",
+          "Leave",
+          "Miscellaneous"
+        ]
+      },
+      "exampleCommand": "Update Monday entry for AI Platform to 9 hours",
+      "fieldTypes": {
+        "weekStart": "date",
+        "projectName": "string",
+        "taskName": "string",
+        "taskType": "enum",
+        "date": "date",
+        "hours": "number",
+        "description": "string",
+        "entryType": "enum"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "taskType",
+        "date",
+        "hours",
+        "description",
+        "entryType"
+      ],
+      "redirectUrlTemplate": "/timesheets?week={weekStart}",
+      "requiredFields": [
+        "weekStart",
+        "projectName",
+        "taskName"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.052Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b28b",
+      "intent": "delete_timesheet",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead",
+        "employee"
+      ],
+      "category": "timesheet",
+      "contextRequired": [
+        "timesheets"
+      ],
+      "createdAt": "2025-11-04T09:11:25.079Z",
+      "description": "Delete an entire timesheet",
+      "exampleCommand": "Delete timesheet for last week",
+      "fieldTypes": {
+        "weekStart": "date"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/timesheets",
+      "requiredFields": [
+        "weekStart"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.079Z"
+    },
+    {
+      "_id": "6909c33d3102af903d55b28c",
+      "intent": "delete_entries",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead",
+        "employee"
+      ],
+      "category": "timesheet",
+      "contextRequired": [
+        "timesheets",
+        "projects",
+        "tasks"
+      ],
+      "createdAt": "2025-11-04T09:11:25.111Z",
+      "description": "Delete specific time entries",
+      "exampleCommand": "Delete Monday entry for AI Platform",
+      "fieldTypes": {
+        "weekStart": "date",
+        "projectName": "string",
+        "taskName": "string"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/timesheets?week={weekStart}",
+      "requiredFields": [
+        "weekStart",
+        "projectName",
+        "taskName"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.111Z"
+    },
+    {
+      "_id": "6909c33e3102af903d55b28d",
+      "intent": "copy_entry",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead",
+        "employee"
+      ],
+      "category": "timesheet",
+      "contextRequired": [
+        "timesheets",
+        "projects",
+        "tasks"
+      ],
+      "createdAt": "2025-11-04T09:11:25.139Z",
+      "description": "Copy a time entry to multiple dates",
+      "exampleCommand": "Copy Monday AI Platform entry to rest of the week",
+      "fieldTypes": {
+        "projectName": "string",
+        "taskName": "string",
+        "date": "date",
+        "weekDates": "array"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/timesheets?week={weekStart}",
+      "requiredFields": [
+        "projectName",
+        "taskName",
+        "date",
+        "weekDates"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.139Z"
+    },
+    {
+      "_id": "6909c33e3102af903d55b28e",
+      "intent": "approve_user",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead"
+      ],
+      "category": "team_review",
+      "contextRequired": [
+        "users",
+        "projects",
+        "projectWeekGroups"
+      ],
+      "createdAt": "2025-11-04T09:11:25.167Z",
+      "description": "Approve a user timesheet for a project and week",
+      "exampleCommand": "Approve Jane Doe timesheet for AI Platform project this week",
+      "fieldTypes": {
+        "weekStart": "date",
+        "weekEnd": "date",
+        "userName": "string",
+        "projectName": "string"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/team-review?week={weekStart}",
+      "requiredFields": [
+        "weekStart",
+        "weekEnd",
+        "userName",
+        "projectName"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.167Z"
+    },
+    {
+      "_id": "6909c33e3102af903d55b28f",
+      "intent": "approve_project_week",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager"
+      ],
+      "category": "team_review",
+      "contextRequired": [
+        "projects",
+        "projectWeekGroups"
+      ],
+      "createdAt": "2025-11-04T09:11:25.193Z",
+      "description": "Approve all timesheets for a project and week",
+      "exampleCommand": "Approve all timesheets for AI Platform project this week",
+      "fieldTypes": {
+        "weekStart": "date",
+        "weekEnd": "date",
+        "projectName": "string"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/team-review?week={weekStart}",
+      "requiredFields": [
+        "weekStart",
+        "weekEnd",
+        "projectName"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.193Z"
+    },
+    {
+      "_id": "6909c33e3102af903d55b290",
+      "intent": "reject_user",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead"
+      ],
+      "category": "team_review",
+      "contextRequired": [
+        "users",
+        "projects",
+        "projectWeekGroups"
+      ],
+      "createdAt": "2025-11-04T09:11:25.221Z",
+      "description": "Reject a user timesheet for a project and week",
+      "exampleCommand": "Reject Jane Doe timesheet for AI Platform because hours are incorrect",
+      "fieldTypes": {
+        "weekStart": "date",
+        "weekEnd": "date",
+        "userName": "string",
+        "projectName": "string",
+        "reason": "string"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/team-review?week={weekStart}",
+      "requiredFields": [
+        "weekStart",
+        "weekEnd",
+        "userName",
+        "projectName",
+        "reason"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.221Z"
+    },
+    {
+      "_id": "6909c33e3102af903d55b291",
+      "intent": "reject_project_week",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager"
+      ],
+      "category": "team_review",
+      "contextRequired": [
+        "projects",
+        "projectWeekGroups"
+      ],
+      "createdAt": "2025-11-04T09:11:25.249Z",
+      "description": "Reject all timesheets for a project and week",
+      "exampleCommand": "Reject all AI Platform timesheets this week because project was on hold",
+      "fieldTypes": {
+        "weekStart": "date",
+        "weekEnd": "date",
+        "projectName": "string",
+        "reason": "string"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/team-review?week={weekStart}",
+      "requiredFields": [
+        "weekStart",
+        "weekEnd",
+        "projectName",
+        "reason"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.249Z"
+    },
+    {
+      "_id": "6909c33e3102af903d55b292",
+      "intent": "send_reminder",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager",
+        "lead"
+      ],
+      "category": "team_review",
+      "contextRequired": [
+        "projects",
+        "projectWeekGroups",
+        "users"
+      ],
+      "createdAt": "2025-11-04T09:11:25.276Z",
+      "description": "Send reminder to submit timesheets",
+      "exampleCommand": "Send reminder for AI Platform timesheets for this week",
+      "fieldTypes": {
+        "weekStart": "date",
+        "weekEnd": "date",
+        "projectName": "string"
+      },
+      "isActive": true,
+      "optionalFields": [],
+      "redirectUrlTemplate": "/team-review?week={weekStart}",
+      "requiredFields": [
+        "weekStart",
+        "weekEnd",
+        "projectName"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.276Z"
+    },
+    {
+      "_id": "6909c33e3102af903d55b293",
+      "intent": "export_project_billing",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager"
+      ],
+      "category": "billing",
+      "contextRequired": [
+        "projects",
+        "clients",
+        "projectWeekGroups"
+      ],
+      "createdAt": "2025-11-04T09:11:25.301Z",
+      "description": "Export project billing report",
+      "enumValues": {
+        "format": [
+          "CSV",
+          "PDF",
+          "Excel"
+        ]
+      },
+      "exampleCommand": "Export AI Platform billing for last month as PDF",
+      "fieldTypes": {
+        "startDate": "date",
+        "endDate": "date",
+        "projectName": "string",
+        "clientName": "string",
+        "format": "enum"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "projectName",
+        "clientName"
+      ],
+      "redirectUrlTemplate": "/billing/projects",
+      "requiredFields": [
+        "startDate",
+        "endDate",
+        "format"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.301Z"
+    },
+    {
+      "_id": "6909c33e3102af903d55b294",
+      "intent": "export_user_billing",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management",
+        "manager"
+      ],
+      "category": "billing",
+      "contextRequired": [
+        "users",
+        "clients",
+        "projectWeekGroups"
+      ],
+      "createdAt": "2025-11-04T09:11:25.326Z",
+      "description": "Export user billing report",
+      "enumValues": {
+        "format": [
+          "CSV",
+          "PDF",
+          "Excel"
+        ]
+      },
+      "exampleCommand": "Export Jane Doe billing for last quarter as Excel",
+      "fieldTypes": {
+        "startDate": "date",
+        "endDate": "date",
+        "userName": "string",
+        "clientName": "string",
+        "format": "enum"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "userName",
+        "clientName"
+      ],
+      "redirectUrlTemplate": "/billing/users",
+      "requiredFields": [
+        "startDate",
+        "endDate",
+        "format"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.326Z"
+    },
+    {
+      "_id": "6909c33e3102af903d55b295",
+      "intent": "get_audit_logs",
+      "__v": 0,
+      "allowedRoles": [
+        "super_admin",
+        "management"
+      ],
+      "category": "audit",
+      "contextRequired": [],
+      "createdAt": "2025-11-04T09:11:25.350Z",
+      "description": "Retrieve audit logs",
+      "exampleCommand": "Get audit logs for last month",
+      "fieldTypes": {
+        "startDate": "date",
+        "endDate": "date",
+        "needExport": "boolean"
+      },
+      "isActive": true,
+      "optionalFields": [
+        "needExport"
+      ],
+      "redirectUrlTemplate": "/admin/audit-logs",
+      "requiredFields": [
+        "startDate",
+        "endDate"
+      ],
+      "updatedAt": "2025-11-04T09:11:25.350Z"
+    }
+  ]
+}

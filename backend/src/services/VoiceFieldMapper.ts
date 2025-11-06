@@ -338,6 +338,7 @@ class VoiceFieldMapper {
 
   /**
    * Resolve manager identifier (name or ID) to ObjectId
+   * Note: Only returns users with "manager" role, not other management-level roles
    */
   private async resolveManagerId(identifier: string): Promise<{ success: boolean; id?: Types.ObjectId; error?: FieldMappingError }> {
     try {
@@ -345,7 +346,7 @@ class VoiceFieldMapper {
       if (Types.ObjectId.isValid(identifier) && identifier.length === 24) {
         const user = await (User as any).findOne({
           _id: identifier,
-          role: { $in: ['manager', 'management', 'lead', 'super_admin'] },
+          role: 'manager', // Only actual managers, not management/lead/super_admin
           deleted_at: null
         });
         if (user) {
@@ -356,7 +357,7 @@ class VoiceFieldMapper {
       // Try exact name match (case-insensitive)
       let manager = await (User as any).findOne({
         full_name: { $regex: new RegExp(`^${this.escapeRegex(identifier)}$`, 'i') },
-        role: { $in: ['manager', 'management', 'lead', 'super_admin'] },
+        role: 'manager', // Only actual managers
         deleted_at: null
       });
 
@@ -368,7 +369,7 @@ class VoiceFieldMapper {
       // Try fuzzy match
       const fuzzyMatches = await (User as any).find({
         full_name: { $regex: new RegExp(this.escapeRegex(identifier), 'i') },
-        role: { $in: ['manager', 'management', 'lead', 'super_admin'] },
+        role: 'manager', // Only actual managers
         deleted_at: null
       }).limit(5);
 
@@ -379,7 +380,7 @@ class VoiceFieldMapper {
 
       // Get suggestions
       const allManagers = await (User as any).find({
-        role: { $in: ['manager', 'management', 'lead', 'super_admin'] },
+        role: 'manager', // Only actual managers
         deleted_at: null
       })
         .select('full_name')

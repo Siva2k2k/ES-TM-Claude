@@ -102,7 +102,7 @@ export const intentDefinitions = [
       assignedMemberName: 'projectMember'
     },
     contextRequired: ['projects', 'users'],
-    allowedRoles: ['super_admin', 'management', 'manager', 'lead'],
+    allowedRoles: ['super_admin', 'management', 'manager'],
     exampleCommand: 'Add a task called Code Review to AI Platform and assign it to Sarah Smith',
     redirectUrlTemplate: '/projects/{projectId}?tab=tasks',
     isActive: true
@@ -251,7 +251,7 @@ export const intentDefinitions = [
       userName: 'user'
     },
     contextRequired: ['users'],
-    allowedRoles: ['super_admin', 'management'],
+    allowedRoles: ['super_admin'],
     exampleCommand: 'Delete user Jane Doe because they left the company',
     redirectUrlTemplate: '/admin/users',
     isActive: true
@@ -584,7 +584,7 @@ export const intentDefinitions = [
       format: ['CSV', 'PDF', 'Excel']
     },
     contextRequired: ['projects', 'clients', 'projectWeekGroups'],
-    allowedRoles: ['super_admin', 'management', 'manager'],
+    allowedRoles: ['super_admin', 'management'],
     exampleCommand: 'Export AI Platform billing for last month as PDF',
     redirectUrlTemplate: '/billing/projects',
     isActive: true
@@ -606,7 +606,7 @@ export const intentDefinitions = [
       format: ['CSV', 'PDF', 'Excel']
     },
     contextRequired: ['users', 'clients', 'projectWeekGroups'],
-    allowedRoles: ['super_admin', 'management', 'manager'],
+    allowedRoles: ['super_admin', 'management'],
     exampleCommand: 'Export Jane Doe billing for last quarter as Excel',
     redirectUrlTemplate: '/billing/users',
     isActive: true

@@ -40,8 +40,8 @@ const UserAnalyticsPage: React.FC = () => {
         weeks: selectedWeeks
       });
       
-      if (response.data) {
-        setAnalytics(response.data);
+      if (response) {
+        setAnalytics(response);
       }
     } catch (err) {
       console.error('Failed to load user analytics:', err);

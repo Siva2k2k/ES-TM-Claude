@@ -43,6 +43,7 @@ const UserTrackingList: React.FC = () => {
       setLoading(true);
       setError(null);
       
+      console.log('Loading users with filters:', { weeks: selectedWeeks, page: pagination.page, limit: pagination.limit, search: searchTerm });
       const response = await userTrackingService.getUserList({
         weeks: selectedWeeks,
         page: pagination.page,
@@ -50,25 +51,34 @@ const UserTrackingList: React.FC = () => {
         search: searchTerm || undefined
       });
       
-      if (response.data) {
-        setUsers(response.data.users);
-        setPagination(response.data.pagination);
+      console.log('Users API response:', response);
+      
+      if (response && response.users) {
+        setUsers(response.users);
+        setPagination(response.pagination);
+      } else {
+        console.warn('No user data received from API');
+        setUsers([]);
       }
     } catch (err) {
       console.error('Failed to load users:', err);
-      setError('Failed to load user data. Please try again.');
+      setError(`Failed to load user data: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   }, [selectedWeeks, pagination.page, pagination.limit, searchTerm]);
 
   useEffect(() => {
-    // Check permissions
-    if (!['manager', 'management'].includes(currentUserRole || '')) {
+    // Check permissions and log current user info for debugging
+    console.log('Current user role for UserTrackingList:', currentUserRole);
+    
+    if (!['manager', 'management', 'super_admin'].includes(currentUserRole || '')) {
+      console.log('Access denied to UserTrackingList. Role required: manager, management, or super_admin. Current role:', currentUserRole);
       navigate('/dashboard');
       return;
     }
 
+    console.log('Permission granted to UserTrackingList. Loading users...');
     loadUsers();
   }, [currentUserRole, navigate, loadUsers]);
 
@@ -148,6 +158,85 @@ const UserTrackingList: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-4">
+          <button
+            onClick={async () => {
+              try {
+                console.log('Testing Users API connectivity...');
+                const testResponse = await fetch('/api/v1/user-tracking/users?weeks=4&page=1&limit=20', {
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken') || localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  }
+                });
+                console.log('Test response status:', testResponse.status);
+                const testData = await testResponse.json();
+                console.log('Test response data:', testData);
+                alert(`Users API Test: ${testResponse.status} - ${JSON.stringify(testData, null, 2)}`);
+              } catch (error) {
+                console.error('Users API test failed:', error);
+                alert(`Users API Test Failed: ${error}`);
+              }
+            }}
+            className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+          >
+            Test API
+          </button>
+
+          <button
+            onClick={async () => {
+              try {
+                console.log('Triggering aggregation for users...');
+                const aggResponse = await fetch('/api/v1/user-tracking/aggregate', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken') || localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({ weeks: 8 })
+                });
+                console.log('Aggregation response status:', aggResponse.status);
+                const aggData = await aggResponse.json();
+                console.log('Aggregation response data:', aggData);
+                alert(`Aggregation: ${aggResponse.status} - Processed: ${aggData.data?.processed || 0} records`);
+                
+                // Reload data after aggregation
+                if (aggResponse.ok) {
+                  loadUsers();
+                }
+              } catch (error) {
+                console.error('Aggregation failed:', error);
+                alert(`Aggregation Failed: ${error}`);
+              }
+            }}
+            className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+          >
+            Trigger Aggregation
+          </button>
+
+          <button
+            onClick={async () => {
+              try {
+                console.log('Checking aggregation stats...');
+                const statsResponse = await fetch('/api/v1/user-tracking/stats?weeks=4', {
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken') || localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  }
+                });
+                console.log('Stats response status:', statsResponse.status);
+                const statsData = await statsResponse.json();
+                console.log('Stats response data:', statsData);
+                alert(`Stats: ${statsResponse.status} - ${JSON.stringify(statsData, null, 2)}`);
+              } catch (error) {
+                console.error('Stats check failed:', error);
+                alert(`Stats Check Failed: ${error}`);
+              }
+            }}
+            className="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+          >
+            Check Stats
+          </button>
+          
           <select
             value={selectedWeeks}
             onChange={(e) => setSelectedWeeks(Number(e.target.value))}
@@ -249,7 +338,7 @@ const UserTrackingList: React.FC = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                        {user.full_name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                        {user.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
                       </div>
                       <div>
                         <h3 className="font-medium text-gray-900 dark:text-gray-100">
@@ -344,9 +433,22 @@ const UserTrackingList: React.FC = () => {
           {users.length === 0 && !loading && (
             <div className="text-center py-12">
               <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <p className="text-gray-600 dark:text-gray-400">
+              <p className="text-gray-600 dark:text-gray-400 mb-4">
                 {searchTerm ? 'No users found matching your search.' : 'No user data available.'}
               </p>
+              {!searchTerm && (
+                <div className="text-sm text-gray-500 dark:text-gray-500 space-y-2">
+                  <p>This might be because:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    <li>No UserWeekSummary data has been aggregated yet</li>
+                    <li>No users have submitted timesheets in the selected time period</li>
+                    <li>You don't have access to view user data</li>
+                  </ul>
+                  <p className="mt-4">
+                    Try clicking "Trigger Aggregation" above to process existing timesheet data.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

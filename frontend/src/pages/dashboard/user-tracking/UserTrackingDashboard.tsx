@@ -37,26 +37,36 @@ const UserTrackingDashboard: React.FC = () => {
       setLoading(true);
       setError(null);
       
+      console.log('Loading dashboard data with weeks:', selectedWeeks);
       const response = await userTrackingService.getDashboardOverview({ weeks: selectedWeeks });
+      console.log('Dashboard data response:', response);
       
-      if (response.data) {
-        setOverview(response.data);
+      if (response) {
+        setOverview(response);
+      } else {
+        console.warn('No data received from dashboard overview API');
+        setError('No data received from server');
       }
     } catch (err) {
       console.error('Failed to load dashboard data:', err);
-      setError('Failed to load dashboard data. Please try again.');
+      setError(`Failed to load dashboard data: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
   }, [selectedWeeks]);
 
   useEffect(() => {
-    // Check permissions
-    if (!['manager', 'management'].includes(currentUserRole || '')) {
+    // Check permissions and log current user info for debugging
+    console.log('Current user role:', currentUserRole);
+    console.log('Checking permissions for user tracking dashboard...');
+    
+    if (!['manager', 'management', 'super_admin'].includes(currentUserRole || '')) {
+      console.log('Access denied. Role required: manager, management, or super_admin. Current role:', currentUserRole);
       navigate('/dashboard');
       return;
     }
 
+    console.log('Permission granted. Loading dashboard data...');
     loadDashboardData();
   }, [currentUserRole, navigate, loadDashboardData]);
 
@@ -110,7 +120,117 @@ const UserTrackingDashboard: React.FC = () => {
   if (!overview) {
     return (
       <div className="flex items-center justify-center min-h-96">
-        <p className="text-gray-600 dark:text-gray-400">No data available</p>
+        <div className="text-center">
+          <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400 mb-4">No data available</p>
+          <div className="text-sm text-gray-500 dark:text-gray-500 space-y-2">
+            <p>This might be because:</p>
+            <ul className="list-disc list-inside space-y-1">
+              <li>No UserWeekSummary data has been aggregated yet</li>
+              <li>No users have submitted timesheets in the selected time period</li>
+              <li>Your role doesn't have access to view this data</li>
+            </ul>
+            <p className="mt-4">
+              Try using the "Test API" and "Trigger Aggregation" buttons above.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Check if overview has data but arrays are empty
+  const hasNoData = overview.overview.total_users === 0 && 
+                   overview.trends.length === 0 && 
+                   overview.top_performers.length === 0;
+
+  if (hasNoData) {
+    return (
+      <div className="space-y-6">
+        {/* Header with controls for debugging */}
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
+              User Tracking Dashboard
+            </h1>
+            <p className="text-gray-600 dark:text-gray-400 mt-1">
+              Monitor team performance and productivity metrics
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <button
+              onClick={async () => {
+                try {
+                  console.log('Testing API connectivity...');
+                  const testResponse = await fetch('/api/v1/user-tracking/dashboard?weeks=4', {
+                    headers: {
+                      'Authorization': `Bearer ${localStorage.getItem('accessToken') || localStorage.getItem('authToken')}`,
+                      'Content-Type': 'application/json'
+                    }
+                  });
+                  console.log('Test response status:', testResponse.status);
+                  const testData = await testResponse.json();
+                  console.log('Test response data:', testData);
+                  alert(`API Test: ${testResponse.status} - ${JSON.stringify(testData, null, 2)}`);
+                } catch (error) {
+                  console.error('API test failed:', error);
+                  alert(`API Test Failed: ${error}`);
+                }
+              }}
+              className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+            >
+              Test API
+            </button>
+
+            <button
+              onClick={async () => {
+                try {
+                  console.log('Triggering aggregation...');
+                  const aggResponse = await fetch('/api/v1/user-tracking/aggregate', {
+                    method: 'POST',
+                    headers: {
+                      'Authorization': `Bearer ${localStorage.getItem('accessToken') || localStorage.getItem('authToken')}`,
+                      'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ weeks: 4 })
+                  });
+                  console.log('Aggregation response status:', aggResponse.status);
+                  const aggData = await aggResponse.json();
+                  console.log('Aggregation response data:', aggData);
+                  alert(`Aggregation: ${aggResponse.status} - Processed: ${aggData.data?.processed || 0} records`);
+                  
+                  // Reload data after aggregation
+                  if (aggResponse.ok) {
+                    loadDashboardData();
+                  }
+                } catch (error) {
+                  console.error('Aggregation failed:', error);
+                  alert(`Aggregation Failed: ${error}`);
+                }
+              }}
+              className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+            >
+              Trigger Aggregation
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-center min-h-96">
+          <div className="text-center">
+            <BarChart3 className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-600 dark:text-gray-400 mb-4">Dashboard loaded but no performance data found</p>
+            <div className="text-sm text-gray-500 dark:text-gray-500 space-y-2">
+              <p>API responded successfully but returned empty data. This might be because:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>You're a manager with no direct reports</li>
+                <li>No users have activity in the selected time period</li>
+                <li>UserWeekSummary data needs to be aggregated</li>
+              </ul>
+              <p className="mt-4">Current role: <span className="font-semibold">{currentUserRole}</span></p>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -129,6 +249,61 @@ const UserTrackingDashboard: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-4">
+          <button
+            onClick={async () => {
+              try {
+                console.log('Testing API connectivity...');
+                const testResponse = await fetch('/api/v1/user-tracking/dashboard?weeks=4', {
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken') || localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  }
+                });
+                console.log('Test response status:', testResponse.status);
+                const testData = await testResponse.json();
+                console.log('Test response data:', testData);
+                alert(`API Test: ${testResponse.status} - ${JSON.stringify(testData, null, 2)}`);
+              } catch (error) {
+                console.error('API test failed:', error);
+                alert(`API Test Failed: ${error}`);
+              }
+            }}
+            className="px-3 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
+          >
+            Test API
+          </button>
+
+          <button
+            onClick={async () => {
+              try {
+                console.log('Triggering aggregation...');
+                const aggResponse = await fetch('/api/v1/user-tracking/aggregate', {
+                  method: 'POST',
+                  headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('accessToken') || localStorage.getItem('authToken')}`,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({ weeks: 4 })
+                });
+                console.log('Aggregation response status:', aggResponse.status);
+                const aggData = await aggResponse.json();
+                console.log('Aggregation response data:', aggData);
+                alert(`Aggregation: ${aggResponse.status} - Processed: ${aggData.data?.processed || 0} records`);
+                
+                // Reload data after aggregation
+                if (aggResponse.ok) {
+                  loadDashboardData();
+                }
+              } catch (error) {
+                console.error('Aggregation failed:', error);
+                alert(`Aggregation Failed: ${error}`);
+              }
+            }}
+            className="px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
+          >
+            Trigger Aggregation
+          </button>
+          
           <select
             value={selectedWeeks}
             onChange={(e) => setSelectedWeeks(Number(e.target.value))}

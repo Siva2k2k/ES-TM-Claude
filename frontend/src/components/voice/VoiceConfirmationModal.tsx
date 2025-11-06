@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useVoice } from '../../contexts/VoiceContext';
-import { VoiceAction, VoiceActionField } from '../../types/voice';
+import { VoiceAction, VoiceActionField, VoiceError } from '../../types/voice';
 import { backendApi } from '../../lib/backendApi';
+import VoiceErrorDisplay from '../VoiceErrorDisplay';
 
 const IconCheck = ({ size = 20 }: { size?: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -202,19 +203,18 @@ const VoiceConfirmationModal: React.FC = () => {
     const options: Record<string, Array<{ value: string; label: string }>> = {};
 
     try {
-      // Collect all reference types needed
+      // Collect all reference types needed from field definitions
       const referenceTypes = new Set<string>();
       let projectIdForTasks: string | null = null;
       let projectIdForMembers: string | null = null;
 
       actions.forEach(action => {
         action.fields?.forEach(field => {
-          if (field.referenceType) {
+          if (field.type === 'reference' && field.referenceType) {
             referenceTypes.add(field.referenceType);
 
             // Track project ID for task/member fetching
             if (field.referenceType === 'task' || field.referenceType === 'projectMember') {
-              // Look for project_id in action data
               const projectId = action.data.project_id || action.data.projectName || action.data.project;
               if (projectId) {
                 if (field.referenceType === 'task') projectIdForTasks = projectId;
@@ -223,9 +223,23 @@ const VoiceConfirmationModal: React.FC = () => {
             }
           }
         });
+
+        // Also check legacy field patterns that might not have explicit field definitions
+        Object.keys(action.data).forEach(fieldName => {
+          if (fieldName.includes('client') || fieldName === 'client_id') {
+            referenceTypes.add('client');
+          }
+          if (fieldName.includes('manager') || fieldName.includes('user')) {
+            referenceTypes.add('user');
+            referenceTypes.add('manager');
+          }
+          if (fieldName.includes('project') || fieldName === 'project_id') {
+            referenceTypes.add('project');
+          }
+        });
       });
 
-      // Fetch clients
+      // Fetch clients if needed
       if (referenceTypes.has('client')) {
         try {
           const clientsResponse = await backendApi.get<{ success: boolean; data: any[] }>('/clients');
@@ -234,16 +248,19 @@ const VoiceConfirmationModal: React.FC = () => {
               value: c.id || c._id,
               label: c.name || c.client_name
             }));
+            
+            // Map to all possible client field names
             options['client'] = clientOptions;
             options['client_id'] = clientOptions;
             options['clientName'] = clientOptions;
+            options['client_name'] = clientOptions;
           }
         } catch (error) {
           console.error('Failed to fetch clients:', error);
         }
       }
 
-      // Fetch users
+      // Fetch users and managers if needed
       if (referenceTypes.has('user') || referenceTypes.has('manager')) {
         try {
           const usersResponse = await backendApi.get<{ success: boolean; users: any[] }>('/users');
@@ -253,8 +270,10 @@ const VoiceConfirmationModal: React.FC = () => {
               label: u.full_name || u.name
             }));
 
+            // For manager reference type, only include users with "manager" role
+            // Not other management-level roles like "management", "lead", "super_admin"
             const managers = usersResponse.users
-              .filter((u: any) => ['manager', 'management', 'lead', 'super_admin'].includes(u.role?.toLowerCase()))
+              .filter((u: any) => u.role?.toLowerCase() === 'manager') // Only actual managers
               .map((u: any) => ({
                 value: u.id || u._id,
                 label: u.full_name || u.name
@@ -270,6 +289,47 @@ const VoiceConfirmationModal: React.FC = () => {
               options['manager'] = managers;
               options['primary_manager_id'] = managers;
               options['managerName'] = managers;
+            }
+
+            // Special handling for add_project_member intent
+            const projectMemberAction = actions.find(action => action.intent === 'add_project_member' || action.intent === 'remove_project_member');
+            if (projectMemberAction) {
+              const projectId = projectMemberAction.data.projectName || projectMemberAction.data.project_id;
+              const selectedRole = projectMemberAction.data.role;
+              
+              let filteredUsers = [...usersResponse.users];
+              
+              // Filter by role if selected
+              if (selectedRole && typeof selectedRole === 'string') {
+                if (selectedRole.toLowerCase() === 'employee') {
+                  filteredUsers = filteredUsers.filter((u: any) => u.role?.toLowerCase() === 'employee');
+                } else if (selectedRole.toLowerCase() === 'lead') {
+                  filteredUsers = filteredUsers.filter((u: any) => u.role?.toLowerCase() === 'lead');
+                }
+              }
+              
+              // Exclude existing project members if we have a project ID
+              if (projectId) {
+                try {
+                  const existingMembersResponse = await backendApi.get<{ success: boolean; members: any[] }>(`/projects/${projectId}/members`);
+                  if (existingMembersResponse.success && existingMembersResponse.members) {
+                    const existingMemberIds = existingMembersResponse.members.map((m: any) => m.user_id || m.id || m._id);
+                    filteredUsers = filteredUsers.filter((u: any) => !existingMemberIds.includes(u.id || u._id));
+                  }
+                } catch (error) {
+                  console.error('Failed to fetch existing project members:', error);
+                  // Continue without filtering existing members
+                }
+              }
+              
+              const availableUserOptions = filteredUsers.map((u: any) => ({
+                value: u.id || u._id,
+                label: u.full_name || u.name
+              }));
+              
+              // Store for project member name field - override the general user options
+              options['name'] = availableUserOptions;
+              options['memberName'] = availableUserOptions;
             }
           }
         } catch (error) {
@@ -414,6 +474,14 @@ const VoiceConfirmationModal: React.FC = () => {
       },
     };
     setEditedActions(updated);
+
+    // If this is a role change for add_project_member intent, re-fetch dropdown options
+    if ((updated[actionIndex].intent === 'add_project_member' || updated[actionIndex].intent === 'remove_project_member') && field === 'role') {
+      // Trigger re-fetch of dropdown options with the new role selection
+      setTimeout(() => {
+        fetchDropdownOptions(updated);
+      }, 100);
+    }
   };
 
   const handleRemoveAction = (actionIndex: number) => {

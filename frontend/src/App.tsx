@@ -53,6 +53,9 @@ import UserBillingPage from './pages/billing/UserBillingPage';
 // User Tracking (Phase 9)
 import UserTrackingDashboard from './pages/dashboard/user-tracking/UserTrackingDashboard';
 import UserTrackingList from './pages/dashboard/user-tracking/UserTrackingList';
+import UserAnalyticsPage from './pages/dashboard/user-tracking/UserAnalyticsPage';
+import GeneralAnalyticsPage from './pages/dashboard/user-tracking/GeneralAnalyticsPage';
+import TeamRankingPage from './pages/dashboard/user-tracking/TeamRankingPage';
 import TaskBillingPage from './pages/billing/TaskBillingPage';
 import InvoiceManagementPage from './pages/billing/InvoiceManagementPage';
 import RateManagementPage from './pages/billing/RateManagementPage';
@@ -181,9 +184,24 @@ const App: React.FC = () => {
               <UserTrackingDashboard />
             </ProtectedRoute>
           } />
+          <Route path="user-tracking/analytics" element={
+            <ProtectedRoute requiredRoles={['manager', 'management']}>
+              <GeneralAnalyticsPage />
+            </ProtectedRoute>
+          } />
+          <Route path="user-tracking/team/ranking" element={
+            <ProtectedRoute requiredRoles={['manager', 'management']}>
+              <TeamRankingPage />
+            </ProtectedRoute>
+          } />
           <Route path="user-tracking/users" element={
             <ProtectedRoute requiredRoles={['manager', 'management']}>
               <UserTrackingList />
+            </ProtectedRoute>
+          } />
+          <Route path="user-tracking/users/:userId/analytics" element={
+            <ProtectedRoute requiredRoles={['manager', 'management']}>
+              <UserAnalyticsPage />
             </ProtectedRoute>
           } />
 

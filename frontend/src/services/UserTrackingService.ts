@@ -116,7 +116,7 @@ export class UserTrackingService {
   }
 
   /**
-   * Trigger aggregation
+   * Trigger aggregation for specific timesheet or user
    */
   async triggerAggregation(data: AggregationRequest): Promise<AggregationResponse> {
     try {
@@ -131,6 +131,35 @@ export class UserTrackingService {
       throw new Error(errorMessage);
     }
   }
+
+  /**
+   * Test API connectivity
+   */
+  async testApiConnectivity(): Promise<{ success: boolean; data?: unknown; error?: string }> {
+    try {
+      const response = await backendApi.get<{ success: boolean; data: DashboardOverview }>(
+        '/user-tracking/dashboard',
+        { params: { weeks: 4 } }
+      );
+      return { success: true, data: response };
+    } catch (error) {
+      console.error('Error in testApiConnectivity:', error);
+      const errorMessage = error instanceof BackendApiError ? error.message : 'Failed to test API connectivity';
+      return { success: false, error: errorMessage };
+    }
+  }
 }
 
 export const userTrackingService = new UserTrackingService();
+
+// Export types for components
+export type {
+  UserAnalytics,
+  UtilizationTrendItem,
+  TeamRankingItem,
+  ProjectPerformance,
+  DashboardOverview,
+  UserTrackingFilters,
+  UserTrackingDashboardResponse,
+  UserListItem
+} from '../types/userTracking';

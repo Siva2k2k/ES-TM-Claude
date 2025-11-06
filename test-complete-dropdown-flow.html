@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Complete Dropdown Flow Test</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+      }
+      .test-section {
+        margin: 20px 0;
+        padding: 15px;
+        border: 1px solid #ccc;
+      }
+      .success {
+        color: green;
+      }
+      .error {
+        color: red;
+      }
+      .warning {
+        color: orange;
+      }
+      pre {
+        background: #f5f5f5;
+        padding: 10px;
+        overflow-x: auto;
+      }
+      button {
+        margin: 5px;
+        padding: 10px 15px;
+        cursor: pointer;
+      }
+      .dropdown {
+        margin: 10px 0;
+      }
+      select {
+        padding: 5px;
+        min-width: 200px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Complete Dropdown Population Test</h1>
+
+    <div class="test-section">
+      <h3>1. Authentication Test</h3>
+      <button onclick="testAuth()">Test Login</button>
+      <div id="auth-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h3>2. Backend API Tests</h3>
+      <button onclick="testClients()">Test Clients API</button>
+      <button onclick="testUsers()">Test Users API</button>
+      <div id="api-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h3>3. Dropdown Population Test</h3>
+      <button onclick="populateDropdowns()">Populate All Dropdowns</button>
+      <div id="dropdown-container">
+        <div class="dropdown">
+          <label>Client:</label>
+          <select id="client-dropdown">
+            <option value="">Loading...</option>
+          </select>
+        </div>
+        <div class="dropdown">
+          <label>Project Manager:</label>
+          <select id="manager-dropdown">
+            <option value="">Loading...</option>
+          </select>
+        </div>
+        <div class="dropdown">
+          <label>Status:</label>
+          <select id="status-dropdown">
+            <option value="">Loading...</option>
+          </select>
+        </div>
+      </div>
+      <div id="dropdown-result"></div>
+    </div>
+
+    <div class="test-section">
+      <h3>4. Voice Command Simulation</h3>
+      <p>
+        <strong>Sample Command:</strong> "Create a project named Internal
+        Project 3.0 with Manager, Project Manager with budget $12,000 and client
+        root stock. For the period. 12/12/2025 to 30/01/2026."
+      </p>
+      <button onclick="simulateVoiceCommand()">
+        Simulate Voice Command Processing
+      </button>
+      <div id="voice-result"></div>
+    </div>
+
+    <script>
+      let authToken = null;
+      const API_BASE = "http://localhost:3001/api/v1";
+
+      // Mock intent configuration for dropdown fields
+      const mockIntentConfig = {
+        project_creation: {
+          fields: {
+            project_name: { type: "text", required: true },
+            client_id: {
+              type: "reference",
+              referenceType: "client",
+              required: true,
+            },
+            project_manager_id: {
+              type: "reference",
+              referenceType: "manager",
+              required: true,
+            },
+            budget: { type: "number", required: false },
+            start_date: { type: "date", required: false },
+            end_date: { type: "date", required: false },
+            status: {
+              type: "enum",
+              options: ["active", "pending", "completed", "cancelled"],
+              required: false,
+            },
+          },
+        },
+      };
+
+      async function testAuth() {
+        const resultDiv = document.getElementById("auth-result");
+        resultDiv.innerHTML = "Testing authentication...";
+
+        try {
+          const response = await fetch(`${API_BASE}/auth/login`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              email: "admin@company.com",
+              password: "admin123",
+            }),
+          });
+
+          const data = await response.json();
+
+          if (data.success && data.token) {
+            authToken = data.token;
+            resultDiv.innerHTML = `<div class="success">✅ Authentication successful!</div>
+                                         <pre>Token: ${data.token.substring(
+                                           0,
+                                           50
+                                         )}...</pre>`;
+          } else {
+            resultDiv.innerHTML = `<div class="error">❌ Authentication failed</div>
+                                         <pre>${JSON.stringify(
+                                           data,
+                                           null,
+                                           2
+                                         )}</pre>`;
+          }
+        } catch (error) {
+          resultDiv.innerHTML = `<div class="error">❌ Auth Error: ${error.message}</div>`;
+        }
+      }
+
+      async function testClients() {
+        if (!authToken) {
+          document.getElementById("api-result").innerHTML =
+            '<div class="warning">⚠️ Please authenticate first</div>';
+          return;
+        }
+
+        const resultDiv = document.getElementById("api-result");
+        resultDiv.innerHTML = "Testing clients API...";
+
+        try {
+          const response = await fetch(`${API_BASE}/clients`, {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            resultDiv.innerHTML = `<div class="success">✅ Clients API working!</div>
+                                         <pre>Found ${data.data.length} clients:
+${JSON.stringify(data.data, null, 2)}</pre>`;
+          } else {
+            resultDiv.innerHTML = `<div class="error">❌ Clients API failed</div>
+                                         <pre>${JSON.stringify(
+                                           data,
+                                           null,
+                                           2
+                                         )}</pre>`;
+          }
+        } catch (error) {
+          resultDiv.innerHTML = `<div class="error">❌ Clients API Error: ${error.message}</div>`;
+        }
+      }
+
+      async function testUsers() {
+        if (!authToken) {
+          document.getElementById("api-result").innerHTML =
+            '<div class="warning">⚠️ Please authenticate first</div>';
+          return;
+        }
+
+        const resultDiv = document.getElementById("api-result");
+        resultDiv.innerHTML = "Testing users API...";
+
+        try {
+          const response = await fetch(`${API_BASE}/users`, {
+            headers: {
+              Authorization: `Bearer ${authToken}`,
+            },
+          });
+
+          const data = await response.json();
+
+          if (data.success) {
+            const managers = data.data.filter(
+              (user) =>
+                user.role === "manager" || user.role === "project_manager"
+            );
+
+            resultDiv.innerHTML = `<div class="success">✅ Users API working!</div>
+                                         <pre>Found ${
+                                           data.data.length
+                                         } total users, ${
+              managers.length
+            } managers:
+${JSON.stringify(managers, null, 2)}</pre>`;
+          } else {
+            resultDiv.innerHTML = `<div class="error">❌ Users API failed</div>
+                                         <pre>${JSON.stringify(
+                                           data,
+                                           null,
+                                           2
+                                         )}</pre>`;
+          }
+        } catch (error) {
+          resultDiv.innerHTML = `<div class="error">❌ Users API Error: ${error.message}</div>`;
+        }
+      }
+
+      async function populateDropdowns() {
+        if (!authToken) {
+          document.getElementById("dropdown-result").innerHTML =
+            '<div class="warning">⚠️ Please authenticate first</div>';
+          return;
+        }
+
+        const resultDiv = document.getElementById("dropdown-result");
+        resultDiv.innerHTML = "Populating dropdowns...";
+
+        try {
+          // Fetch clients
+          const clientsResponse = await fetch(`${API_BASE}/clients`, {
+            headers: { Authorization: `Bearer ${authToken}` },
+          });
+          const clientsData = await clientsResponse.json();
+
+          // Fetch users (managers)
+          const usersResponse = await fetch(`${API_BASE}/users`, {
+            headers: { Authorization: `Bearer ${authToken}` },
+          });
+          const usersData = await usersResponse.json();
+
+          // Populate client dropdown
+          const clientDropdown = document.getElementById("client-dropdown");
+          clientDropdown.innerHTML = '<option value="">Select Client</option>';
+          if (clientsData.success) {
+            clientsData.data.forEach((client) => {
+              const option = document.createElement("option");
+              option.value = client._id;
+              option.textContent =
+                client.name || client.client_name || "Unnamed Client";
+              clientDropdown.appendChild(option);
+            });
+          }
+
+          // Populate manager dropdown (filter for managers)
+          const managerDropdown = document.getElementById("manager-dropdown");
+          managerDropdown.innerHTML =
+            '<option value="">Select Manager</option>';
+          if (usersData.success) {
+            const managers = usersData.data.filter(
+              (user) =>
+                user.role === "manager" || user.role === "project_manager"
+            );
+            managers.forEach((manager) => {
+              const option = document.createElement("option");
+              option.value = manager._id;
+              option.textContent =
+                manager.full_name || manager.name || manager.email;
+              managerDropdown.appendChild(option);
+            });
+          }
+
+          // Populate status dropdown
+          const statusDropdown = document.getElementById("status-dropdown");
+          statusDropdown.innerHTML = '<option value="">Select Status</option>';
+          const statusOptions =
+            mockIntentConfig.project_creation.fields.status.options;
+          statusOptions.forEach((status) => {
+            const option = document.createElement("option");
+            option.value = status;
+            option.textContent =
+              status.charAt(0).toUpperCase() + status.slice(1);
+            statusDropdown.appendChild(option);
+          });
+
+          resultDiv.innerHTML = `<div class="success">✅ Dropdowns populated successfully!</div>
+                                     <pre>Clients: ${
+                                       clientsData.data?.length || 0
+                                     }
+Managers: ${
+            usersData.data?.filter(
+              (u) => u.role === "manager" || u.role === "project_manager"
+            ).length || 0
+          }
+Status Options: ${statusOptions.length}</pre>`;
+        } catch (error) {
+          resultDiv.innerHTML = `<div class="error">❌ Dropdown Population Error: ${error.message}</div>`;
+        }
+      }
+
+      async function simulateVoiceCommand() {
+        const resultDiv = document.getElementById("voice-result");
+        resultDiv.innerHTML = "Simulating voice command processing...";
+
+        // Simulate voice command parsing
+        const voiceCommand =
+          "Create a project named Internal Project 3.0 with Manager, Project Manager with budget $12,000 and client root stock. For the period. 12/12/2025 to 30/01/2026.";
+
+        const parsedFields = {
+          project_name: "Internal Project 3.0",
+          budget: 12000,
+          start_date: "2025-12-12",
+          end_date: "2026-01-30",
+          client_reference: "root stock",
+          manager_reference: "Manager, Project Manager",
+        };
+
+        // Check if dropdowns have options
+        const clientDropdown = document.getElementById("client-dropdown");
+        const managerDropdown = document.getElementById("manager-dropdown");
+        const statusDropdown = document.getElementById("status-dropdown");
+
+        const clientOptions = clientDropdown.options.length - 1; // -1 for placeholder
+        const managerOptions = managerDropdown.options.length - 1;
+        const statusOptions = statusDropdown.options.length - 1;
+
+        resultDiv.innerHTML = `<div class="success">✅ Voice Command Simulation Complete!</div>
+                                 <pre>Original Command: "${voiceCommand}"
+
+Parsed Fields:
+${JSON.stringify(parsedFields, null, 2)}
+
+Dropdown Status:
+- Client Options Available: ${clientOptions}
+- Manager Options Available: ${managerOptions}
+- Status Options Available: ${statusOptions}
+
+Reference Resolution:
+- Client: "${
+          parsedFields.client_reference
+        }" → Need to match with dropdown options
+- Manager: "${
+          parsedFields.manager_reference
+        }" → Need to match with dropdown options
+
+Next Steps:
+1. ✅ Dropdowns populated with real data
+2. ✅ Voice command parsed successfully
+3. 🔄 Need to implement reference matching logic
+4. 🔄 Need to show confirmation modal with populated dropdowns</pre>`;
+      }
+
+      // Auto-run authentication on page load
+      window.onload = function () {
+        console.log("Testing complete dropdown flow...");
+      };
+    </script>
+  </body>
+</html>

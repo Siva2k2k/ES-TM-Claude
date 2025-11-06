@@ -708,12 +708,24 @@ export class UserTrackingController {
       {
         $addFields: {
           user_count: { $size: '$user_count' },
-          avg_hours_per_week: { $divide: ['$total_hours', '$weeks_count'] },
+          avg_hours_per_week: { 
+            $cond: {
+              if: { $gt: ['$weeks_count', 0] },
+              then: { $divide: ['$total_hours', '$weeks_count'] },
+              else: 0
+            }
+          },
           utilization_rate: { 
-            $multiply: [
-              { $divide: ['$billable_hours', '$total_hours'] },
-              100
-            ]
+            $cond: {
+              if: { $gt: ['$total_hours', 0] },
+              then: {
+                $multiply: [
+                  { $divide: ['$billable_hours', '$total_hours'] },
+                  100
+                ]
+              },
+              else: 0
+            }
           }
         }
       },

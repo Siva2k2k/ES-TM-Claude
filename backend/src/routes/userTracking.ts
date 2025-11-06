@@ -30,22 +30,22 @@ router.get('/users',
 /**
  * @route   GET /api/user-tracking/users/:userId/analytics
  * @desc    Get detailed user analytics
- * @access  Manager (for their reports), Management, Self
+ * @access  Manager (for their reports), Management
  */
 router.get('/users/:userId/analytics',
   requireAuth,
-  requireRole(['employee', 'manager', 'management']),
+  requireRole(['manager', 'management', 'super_admin']),
   UserTrackingController.getUserAnalytics.bind(UserTrackingController)
 );
 
 /**
  * @route   GET /api/user-tracking/users/:userId/trends
  * @desc    Get utilization trends for a user
- * @access  Manager (for their reports), Management, Self
+ * @access  Manager (for their reports), Management
  */
 router.get('/users/:userId/trends',
   requireAuth,
-  requireRole(['employee', 'manager', 'management']),
+  requireRole(['manager', 'management', 'super_admin']),
   UserTrackingController.getUtilizationTrends.bind(UserTrackingController)
 );
 
