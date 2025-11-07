@@ -53,14 +53,16 @@ export const msalConfig: Configuration = {
 // Initialize MSAL instance
 export const msalInstance = new PublicClientApplication(msalConfig);
 
-// Initialize MSAL
-await msalInstance.initialize();
-
-// Account selection logic
-const accounts = msalInstance.getAllAccounts();
-if (accounts.length > 0) {
-  msalInstance.setActiveAccount(accounts[0]);
-}
+// Initialize MSAL (moved to async function to avoid top-level await)
+export const initializeMsal = async (): Promise<void> => {
+  await msalInstance.initialize();
+  
+  // Account selection logic
+  const accounts = msalInstance.getAllAccounts();
+  if (accounts.length > 0) {
+    msalInstance.setActiveAccount(accounts[0]);
+  }
+};
 
 // Login request configuration
 export const loginRequest: PopupRequest | RedirectRequest = {

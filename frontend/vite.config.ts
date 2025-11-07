@@ -23,7 +23,7 @@ export default defineConfig({
     exclude: ['lucide-react'],
   },
   build: {
-    target: ['es2015', 'firefox60'], // Better Firefox compatibility
+    target: ['es2020', 'chrome80', 'firefox78'], // Updated for better async/await support
   },
   server: {
     // Add headers for better Firefox compatibility

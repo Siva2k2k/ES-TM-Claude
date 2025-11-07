@@ -1,8 +1,9 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import { useAuth } from './store/contexts/AuthContext';
+import { initializeMsal } from './config/msalConfig';
 
 // Layouts
 import { AppLayout } from './layouts/AppLayout';
@@ -67,6 +68,11 @@ import { AuditLogsPage, DeletedItemsPage, ClientManagementPage } from './pages/a
 
 const App: React.FC = () => {
   const { requirePasswordChange } = useAuth();
+
+  // Initialize MSAL on app startup
+  useEffect(() => {
+    initializeMsal().catch(console.error);
+  }, []);
 
   // Handle force password change
   if (requirePasswordChange) {
