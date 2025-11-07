@@ -2,7 +2,7 @@ import { VoiceErrorHandler, VoiceResponse, VoiceError } from './VoiceErrorHandle
 import IntentConfigService from './IntentConfigService';
 import { IUser, User } from '../models/User';
 import { Project } from '../models/Project';
-import { IClient } from '../models/Client';
+import Client, { IClient } from '../models/Client';
 import { logger } from '../config/logger';
 
 export interface ValidationRule {
@@ -33,7 +33,7 @@ export class VoiceValidationService {
    */
   static async initialize(): Promise<void> {
     try {
-      const intents = await IntentConfigService.getAllActive();
+      const intents = await IntentConfigService.getAllIntents();
       
       for (const intent of intents) {
         await this.createValidationConfig(intent);
@@ -143,7 +143,7 @@ export class VoiceValidationService {
           validator: async (data: Record<string, any>, user: IUser): Promise<VoiceError[]> => {
             const errors: VoiceError[] = [];
             if (data.email) {
-              const existingUser = await User.findOne({ email: data.email });
+              const existingUser = await (User.findOne as any)({ email: data.email });
               if (existingUser) {
                 errors.push(VoiceErrorHandler.dataError(
                   'email',
@@ -176,7 +176,7 @@ export class VoiceValidationService {
           validator: async (data: Record<string, any>, user: IUser): Promise<VoiceError[]> => {
             const errors: VoiceError[] = [];
             if (data.client_name) {
-              const client = await IClient.findOne({ client_name: data.client_name });
+              const client = await (Client as any).findOne({ client_name: data.client_name });
               if (!client) {
                 errors.push(VoiceErrorHandler.dataError(
                   'client_name',
@@ -193,7 +193,7 @@ export class VoiceValidationService {
           validator: async (data: Record<string, any>, user: IUser): Promise<VoiceError[]> => {
             const errors: VoiceError[] = [];
             if (data.manager_name) {
-              const manager = await User.findOne({ full_name: data.manager_name });
+              const manager = await (User.findOne as any)({ full_name: data.manager_name });
               if (manager && !['manager', 'management', 'lead', 'super_admin'].includes(manager.role)) {
                 errors.push(VoiceErrorHandler.dataError(
                   'manager_name',
@@ -213,7 +213,7 @@ export class VoiceValidationService {
           validator: async (data: Record<string, any>, user: IUser): Promise<VoiceError[]> => {
             const errors: VoiceError[] = [];
             if (data.client_name) {
-              const existingClient = await IClient.findOne({ client_name: data.client_name });
+              const existingClient = await (Client as any).findOne({ client_name: data.client_name });
               if (existingClient) {
                 errors.push(VoiceErrorHandler.dataError(
                   'client_name',
@@ -388,7 +388,7 @@ export class VoiceValidationService {
           Model = Project;
           break;
         case 'IClient':
-          Model = IClient;
+          Model = Client;
           break;
         default:
           errors.push(VoiceErrorHandler.systemError(
