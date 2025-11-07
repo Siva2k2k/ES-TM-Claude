@@ -95,10 +95,24 @@ axiosInstance.interceptors.response.use(
         localStorage.removeItem('refreshToken');
         localStorage.removeItem('currentUser');
 
-        // Redirect to login
-        window.location.href = '/login';
+        // Only redirect to login if not already on login/auth pages
+        if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/auth')) {
+          // Show a user-friendly message
+          toast.error('Your session has expired. Please log in again.');
+          window.location.href = '/login';
+        }
 
         return Promise.reject(refreshError);
+      }
+      
+      // If we reach here, no refresh token was available
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('currentUser');
+      
+      if (!window.location.pathname.includes('/login') && !window.location.pathname.includes('/auth')) {
+        toast.error('Please log in to access this feature.');
+        window.location.href = '/login';
       }
     }
 

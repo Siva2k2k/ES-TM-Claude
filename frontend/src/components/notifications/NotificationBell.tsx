@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Bell, X, Check, Clock, AlertCircle } from 'lucide-react';
 import { BackendApiClient } from '../../lib/backendApi';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../../store/contexts/AuthContext';
 
 interface Notification {
   _id: string;
@@ -29,10 +30,15 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className = 
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+  const { isAuthenticated, currentUser } = useAuth();
 
   const apiClient = new BackendApiClient();
 
   const fetchNotifications = async () => {
+    if (!isAuthenticated || !currentUser) {
+      return;
+    }
+    
     setLoading(true);
     try {
       const data = await apiClient.get<{success: boolean; data: {notifications: Notification[]}}>('/notifications');
@@ -45,28 +51,47 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className = 
   };
 
   const fetchUnreadCount = async () => {
+    if (!isAuthenticated || !currentUser) {
+      return;
+    }
+    
     try {
       const data = await apiClient.get<{success: boolean; data: {unread_count: number}}>('/notifications/unread-count');
       setUnreadCount(data.data.unread_count || 0);
     } catch (error) {
       console.error('Error fetching unread count:', error);
+      // Reset count on error to avoid stale data
+      setUnreadCount(0);
     }
   };
 
   useEffect(() => {
+    // Only fetch notifications if user is authenticated
+    if (!isAuthenticated || !currentUser) {
+      setNotifications([]);
+      setUnreadCount(0);
+      return;
+    }
+
     fetchNotifications();
     fetchUnreadCount();
     
-    // Poll for new notifications every 30 seconds
+    // Poll for new notifications every 30 seconds only if authenticated
     const interval = setInterval(() => {
-      fetchUnreadCount();
+      if (isAuthenticated && currentUser) {
+        fetchUnreadCount();
+      }
     }, 30000);
 
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isAuthenticated, currentUser]);
 
   const markAsRead = async (notificationId: string) => {
+    if (!isAuthenticated || !currentUser) {
+      return;
+    }
+    
     try {
       await apiClient.patch(`/notifications/${notificationId}/read`);
       
@@ -84,6 +109,10 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className = 
   };
 
   const markAllAsRead = async () => {
+    if (!isAuthenticated || !currentUser) {
+      return;
+    }
+    
     try {
       await apiClient.put('/notifications/mark-all-read');
 
@@ -248,6 +277,11 @@ export const NotificationBell: React.FC<NotificationBellProps> = ({ className = 
 
   // Show a maximum of 3 notifications in the bell dropdown
   const visibleNotifications = notifications.slice(0, 3);
+
+  // Don't render the notification bell if user is not authenticated
+  if (!isAuthenticated || !currentUser) {
+    return null;
+  }
 
   return (
     <div className={`relative ${className}`}>
