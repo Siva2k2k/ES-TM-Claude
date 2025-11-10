@@ -32,26 +32,66 @@ export const exchangeCodeForToken = async (code: string) => {
       throw new Error('Microsoft SSO not properly configured - missing required environment variables');
     }
 
+    // Basic validation of authorization code
+    if (!code || typeof code !== 'string' || code.length < 10) {
+      throw new Error('Invalid authorization code provided');
+    }
+
+    // Log the code length and first/last few characters for debugging (without exposing full code)
+    logger.info(`Authorization code validation: length=${code.length}, starts=${code.substring(0, 4)}, ends=${code.substring(code.length - 4)}`);
+
     // Exchange code for token using direct HTTP request
-    const tokenResponse = await fetch('https://login.microsoftonline.com/common/oauth2/v2.0/token', {
+    const tenantId = process.env.MICROSOFT_TENANT_ID || 'common';
+    const tokenEndpoint = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
+    
+    const tokenRequestParams = {
+      client_id: process.env.MICROSOFT_CLIENT_ID,
+      client_secret: process.env.MICROSOFT_CLIENT_SECRET,
+      code: code,
+      grant_type: 'authorization_code',
+      redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
+      scope: 'openid profile email User.Read'
+    };
+
+    // Log request params (without sensitive data)
+    logger.info('Token exchange request:', {
+      endpoint: tokenEndpoint,
+      client_id: process.env.MICROSOFT_CLIENT_ID,
+      grant_type: 'authorization_code',
+      redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
+      scope: 'openid profile email User.Read',
+      code_length: code.length,
+      tenant_id: tenantId
+    });
+
+    const tokenResponse = await fetch(tokenEndpoint, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
-      body: new URLSearchParams({
-        client_id: process.env.MICROSOFT_CLIENT_ID,
-        client_secret: process.env.MICROSOFT_CLIENT_SECRET,
-        code: code,
-        grant_type: 'authorization_code',
-        redirect_uri: process.env.MICROSOFT_REDIRECT_URI,
-        scope: 'openid profile email User.Read'
-      })
+      body: new URLSearchParams(tokenRequestParams)
     });
 
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
-      logger.error('Token exchange failed:', errorText);
-      throw new Error(`Failed to exchange code for token: ${tokenResponse.status} ${tokenResponse.statusText}`);
+      logger.error('Token exchange failed - Status:', tokenResponse.status);
+      logger.error('Token exchange failed - Status Text:', tokenResponse.statusText);
+      logger.error('Token exchange failed - Response:', errorText);
+      
+      // Try to parse the error response for more details
+      try {
+        const errorData = JSON.parse(errorText);
+        logger.error('Parsed Microsoft error:', errorData);
+        
+        if (errorData.error_description) {
+          throw new Error(`Microsoft OAuth error: ${errorData.error} - ${errorData.error_description}`);
+        }
+      } catch (parseError) {
+        // If we can't parse the error, just use the raw response
+        logger.error('Could not parse error response:', parseError);
+      }
+      
+      throw new Error(`Failed to exchange code for token: ${tokenResponse.status} ${tokenResponse.statusText} - ${errorText}`);
     }
 
     const tokenData = await tokenResponse.json() as any;

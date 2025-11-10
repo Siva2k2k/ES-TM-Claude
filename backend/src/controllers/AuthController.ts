@@ -642,10 +642,11 @@ export class AuthController {
           user.microsoft_id = microsoftId;
           user.microsoft_email = email;
           user.auth_provider = 'microsoft';
+          user.is_approved_by_super_admin = true; // Auto-approve when linking Microsoft account
           user.last_sso_login = new Date();
           await user.save();
 
-          logger.info(`Auto-merged local account with Microsoft account: ${email}`);
+          logger.info(`Auto-merged local account with Microsoft account and auto-approved: ${email}`);
 
           // Log merge audit event
           await AuditLogService.logEvent(
@@ -658,11 +659,12 @@ export class AuthController {
               email: user.email,
               microsoft_email: email,
               merge_type: 'auto',
-              auth_provider: 'microsoft'
+              auth_provider: 'microsoft',
+              auto_approved: true
             }
           );
         } else {
-          // Create new user with Microsoft credentials
+          // Create new user with Microsoft credentials - auto-approved for SSO users
           user = new User({
             email: email.toLowerCase(),
             full_name: name,
@@ -671,12 +673,12 @@ export class AuthController {
             microsoft_id: microsoftId,
             microsoft_email: email,
             is_active: true,
-            is_approved_by_super_admin: false, // Requires admin approval
+            is_approved_by_super_admin: true, // Auto-approved for Microsoft SSO users
             last_sso_login: new Date()
           });
           await user.save();
 
-          logger.info(`Created new user from Microsoft SSO: ${email}`);
+          logger.info(`Created new user from Microsoft SSO with auto-approval: ${email}`);
 
           // Log user creation audit event
           await AuditLogService.logEvent(
@@ -688,7 +690,8 @@ export class AuthController {
             {
               email: user.email,
               auth_provider: 'microsoft',
-              registration_method: 'microsoft-sso'
+              registration_method: 'microsoft-sso',
+              auto_approved: true
             }
           );
         }
@@ -805,6 +808,7 @@ export class AuthController {
         microsoft_id: microsoftId,
         microsoft_email: email,
         auth_provider: 'microsoft',
+        is_approved_by_super_admin: true, // Auto-approve when linking Microsoft account
         last_sso_login: new Date()
       },
       { new: true }
@@ -825,7 +829,8 @@ export class AuthController {
         email: user.email,
         microsoft_email: email,
         link_type: 'manual',
-        auth_provider: 'microsoft'
+        auth_provider: 'microsoft',
+        auto_approved: true
       }
     );
 
