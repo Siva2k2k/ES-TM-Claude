@@ -95,6 +95,9 @@ class RoleBasedServiceDispatcher {
       case 'add_task':
         return this.handleAddTask(data, authUser);
 
+      case 'create_task':
+        return this.handleAddTask(data, authUser);
+
       case 'update_project':
         return this.handleUpdateProject(data, authUser);
 
@@ -348,26 +351,31 @@ class RoleBasedServiceDispatcher {
    * Different validation rules based on role
    */
   private async handleUpdateUser(data: any, authUser: any): Promise<ActionExecutionResult> {
-    // Validate user ID
-    if (!isValidId(data.userId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapUpdateUser(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'update_user',
         success: false,
-        error: 'Invalid user ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
+
+    const mappedData = mappingResult.data;
 
     switch (authUser.role) {
       case 'super_admin':
       case 'management': {
         // Super admin can update any user field
         const result = await UserService.updateUser(
-          data.userId,
+          mappedData.userId,
           {
-            email: data.email,
-            role: data.role?.toLowerCase(),
-            hourly_rate: data.hourlyRate,
-            full_name: data.userName || data.fullName
+            email: mappedData.email,
+            role: mappedData.role,
+            hourly_rate: mappedData.hourly_rate,
+            full_name: mappedData.full_name
           },
           authUser
         );
@@ -386,7 +394,7 @@ class RoleBasedServiceDispatcher {
           data: { message: 'User updated successfully' },
           affectedEntities: [{
             type: 'user',
-            id: data.userId
+            id: mappedData.userId
           }]
         };
       }
@@ -394,11 +402,11 @@ class RoleBasedServiceDispatcher {
       case 'manager': {
         // Management can update limited fields, no role changes
         const limitedResult = await UserService.updateUser(
-          data.userId,
+          mappedData.userId,
           {
-            email: data.email,
-            hourly_rate: data.hourlyRate,
-            full_name: data.userName || data.fullName
+            email: mappedData.email,
+            hourly_rate: mappedData.hourly_rate,
+            full_name: mappedData.full_name
             // Role updates not allowed for management
           },
           authUser
@@ -418,7 +426,7 @@ class RoleBasedServiceDispatcher {
           data: { message: 'User updated successfully (limited permissions)' },
           affectedEntities: [{
             type: 'user',
-            id: data.userId
+            id: mappedData.userId
           }]
         };
       }
@@ -444,18 +452,23 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate user ID
-    if (!isValidId(data.userId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapDeleteUser(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'delete_user',
         success: false,
-        error: 'Invalid user ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
+    const mappedData = mappingResult.data;
+
     const result = await UserService.softDeleteUser(
-      data.userId,
-      data.reason || 'Voice command deletion',
+      mappedData.userId,
+      mappedData.reason,
       authUser
     );
 
@@ -472,7 +485,7 @@ class RoleBasedServiceDispatcher {
       success: true,
       affectedEntities: [{
         type: 'user',
-        id: data.userId
+        id: mappedData.userId
       }]
     };
   }
@@ -523,60 +536,44 @@ class RoleBasedServiceDispatcher {
    * Role-based timesheet entry creation
    */
   private async handleAddEntries(data: any, authUser: any): Promise<ActionExecutionResult> {
-    // All roles can add entries, but with different validations
-    const entries = data.entries || [data];
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapAddEntries(data);
+
+    if (!mappingResult.success) {
+      return {
+        intent: 'add_entries',
+        success: false,
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
+      };
+    }
+
+    const mappedData = mappingResult.data;
+
+    // Role-based validation
+    if (mappedData.user_id && mappedData.user_id.toString() !== authUser.id && authUser.role === 'employee') {
+      return {
+        intent: 'add_entries',
+        success: false,
+        error: 'You can only add entries for your own timesheet'
+      };
+    }
+
     const createdEntries = [];
 
-    for (const entry of entries) {
-      // Role-based validation
-      if (authUser.role === 'employee' && entry.userId && entry.userId !== authUser.id) {
-        return {
-          intent: 'add_entries',
-          success: false,
-          error: 'Employees can only add entries for themselves'
-        };
-      }
-
-      // Validate timesheet ID
-      const timesheetId = entry.timesheetId || data.timesheetId;
-      if (!isValidId(timesheetId)) {
-        return {
-          intent: 'add_entries',
-          success: false,
-          error: 'Invalid timesheet ID format (must be ObjectId or UUID)'
-        };
-      }
-
-      // Validate project ID
-      if (!isValidId(entry.projectId)) {
-        return {
-          intent: 'add_entries',
-          success: false,
-          error: 'Invalid project ID format (must be ObjectId or UUID)'
-        };
-      }
-
-      // Validate task ID
-      if (!isValidId(entry.taskId)) {
-        return {
-          intent: 'add_entries',
-          success: false,
-          error: 'Invalid task ID format (must be ObjectId or UUID)'
-        };
-      }
-
+    for (const entry of mappedData.entries) {
       const timeEntry = await TimesheetService.addTimeEntry(
-        timesheetId,
+        mappedData.timesheet_id,
         {
-          project_id: entry.projectId,
-          task_id: entry.taskId,
+          project_id: entry.project_id,
+          task_id: entry.task_id,
           date: entry.date,
           hours: entry.hours,
-          task_type: entry.taskType,
-          custom_task_description: entry.customTaskDescription,
-          entry_type: entry.entryType,
+          task_type: entry.task_type,
+          custom_task_description: entry.custom_task_description,
+          entry_type: entry.entry_type,
           description: entry.description,
-          is_billable: entry.isBillable || true
+          is_billable: entry.is_billable
         },
         authUser
       );
@@ -601,8 +598,22 @@ class RoleBasedServiceDispatcher {
    * Role-based timesheet entry updates
    */
   private async handleUpdateEntries(data: any, authUser: any): Promise<ActionExecutionResult> {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapUpdateEntries(data);
+
+    if (!mappingResult.success) {
+      return {
+        intent: 'update_entries',
+        success: false,
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
+      };
+    }
+
+    const mappedData = mappingResult.data;
+
     // Role-based validation for entry updates
-    if (authUser.role === 'employee' && data.userId && data.userId !== authUser.id) {
+    if (authUser.role === 'employee' && mappedData.user_id && mappedData.user_id.toString() !== authUser.id) {
       return {
         intent: 'update_entries',
         success: false,
@@ -610,43 +621,16 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate timesheet ID
-    if (!isValidId(data.timesheetId)) {
-      return {
-        intent: 'update_entries',
-        success: false,
-        error: 'Invalid timesheet ID format (must be ObjectId or UUID)'
-      };
-    }
-
-    // Validate project ID
-    if (!isValidId(data.projectId)) {
-      return {
-        intent: 'update_entries',
-        success: false,
-        error: 'Invalid project ID format (must be ObjectId or UUID)'
-      };
-    }
-
-    // Validate task ID
-    if (!isValidId(data.taskId)) {
-      return {
-        intent: 'update_entries',
-        success: false,
-        error: 'Invalid task ID format (must be ObjectId or UUID)'
-      };
-    }
-
     const result = await TimesheetService.updateTimesheetEntries(
-      data.timesheetId,
+      mappedData.timesheet_id,
       [{
-        project_id: data.projectId,
-        task_id: data.taskId,
-        date: data.date,
-        hours: data.hours,
-        description: data.description,
-        entry_type: data.entryType,
-        is_billable: data.isBillable || true
+        project_id: mappedData.project_id,
+        task_id: mappedData.task_id,
+        date: mappedData.date,
+        hours: mappedData.hours,
+        description: mappedData.description,
+        entry_type: mappedData.entry_type,
+        is_billable: mappedData.is_billable
       }],
       authUser
     );
@@ -662,10 +646,10 @@ class RoleBasedServiceDispatcher {
     return {
       intent: 'update_entries',
       success: true,
-      data: { weekStart: data.weekStart },
+      data: { weekStart: mappedData.week_start },
       affectedEntities: [{
         type: 'time_entry',
-        id: data.entryId || 'updated_entry'
+        id: mappedData.entry_id || 'updated_entry'
       }]
     };
   }
@@ -686,28 +670,38 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate IDs
-    if (!isValidId(data.projectId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapAddProjectMember(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'add_project_member',
         success: false,
-        error: 'Invalid project ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
-    if (!isValidId(data.userId)) {
+    const mappedData = mappingResult.data;
+
+    // Ensure required fields are present
+    if (!mappedData?.project_id || !mappedData?.user_id) {
       return {
         intent: 'add_project_member',
         success: false,
-        error: 'Invalid user ID format (must be ObjectId or UUID)'
+        error: 'Missing required project or user information after field mapping'
       };
     }
+
+    // Convert ObjectIds to strings for the service call
+    const projectIdStr = mappedData.project_id.toString();
+    const userIdStr = mappedData.user_id.toString();
 
     const result = await ProjectService.addProjectMember(
-      data.projectId,
-      data.userId,
-      data.role?.toLowerCase() || 'employee',
-      false, // isPrimaryManager
+      projectIdStr,
+      userIdStr,
+      mappedData.role,
+      mappedData.is_primary_manager,
       authUser
     );
 
@@ -724,8 +718,8 @@ class RoleBasedServiceDispatcher {
       success: true,
       data: { success: true },
       affectedEntities: [
-        { type: 'project', id: data.projectId },
-        { type: 'user', id: data.userId }
+        { type: 'project', id: projectIdStr },
+        { type: 'user', id: userIdStr }
       ]
     };
   }
@@ -742,26 +736,47 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate IDs
-    if (!isValidId(data.projectId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapRemoveProjectMember(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'remove_project_member',
         success: false,
-        error: 'Invalid project ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
-    if (!isValidId(data.userId)) {
+    const mappedData = mappingResult.data;
+
+    // Ensure required fields are present
+    if (!mappedData?.project_id || !mappedData?.user_id) {
       return {
         intent: 'remove_project_member',
         success: false,
-        error: 'Invalid user ID format (must be ObjectId or UUID)'
+        error: 'Missing required project or user information after field mapping'
+      };
+    }
+
+    // Convert ObjectIds to strings for the service call
+    let projectIdStr: string;
+    let userIdStr: string;
+    
+    try {
+      projectIdStr = mappedData.project_id.toString();
+      userIdStr = mappedData.user_id.toString();
+    } catch (error) {
+      return {
+        intent: 'remove_project_member',
+        success: false,
+        error: `Failed to convert IDs to strings: ${error instanceof Error ? error.message : 'Unknown error'}. Project: ${typeof mappedData.project_id}, User: ${typeof mappedData.user_id}`
       };
     }
 
     const result = await ProjectService.removeProjectMember(
-      data.projectId,
-      data.userId,
+      projectIdStr,
+      userIdStr,
       authUser
     );
 
@@ -776,9 +791,10 @@ class RoleBasedServiceDispatcher {
     return {
       intent: 'remove_project_member',
       success: true,
+      data: { message: 'Project member removed successfully' },
       affectedEntities: [
-        { type: 'project', id: data.projectId },
-        { type: 'user', id: data.userId }
+        { type: 'project', id: projectIdStr },
+        { type: 'user', id: userIdStr }
       ]
     };
   }
@@ -795,22 +811,29 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate project ID
-    if (!isValidId(data.projectId)) {
+    // Map and validate fields using VoiceFieldMapper
+    const mappingResult = await VoiceFieldMapper.mapTaskCreation(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'add_task',
         success: false,
-        error: 'Invalid project ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
+    const mappedData = mappingResult.data;
+
     const result = await ProjectService.createTask(
       {
-        project_id: data.projectId,
-        name: data.taskName,
-        description: data.description,
-        status: 'pending',
-        is_billable: true
+        project_id: mappedData.project_id,
+        name: mappedData.name,
+        description: mappedData.description,
+        assigned_to_user_id: mappedData.assigned_to_user_id,
+        status: mappedData.status || 'pending',
+        estimated_hours: mappedData.estimated_hours,
+        is_billable: mappedData.is_billable ?? true
       },
       authUser
     );
@@ -829,7 +852,7 @@ class RoleBasedServiceDispatcher {
       data: result.task,
       affectedEntities: [{
         type: 'project',
-        id: data.projectId
+        id: mappedData.project_id.toString()
       }]
     };
   }
@@ -846,36 +869,23 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate project ID
-    if (!isValidId(data.projectId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapUpdateProject(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'update_project',
         success: false,
-        error: 'Invalid project ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
-    // Validate client ID if provided
-    if (data.clientId && !isValidId(data.clientId)) {
-      return {
-        intent: 'update_project',
-        success: false,
-        error: 'Invalid client ID format (must be ObjectId or UUID)'
-      };
-    }
-
-    const updateData: any = {};
-    if (data.name) updateData.name = data.name;
-    if (data.description) updateData.description = data.description;
-    if (data.clientId) updateData.client_id = data.clientId;
-    if (data.budget) updateData.budget = data.budget;
-    if (data.startDate) updateData.start_date = data.startDate;
-    if (data.endDate) updateData.end_date = data.endDate;
-    if (data.status) updateData.status = data.status;
+    const mappedData = mappingResult.data;
 
     const result = await ProjectService.updateProject(
-      data.projectId,
-      updateData,
+      mappedData.project_id,
+      mappedData,
       authUser
     );
 
@@ -893,7 +903,7 @@ class RoleBasedServiceDispatcher {
       data: { message: 'Project updated successfully' },
       affectedEntities: [{
         type: 'project',
-        id: data.projectId
+        id: mappedData.project_id.toString()
       }]
     };
   }
@@ -910,20 +920,29 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate task ID
-    if (!isValidId(data.taskId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapUpdateTask(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'update_task',
         success: false,
-        error: 'Invalid task ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
+    const mappedData = mappingResult.data;
+
     const result = await ProjectService.updateTask(
-      data.taskId,
+      mappedData.task_id,
       {
-        name: data.taskName,
-        description: data.description
+        name: mappedData.name,
+        description: mappedData.description,
+        status: mappedData.status,
+        estimated_hours: mappedData.estimated_hours,
+        assigned_to_user_id: mappedData.assigned_to_user_id,
+        is_billable: mappedData.is_billable
       },
       authUser
     );
@@ -942,7 +961,7 @@ class RoleBasedServiceDispatcher {
       data: { success: true },
       affectedEntities: [{
         type: 'project',
-        id: data.projectId
+        id: mappedData.project_id?.toString() || 'unknown'
       }]
     };
   }
@@ -959,18 +978,23 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate project ID
-    if (!isValidId(data.projectId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapDeleteProject(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'delete_project',
         success: false,
-        error: 'Invalid project ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
+    const mappedData = mappingResult.data;
+
     const result = await ProjectService.deleteProject(
-      data.projectId,
-      data.reason || 'Deleted via voice command',
+      mappedData.project_id,
+      mappedData.reason,
       authUser
     );
 
@@ -987,7 +1011,7 @@ class RoleBasedServiceDispatcher {
       success: true,
       affectedEntities: [{
         type: 'project',
-        id: data.projectId
+        id: mappedData.project_id.toString()
       }]
     };
   }
@@ -1008,25 +1032,23 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate client ID
-    if (!isValidId(data.clientId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapUpdateClient(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'update_client',
         success: false,
-        error: 'Invalid client ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
-    const updateData: any = {};
-    if (data.name) updateData.name = data.name;
-    if (data.email) updateData.email = data.email;
-    if (data.phone) updateData.phone = data.phone;
-    if (data.address) updateData.address = data.address;
-    if (data.contactPerson) updateData.contact_person = data.contactPerson;
+    const mappedData = mappingResult.data;
 
     const result = await ClientService.updateClient(
-      data.clientId,
-      updateData,
+      mappedData.client_id,
+      mappedData,
       authUser
     );
 
@@ -1044,7 +1066,7 @@ class RoleBasedServiceDispatcher {
       data: result.client,
       affectedEntities: [{
         type: 'client',
-        id: data.clientId
+        id: mappedData.client_id.toString()
       }]
     };
   }
@@ -1061,18 +1083,23 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate client ID
-    if (!isValidId(data.clientId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapDeleteClient(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'delete_client',
         success: false,
-        error: 'Invalid client ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
+    const mappedData = mappingResult.data;
+
     const result = await ClientService.deleteClient(
-      data.clientId,
-      data.reason || 'Deleted via voice command',
+      mappedData.client_id,
+      mappedData.reason,
       authUser
     );
 
@@ -1089,7 +1116,7 @@ class RoleBasedServiceDispatcher {
       success: true,
       affectedEntities: [{
         type: 'client',
-        id: data.clientId
+        id: mappedData.client_id.toString()
       }]
     };
   }
@@ -1102,9 +1129,23 @@ class RoleBasedServiceDispatcher {
    * Create timesheet
    */
   private async handleCreateTimesheet(data: any, authUser: any): Promise<ActionExecutionResult> {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapCreateTimesheet(data);
+
+    if (!mappingResult.success) {
+      return {
+        intent: 'create_timesheet',
+        success: false,
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
+      };
+    }
+
+    const mappedData = mappingResult.data;
+
     // All authenticated users can create timesheets for themselves
     // Managers+ can create for others
-    if (authUser.role === 'employee' && data.userId && data.userId !== authUser.id) {
+    if (authUser.role === 'employee' && mappedData.user_id && mappedData.user_id.toString() !== authUser.id) {
       return {
         intent: 'create_timesheet',
         success: false,
@@ -1112,18 +1153,9 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate user ID if provided
-    if (data.userId && !isValidId(data.userId)) {
-      return {
-        intent: 'create_timesheet',
-        success: false,
-        error: 'Invalid user ID format (must be ObjectId or UUID)'
-      };
-    }
-
     const result = await TimesheetService.createTimesheet(
-      data.userId || authUser.id,
-      data.weekStart,
+      mappedData.user_id || authUser.id,
+      mappedData.week_start,
       authUser
     );
 
@@ -1158,17 +1190,22 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate timesheet ID
-    if (!isValidId(data.timesheetId)) {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapDeleteTimesheet(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'delete_timesheet',
         success: false,
-        error: 'Invalid timesheet ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
+    const mappedData = mappingResult.data;
+
     const result = await TimesheetService.deleteTimesheet(
-      data.timesheetId,
+      mappedData.timesheet_id,
       authUser
     );
 
@@ -1185,7 +1222,7 @@ class RoleBasedServiceDispatcher {
       success: true,
       affectedEntities: [{
         type: 'timesheet',
-        id: data.timesheetId
+        id: mappedData.timesheet_id.toString()
       }]
     };
   }
@@ -1194,8 +1231,22 @@ class RoleBasedServiceDispatcher {
    * Delete timesheet entries
    */
   private async handleDeleteEntries(data: any, authUser: any): Promise<ActionExecutionResult> {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapDeleteEntries(data);
+
+    if (!mappingResult.success) {
+      return {
+        intent: 'delete_entries',
+        success: false,
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
+      };
+    }
+
+    const mappedData = mappingResult.data;
+
     // Employees can delete own entries, managers+ can delete any
-    if (authUser.role === 'employee' && data.userId && data.userId !== authUser.id) {
+    if (authUser.role === 'employee' && mappedData.user_id && mappedData.user_id.toString() !== authUser.id) {
       return {
         intent: 'delete_entries',
         success: false,
@@ -1203,18 +1254,9 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate timesheet ID
-    if (!isValidId(data.timesheetId)) {
-      return {
-        intent: 'delete_entries',
-        success: false,
-        error: 'Invalid timesheet ID format (must be ObjectId or UUID)'
-      };
-    }
-
     // Use the deleteTimesheet method since removeTimesheetEntry doesn't exist
     const result = await TimesheetService.deleteTimesheet(
-      data.timesheetId,
+      mappedData.timesheet_id,
       authUser
     );
 
@@ -1231,7 +1273,7 @@ class RoleBasedServiceDispatcher {
       success: true,
       affectedEntities: [{
         type: 'time_entry',
-        id: data.entryId
+        id: mappedData.entry_id || 'deleted_entry'
       }]
     };
   }
@@ -1240,8 +1282,22 @@ class RoleBasedServiceDispatcher {
    * Copy timesheet entry
    */
   private async handleCopyEntry(data: any, authUser: any): Promise<ActionExecutionResult> {
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapCopyEntry(data);
+
+    if (!mappingResult.success) {
+      return {
+        intent: 'copy_entry',
+        success: false,
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
+      };
+    }
+
+    const mappedData = mappingResult.data;
+
     // All users can copy their own entries
-    if (authUser.role === 'employee' && data.userId && data.userId !== authUser.id) {
+    if (authUser.role === 'employee' && mappedData.user_id && mappedData.user_id.toString() !== authUser.id) {
       return {
         intent: 'copy_entry',
         success: false,
@@ -1403,19 +1459,24 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    // Validate project ID if provided
-    if (data.projectId && !isValidId(data.projectId)) {
+    // Map and validate fields first (though this intent might not need much mapping)
+    const mappingResult = await VoiceFieldMapper.mapTeamReviewAction(data);
+
+    if (!mappingResult.success) {
       return {
         intent: 'send_reminder',
         success: false,
-        error: 'Invalid project ID format (must be ObjectId or UUID)'
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
       };
     }
 
+    const mappedData = mappingResult.data;
+
     const defaulterService = new DefaulterService();
     const result = await defaulterService.notifyDefaulters(
-      data.projectId,
-      data.weekStart
+      mappedData.project_id,
+      mappedData.week_start
     );
 
     return {
@@ -1423,12 +1484,12 @@ class RoleBasedServiceDispatcher {
       success: true,
       data: {
         notifiedCount: result || 0,
-        projectId: data.projectId,
-        weekStart: data.weekStart
+        projectId: mappedData.project_id?.toString(),
+        weekStart: mappedData.week_start
       },
-      affectedEntities: data.projectId ? [{
+      affectedEntities: mappedData.project_id ? [{
         type: 'project',
-        id: data.projectId
+        id: mappedData.project_id.toString()
       }] : []
     };
   }
@@ -1449,36 +1510,25 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    const projectIds = data.projectIds || (data.projectId ? [data.projectId] : []);
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapExportBilling(data);
 
-    // Validate all project IDs
-    for (const projectId of projectIds) {
-      if (!isValidId(projectId)) {
-        return {
-          intent: 'export_project_billing',
-          success: false,
-          error: 'Invalid project ID format in array (must be ObjectId or UUID)'
-        };
-      }
+    if (!mappingResult.success) {
+      return {
+        intent: 'export_project_billing',
+        success: false,
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
+      };
     }
 
-    // Validate all client IDs if provided
-    const clientIds = data.clientIds || [];
-    for (const clientId of clientIds) {
-      if (!isValidId(clientId)) {
-        return {
-          intent: 'export_project_billing',
-          success: false,
-          error: 'Invalid client ID format in array (must be ObjectId or UUID)'
-        };
-      }
-    }
+    const mappedData = mappingResult.data;
 
     const result = await ProjectBillingService.buildProjectBillingData({
-      projectIds,
-      clientIds,
-      startDate: data.startDate,
-      endDate: data.endDate,
+      projectIds: mappedData.project_ids,
+      clientIds: mappedData.client_ids,
+      startDate: mappedData.start_date,
+      endDate: mappedData.end_date,
       view: 'custom'
     });
 
@@ -1488,13 +1538,13 @@ class RoleBasedServiceDispatcher {
       data: {
         billingData: result,
         recordCount: result?.length || 0,
-        startDate: data.startDate,
-        endDate: data.endDate,
+        startDate: mappedData.start_date,
+        endDate: mappedData.end_date,
         fileName: `project_billing_${new Date().toISOString().split('T')[0]}.csv`
       },
-      affectedEntities: projectIds.map((id: string) => ({
+      affectedEntities: mappedData.project_ids.map((id: any) => ({
         type: 'project',
-        id
+        id: id.toString()
       }))
     };
   }
@@ -1511,48 +1561,25 @@ class RoleBasedServiceDispatcher {
       };
     }
 
-    const userIds = data.userIds || (data.userId ? [data.userId] : []);
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapExportBilling(data);
 
-    // Validate all user IDs
-    for (const userId of userIds) {
-      if (!isValidId(userId)) {
-        return {
-          intent: 'export_user_billing',
-          success: false,
-          error: 'Invalid user ID format in array (must be ObjectId or UUID)'
-        };
-      }
+    if (!mappingResult.success) {
+      return {
+        intent: 'export_user_billing',
+        success: false,
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
+      };
     }
 
-    // Validate all project IDs if provided
-    const projectIds = data.projectIds || [];
-    for (const projectId of projectIds) {
-      if (!isValidId(projectId)) {
-        return {
-          intent: 'export_user_billing',
-          success: false,
-          error: 'Invalid project ID format in array (must be ObjectId or UUID)'
-        };
-      }
-    }
-
-    // Validate all client IDs if provided
-    const clientIds = data.clientIds || [];
-    for (const clientId of clientIds) {
-      if (!isValidId(clientId)) {
-        return {
-          intent: 'export_user_billing',
-          success: false,
-          error: 'Invalid client ID format in array (must be ObjectId or UUID)'
-        };
-      }
-    }
+    const mappedData = mappingResult.data;
 
     const result = await ProjectBillingService.buildProjectBillingData({
-      projectIds,
-      clientIds,
-      startDate: data.startDate,
-      endDate: data.endDate,
+      projectIds: mappedData.project_ids,
+      clientIds: mappedData.client_ids,
+      startDate: mappedData.start_date,
+      endDate: mappedData.end_date,
       view: 'custom'
     });
 
@@ -1562,14 +1589,14 @@ class RoleBasedServiceDispatcher {
       data: {
         billingData: result,
         recordCount: result?.length || 0,
-        startDate: data.startDate,
-        endDate: data.endDate,
+        startDate: mappedData.start_date,
+        endDate: mappedData.end_date,
         fileName: `user_billing_${new Date().toISOString().split('T')[0]}.csv`
       },
-      affectedEntities: userIds.map((id: string) => ({
+      affectedEntities: mappedData.user_ids?.map((id: any) => ({
         type: 'user',
-        id
-      }))
+        id: id.toString()
+      })) || []
     };
   }
 
@@ -1585,17 +1612,31 @@ class RoleBasedServiceDispatcher {
       };
     }
 
+    // Map and validate fields first
+    const mappingResult = await VoiceFieldMapper.mapGetAuditLogs(data);
+
+    if (!mappingResult.success) {
+      return {
+        intent: 'get_audit_logs',
+        success: false,
+        error: 'Field validation failed',
+        fieldErrors: mappingResult.errors
+      };
+    }
+
+    const mappedData = mappingResult.data;
+
     const filters: any = {
-      limit: data.limit || 50,
-      offset: data.offset || 0
+      limit: mappedData.limit || 50,
+      offset: mappedData.offset || 0
     };
 
-    if (data.startDate) filters.startDate = data.startDate;
-    if (data.endDate) filters.endDate = data.endDate;
-    if (data.actorId) filters.actorId = data.actorId;
-    if (data.tableName) filters.tableName = data.tableName;
-    if (data.recordId) filters.recordId = data.recordId;
-    if (data.actions) filters.actions = data.actions;
+    if (mappedData.start_date) filters.startDate = mappedData.start_date;
+    if (mappedData.end_date) filters.endDate = mappedData.end_date;
+    if (mappedData.actor_id) filters.actorId = mappedData.actor_id;
+    if (mappedData.table_name) filters.tableName = mappedData.table_name;
+    if (mappedData.record_id) filters.recordId = mappedData.record_id;
+    if (mappedData.actions) filters.actions = mappedData.actions;
 
     const result = await AuditLogService.getAuditLogs(filters, authUser);
 

@@ -2,6 +2,7 @@ import { Types } from 'mongoose';
 import Client from '../models/Client';
 import User from '../models/User';
 import Project from '../models/Project';
+import Task from '../models/Task';
 import logger from '../config/logger';
 
 interface FieldMappingError {
@@ -17,6 +18,20 @@ interface MappingResult {
   errors?: FieldMappingError[];
 }
 
+interface EntityConfig {
+  model: any;
+  nameField: string;
+  searchFields: string[];
+  additionalFilters?: Record<string, any>;
+  entityName: string;
+}
+
+interface NameResolverResult {
+  success: boolean;
+  id?: Types.ObjectId;
+  error?: FieldMappingError;
+}
+
 /**
  * VoiceFieldMapper - Maps LLM-generated field values to service-compatible format
  *
@@ -27,6 +42,157 @@ interface MappingResult {
  * 4. Provide detailed validation errors with suggestions
  */
 class VoiceFieldMapper {
+  
+  /**
+   * Universal name-to-ID resolver for any entity type
+   * @param identifier - Name, email, or ID string to resolve
+   * @param entityType - Type of entity ('client', 'user', 'project', 'manager')
+   * @param fieldName - Name of the field being mapped (for error reporting)
+   * @returns Promise with resolution result
+   */
+  async resolveNameToId(
+    identifier: string, 
+    entityType: 'client' | 'user' | 'project' | 'manager' | 'task',
+    fieldName: string = `${entityType}_id`
+  ): Promise<NameResolverResult> {
+    try {
+      const entityConfig = this.getEntityConfig(entityType);
+      
+      // Check if already an ObjectId
+      if (Types.ObjectId.isValid(identifier) && identifier.length === 24) {
+        const entity = await entityConfig.model.findOne({ 
+          _id: identifier, 
+          ...entityConfig.additionalFilters 
+        });
+        
+        if (entity) {
+          return { success: true, id: entity._id as Types.ObjectId };
+        }
+      }
+
+      // Try exact matches on all search fields
+      for (const searchField of entityConfig.searchFields) {
+        const entity = await entityConfig.model.findOne({
+          [searchField]: { $regex: new RegExp(`^${this.escapeRegex(identifier)}$`, 'i') },
+          ...entityConfig.additionalFilters
+        });
+
+        if (entity) {
+          logger.info(`${entityConfig.entityName} resolved`, { 
+            input: identifier, 
+            matched: entity[entityConfig.nameField], 
+            id: entity._id,
+            matchedField: searchField
+          });
+          return { success: true, id: entity._id as Types.ObjectId };
+        }
+      }
+
+      // Try fuzzy matching on all search fields
+      const fuzzyQueries = entityConfig.searchFields.map(field => ({
+        [field]: { $regex: new RegExp(this.escapeRegex(identifier), 'i') }
+      }));
+
+      const fuzzyMatches = await entityConfig.model.find({
+        $or: fuzzyQueries,
+        ...entityConfig.additionalFilters
+      }).limit(5);
+
+      if (fuzzyMatches.length === 1) {
+        logger.info(`${entityConfig.entityName} fuzzy matched`, { 
+          input: identifier, 
+          matched: fuzzyMatches[0][entityConfig.nameField] 
+        });
+        return { success: true, id: fuzzyMatches[0]._id as Types.ObjectId };
+      }
+
+      // Get suggestions for error message
+      const allEntities = await entityConfig.model.find({ 
+        ...entityConfig.additionalFilters 
+      })
+        .select(entityConfig.nameField)
+        .limit(10)
+        .lean();
+
+      return {
+        success: false,
+        error: {
+          field: fieldName,
+          message: `${entityConfig.entityName} '${identifier}' not found`,
+          suggestions: fuzzyMatches.length > 0
+            ? fuzzyMatches.map(e => e[entityConfig.nameField])
+            : allEntities.map(e => e[entityConfig.nameField]),
+          receivedValue: identifier
+        }
+      };
+
+    } catch (error) {
+      logger.error(`Error resolving ${entityType} ID`, { identifier, error });
+      return {
+        success: false,
+        error: {
+          field: fieldName,
+          message: `Failed to resolve ${entityType}`,
+          receivedValue: identifier
+        }
+      };
+    }
+  }
+
+  /**
+   * Get entity configuration for different types
+   */
+  private getEntityConfig(entityType: 'client' | 'user' | 'project' | 'manager' | 'task'): EntityConfig {
+    switch (entityType) {
+      case 'client':
+        return {
+          model: Client,
+          nameField: 'name',
+          searchFields: ['name'],
+          additionalFilters: { deleted_at: { $exists: false } },
+          entityName: 'Client'
+        };
+      
+      case 'user':
+        return {
+          model: User,
+          nameField: 'full_name',
+          searchFields: ['full_name', 'email'],
+          additionalFilters: { is_hard_deleted: false },
+          entityName: 'User'
+        };
+      
+      case 'project':
+        return {
+          model: Project,
+          nameField: 'name',
+          searchFields: ['name'],
+          additionalFilters: { is_hard_deleted: false },
+          entityName: 'Project'
+        };
+      
+      case 'manager':
+        return {
+          model: User,
+          nameField: 'full_name',
+          searchFields: ['full_name', 'email'],
+          additionalFilters: { role: 'manager', is_hard_deleted: false },
+          entityName: 'Manager'
+        };
+      
+      case 'task':
+        return {
+          model: Task,
+          nameField: 'name',
+          searchFields: ['name'],
+          additionalFilters: { deleted_at: { $exists: false } },
+          entityName: 'Task'
+        };
+      
+      default:
+        throw new Error(`Unsupported entity type: ${entityType}`);
+    }
+  }
   /**
    * Map create_project intent data
    */
@@ -272,222 +438,884 @@ class VoiceFieldMapper {
   }
 
   /**
+   * Map create_task intent data
+   */
+  async mapTaskCreation(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Map task name
+    if (data.taskName || data.task_name || data.name) {
+      mapped.name = data.taskName || data.task_name || data.name;
+    } else {
+      errors.push({
+        field: 'name',
+        message: 'Task name is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map description
+    if (data.description) {
+      mapped.description = data.description;
+    }
+
+    // Resolve project name to project_id
+    if (data.projectId || data.project_id || data.projectName || data.project_name) {
+      const projectIdentifier = data.projectId || data.project_id || data.projectName || data.project_name;
+      const projectResult = await this.resolveNameToId(projectIdentifier, 'project', 'project_id');
+
+      if (projectResult.success) {
+        mapped.project_id = projectResult.id;
+      } else {
+        errors.push(projectResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'project_id',
+        message: 'Project is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Resolve assigned user name to assigned_to_user_id
+    if (data.assignedTo || data.assigned_to || data.assignedToUserId || data.assigned_to_user_id || 
+        data.assignedUser || data.assigned_user) {
+      const userIdentifier = data.assignedTo || data.assigned_to || data.assignedToUserId || 
+                            data.assigned_to_user_id || data.assignedUser || data.assigned_user;
+      const userResult = await this.resolveNameToId(userIdentifier, 'user', 'assigned_to_user_id');
+
+      if (userResult.success) {
+        mapped.assigned_to_user_id = userResult.id;
+      } else {
+        errors.push(userResult.error!);
+      }
+    }
+
+    // Map status
+    if (data.status) {
+      mapped.status = data.status.toLowerCase();
+    } else {
+      mapped.status = 'open'; // Default status
+    }
+
+    // Map estimated hours
+    if (data.estimatedHours !== undefined || data.estimated_hours !== undefined) {
+      const hours = data.estimatedHours ?? data.estimated_hours;
+      mapped.estimated_hours = parseFloat(hours);
+
+      if (isNaN(mapped.estimated_hours) || mapped.estimated_hours < 0) {
+        errors.push({
+          field: 'estimated_hours',
+          message: 'Invalid estimated hours value',
+          receivedValue: hours
+        });
+      }
+    }
+
+    // Map is_billable
+    if (data.isBillable !== undefined || data.is_billable !== undefined) {
+      mapped.is_billable = data.isBillable ?? data.is_billable;
+    } else {
+      mapped.is_billable = true; // Default to billable
+    }
+
+    // Note: created_by_user_id should be set by the service layer based on the authenticated user
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map add_project_member intent data
+   */
+  async mapAddProjectMember(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve project name to project_id
+    if (data.projectId || data.project_id || data.projectName || data.project_name) {
+      const projectIdentifier = data.projectId || data.project_id || data.projectName || data.project_name;
+      const projectResult = await this.resolveNameToId(projectIdentifier, 'project', 'project_id');
+
+      if (projectResult.success) {
+        mapped.project_id = projectResult.id;
+      } else {
+        errors.push(projectResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'project_id',
+        message: 'Project is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Resolve user name to user_id
+    if (data.userId || data.user_id || data.userName || data.user_name || data.name) {
+      const userIdentifier = data.userId || data.user_id || data.userName || data.user_name || data.name;
+      const userResult = await this.resolveNameToId(userIdentifier, 'user', 'user_id');
+
+      if (userResult.success) {
+        mapped.user_id = userResult.id;
+      } else {
+        errors.push(userResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'user_id',
+        message: 'User is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map role
+    if (data.role) {
+      mapped.role = data.role.toLowerCase();
+    } else {
+      mapped.role = 'employee'; // Default role
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map remove_project_member intent data
+   */
+  async mapRemoveProjectMember(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve project name to project_id
+    if (data.projectId || data.project_id || data.projectName || data.project_name) {
+      const projectIdentifier = data.projectId || data.project_id || data.projectName || data.project_name;
+      const projectResult = await this.resolveNameToId(projectIdentifier, 'project', 'project_id');
+
+      if (projectResult.success) {
+        mapped.project_id = projectResult.id;
+        logger.info('Project resolved for remove operation', {
+          input: projectIdentifier,
+          resolvedId: projectResult.id,
+          idType: typeof projectResult.id
+        });
+      } else {
+        errors.push(projectResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'project_id',
+        message: 'Project is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Resolve user name to user_id
+    if (data.userId || data.user_id || data.userName || data.user_name || data.name) {
+      const userIdentifier = data.userId || data.user_id || data.userName || data.user_name || data.name;
+      const userResult = await this.resolveNameToId(userIdentifier, 'user', 'user_id');
+
+      if (userResult.success) {
+        mapped.user_id = userResult.id;
+      } else {
+        errors.push(userResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'user_id',
+        message: 'User is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map role (optional for remove operations)
+    if (data.role) {
+      mapped.role = data.role.toLowerCase();
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map update_client intent data
+   */
+  async mapUpdateClient(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve client name to client_id (required for updates)
+    if (data.clientId || data.client_id || data.clientName || data.client_name) {
+      const clientIdentifier = data.clientId || data.client_id || data.clientName || data.client_name;
+      const clientResult = await this.resolveNameToId(clientIdentifier, 'client', 'client_id');
+
+      if (clientResult.success) {
+        mapped.client_id = clientResult.id;
+      } else {
+        errors.push(clientResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'client_id',
+        message: 'Client is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map updateable fields
+    if (data.name) {
+      mapped.name = data.name;
+    }
+
+    if (data.contactPerson || data.contact_person) {
+      mapped.contact_person = data.contactPerson || data.contact_person;
+    }
+
+    if (data.contactEmail || data.contact_email) {
+      mapped.contact_email = data.contactEmail || data.contact_email;
+    }
+
+    if (data.phone) {
+      mapped.phone = data.phone;
+    }
+
+    if (data.address) {
+      mapped.address = data.address;
+    }
+
+    if (data.isActive !== undefined || data.is_active !== undefined) {
+      mapped.is_active = data.isActive ?? data.is_active;
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map delete_client intent data
+   */
+  async mapDeleteClient(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve client name to client_id
+    if (data.clientId || data.client_id || data.clientName || data.client_name) {
+      const clientIdentifier = data.clientId || data.client_id || data.clientName || data.client_name;
+      const clientResult = await this.resolveNameToId(clientIdentifier, 'client', 'client_id');
+
+      if (clientResult.success) {
+        mapped.client_id = clientResult.id;
+      } else {
+        errors.push(clientResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'client_id',
+        message: 'Client is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map reason (required)
+    if (data.reason) {
+      mapped.reason = data.reason;
+    } else {
+      errors.push({
+        field: 'reason',
+        message: 'Deletion reason is required',
+        receivedValue: undefined
+      });
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map add_entries intent data
+   */
+  async mapAddEntries(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve project name to project_id
+    if (data.projectId || data.project_id || data.projectName || data.project_name) {
+      const projectIdentifier = data.projectId || data.project_id || data.projectName || data.project_name;
+      const projectResult = await this.resolveNameToId(projectIdentifier, 'project', 'project_id');
+
+      if (projectResult.success) {
+        mapped.project_id = projectResult.id;
+      } else {
+        errors.push(projectResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'project_id',
+        message: 'Project is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Resolve task name to task_id
+    if (data.taskId || data.task_id || data.taskName || data.task_name) {
+      const taskIdentifier = data.taskId || data.task_id || data.taskName || data.task_name;
+      
+      if (data.taskName || data.task_name) {
+        const taskResult = await this.resolveNameToId(taskIdentifier, 'task', 'task_id');
+        if (taskResult.success) {
+          mapped.task_id = taskResult.id;
+        } else {
+          errors.push(taskResult.error!);
+        }
+      } else {
+        if (Types.ObjectId.isValid(taskIdentifier)) {
+          mapped.task_id = new Types.ObjectId(taskIdentifier);
+        } else {
+          errors.push({
+            field: 'task_id',
+            message: 'Invalid task ID format',
+            receivedValue: taskIdentifier
+          });
+        }
+      }
+    } else {
+      errors.push({
+        field: 'task_id',
+        message: 'Task is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map date (required)
+    if (data.date) {
+      mapped.date = this.parseDate(data.date);
+      if (!mapped.date) {
+        errors.push({
+          field: 'date',
+          message: 'Invalid date format',
+          receivedValue: data.date
+        });
+      }
+    } else {
+      errors.push({
+        field: 'date',
+        message: 'Date is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map hours (required)
+    if (data.hours !== undefined) {
+      mapped.hours = parseFloat(data.hours);
+      if (isNaN(mapped.hours) || mapped.hours < 0) {
+        errors.push({
+          field: 'hours',
+          message: 'Invalid hours value',
+          receivedValue: data.hours
+        });
+      }
+    } else {
+      errors.push({
+        field: 'hours',
+        message: 'Hours is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map entry type (required)
+    if (data.entryType || data.entry_type) {
+      mapped.entry_type = (data.entryType || data.entry_type).toLowerCase();
+    } else {
+      mapped.entry_type = 'project'; // Default to project
+    }
+
+    // Map optional fields
+    if (data.description) {
+      mapped.description = data.description;
+    }
+
+    if (data.taskType || data.task_type) {
+      mapped.task_type = (data.taskType || data.task_type).toLowerCase();
+    }
+
+    if (data.isBillable !== undefined || data.is_billable !== undefined) {
+      mapped.is_billable = data.isBillable ?? data.is_billable;
+    } else {
+      mapped.is_billable = true; // Default to billable
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map update_entries intent data
+   */
+  async mapUpdateEntries(data: Record<string, any>): Promise<MappingResult> {
+    // Similar to mapAddEntries but for updates
+    return this.mapAddEntries(data);
+  }
+
+  /**
+   * Map delete_entries intent data
+   */
+  async mapDeleteEntries(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Map week start date
+    if (data.weekStart || data.week_start) {
+      mapped.week_start = this.parseDate(data.weekStart || data.week_start);
+      if (!mapped.week_start) {
+        errors.push({
+          field: 'week_start',
+          message: 'Invalid week start date format',
+          receivedValue: data.weekStart || data.week_start
+        });
+      }
+    }
+
+    // Resolve project name to project_id
+    if (data.projectId || data.project_id || data.projectName || data.project_name) {
+      const projectIdentifier = data.projectId || data.project_id || data.projectName || data.project_name;
+      const projectResult = await this.resolveNameToId(projectIdentifier, 'project', 'project_id');
+
+      if (projectResult.success) {
+        mapped.project_id = projectResult.id;
+      } else {
+        errors.push(projectResult.error!);
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map update_project intent data  
+   */
+  async mapUpdateProject(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve project name to project_id (required for updates)
+    if (data.projectId || data.project_id || data.projectName || data.project_name) {
+      const projectIdentifier = data.projectId || data.project_id || data.projectName || data.project_name;
+      const projectResult = await this.resolveNameToId(projectIdentifier, 'project', 'project_id');
+
+      if (projectResult.success) {
+        mapped.project_id = projectResult.id;
+      } else {
+        errors.push(projectResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'project_id',
+        message: 'Project is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map updateable fields
+    if (data.name) {
+      mapped.name = data.name;
+    }
+
+    if (data.description) {
+      mapped.description = data.description;
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map update_task intent data
+   */
+  async mapUpdateTask(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve task identifier to task_id
+    if (data.taskId || data.task_id || data.taskName || data.task_name) {
+      const taskIdentifier = data.taskId || data.task_id || data.taskName || data.task_name;
+      
+      if (data.taskName || data.task_name) {
+        // If it's a name, we need to resolve it
+        const taskResult = await this.resolveNameToId(taskIdentifier, 'task', 'task_id');
+        if (taskResult.success) {
+          mapped.task_id = taskResult.id;
+        } else {
+          errors.push(taskResult.error!);
+        }
+      } else {
+        // If it's already an ID, just validate it
+        if (Types.ObjectId.isValid(taskIdentifier)) {
+          mapped.task_id = new Types.ObjectId(taskIdentifier);
+        } else {
+          errors.push({
+            field: 'task_id',
+            message: 'Invalid task ID format',
+            receivedValue: taskIdentifier
+          });
+        }
+      }
+    } else {
+      errors.push({
+        field: 'task_id',
+        message: 'Task is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map updateable fields
+    if (data.name || data.taskName || data.task_name) {
+      mapped.name = data.name || data.taskName || data.task_name;
+    }
+
+    if (data.description) {
+      mapped.description = data.description;
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map delete_project intent data
+   */
+  async mapDeleteProject(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve project name to project_id
+    if (data.projectId || data.project_id || data.projectName || data.project_name) {
+      const projectIdentifier = data.projectId || data.project_id || data.projectName || data.project_name;
+      const projectResult = await this.resolveNameToId(projectIdentifier, 'project', 'project_id');
+
+      if (projectResult.success) {
+        mapped.project_id = projectResult.id;
+      } else {
+        errors.push(projectResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'project_id',
+        message: 'Project is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map reason (required)
+    if (data.reason) {
+      mapped.reason = data.reason;
+    } else {
+      errors.push({
+        field: 'reason',
+        message: 'Deletion reason is required',
+        receivedValue: undefined
+      });
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map update_user intent data
+   */
+  async mapUpdateUser(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve user name to user_id (required for updates)
+    if (data.userId || data.user_id || data.userName || data.user_name) {
+      const userIdentifier = data.userId || data.user_id || data.userName || data.user_name;
+      const userResult = await this.resolveNameToId(userIdentifier, 'user', 'user_id');
+
+      if (userResult.success) {
+        mapped.user_id = userResult.id;
+      } else {
+        errors.push(userResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'user_id',
+        message: 'User is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map updateable fields
+    if (data.email) {
+      mapped.email = data.email.toLowerCase();
+    }
+
+    if (data.role) {
+      mapped.role = data.role.toLowerCase();
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map delete_user intent data
+   */
+  async mapDeleteUser(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Resolve user name to user_id
+    if (data.userId || data.user_id || data.userName || data.user_name) {
+      const userIdentifier = data.userId || data.user_id || data.userName || data.user_name;
+      const userResult = await this.resolveNameToId(userIdentifier, 'user', 'user_id');
+
+      if (userResult.success) {
+        mapped.user_id = userResult.id;
+      } else {
+        errors.push(userResult.error!);
+      }
+    } else {
+      errors.push({
+        field: 'user_id',
+        message: 'User is required',
+        receivedValue: undefined
+      });
+    }
+
+    // Map reason (required)
+    if (data.reason) {
+      mapped.reason = data.reason;
+    } else {
+      errors.push({
+        field: 'reason',
+        message: 'Deletion reason is required',
+        receivedValue: undefined
+      });
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map create_timesheet intent data
+   */
+  async mapCreateTimesheet(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Map week start date
+    if (data.weekStart || data.week_start) {
+      mapped.week_start = this.parseDate(data.weekStart || data.week_start);
+      if (!mapped.week_start) {
+        errors.push({
+          field: 'week_start',
+          message: 'Invalid week start date format',
+          receivedValue: data.weekStart || data.week_start
+        });
+      }
+    } else {
+      errors.push({
+        field: 'week_start',
+        message: 'Week start date is required',
+        receivedValue: undefined
+      });
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map delete_timesheet intent data  
+   */
+  async mapDeleteTimesheet(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Map week start date
+    if (data.weekStart || data.week_start) {
+      mapped.week_start = this.parseDate(data.weekStart || data.week_start);
+      if (!mapped.week_start) {
+        errors.push({
+          field: 'week_start',
+          message: 'Invalid week start date format',
+          receivedValue: data.weekStart || data.week_start
+        });
+      }
+    } else {
+      errors.push({
+        field: 'week_start',
+        message: 'Week start date is required',
+        receivedValue: undefined
+      });
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map copy_entry intent data
+   */
+  async mapCopyEntry(data: Record<string, any>): Promise<MappingResult> {
+    return {
+      success: true,
+      data: data  // Simplified for now
+    };
+  }
+
+  /**
+   * Map team review actions (approve/reject user/project)
+   */
+  async mapTeamReviewAction(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Map week start date
+    if (data.weekStart || data.week_start) {
+      mapped.week_start = this.parseDate(data.weekStart || data.week_start);
+    }
+
+    // Resolve project name to project_id
+    if (data.projectId || data.project_id || data.projectName || data.project_name) {
+      const projectIdentifier = data.projectId || data.project_id || data.projectName || data.project_name;
+      const projectResult = await this.resolveNameToId(projectIdentifier, 'project', 'project_id');
+
+      if (projectResult.success) {
+        mapped.project_id = projectResult.id;
+      } else {
+        errors.push(projectResult.error!);
+      }
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map export billing intents
+   */
+  async mapExportBilling(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Map date range
+    if (data.startDate || data.start_date) {
+      mapped.start_date = this.parseDate(data.startDate || data.start_date);
+    }
+
+    if (data.endDate || data.end_date) {
+      mapped.end_date = this.parseDate(data.endDate || data.end_date);
+    }
+
+    // Map format
+    if (data.format) {
+      mapped.format = data.format.toLowerCase();
+    } else {
+      mapped.format = 'csv'; // Default format
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
+   * Map get_audit_logs intent data
+   */
+  async mapGetAuditLogs(data: Record<string, any>): Promise<MappingResult> {
+    const errors: FieldMappingError[] = [];
+    const mapped: Record<string, any> = {};
+
+    // Map date range
+    if (data.startDate || data.start_date) {
+      mapped.start_date = this.parseDate(data.startDate || data.start_date);
+    }
+
+    if (data.endDate || data.end_date) {
+      mapped.end_date = this.parseDate(data.endDate || data.end_date);
+    }
+
+    return {
+      success: errors.length === 0,
+      data: mapped,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+
+  /**
    * Resolve client identifier (name or ID) to ObjectId
+   * @deprecated Use resolveNameToId('client') instead
    */
   private async resolveClientId(identifier: string): Promise<{ success: boolean; id?: Types.ObjectId; error?: FieldMappingError }> {
-    try {
-      // Check if already an ObjectId
-      if (Types.ObjectId.isValid(identifier) && identifier.length === 24) {
-        const client = await (Client as any).findOne({ _id: identifier, deleted_at: null });
-        if (client) {
-          return { success: true, id: client._id as Types.ObjectId };
-        }
-      }
-
-      // Try exact name match (case-insensitive)
-      let client = await (Client as any).findOne({
-        name: { $regex: new RegExp(`^${this.escapeRegex(identifier)}$`, 'i') },
-        deleted_at: null
-      });
-
-      if (client) {
-        logger.info('Client resolved', { input: identifier, matched: client.name, id: client._id });
-        return { success: true, id: client._id as Types.ObjectId };
-      }
-
-      // Try fuzzy match
-      const fuzzyMatches = await (Client as any).find({
-        name: { $regex: new RegExp(this.escapeRegex(identifier), 'i') },
-        deleted_at: null
-      }).limit(5);
-
-      if (fuzzyMatches.length === 1) {
-        logger.info('Client fuzzy matched', { input: identifier, matched: fuzzyMatches[0].name });
-        return { success: true, id: fuzzyMatches[0]._id as Types.ObjectId };
-      }
-
-      // Get suggestions
-      const allClients = await (Client as any).find({ deleted_at: null })
-        .select('name')
-        .limit(10)
-        .lean();
-
-      return {
-        success: false,
-        error: {
-          field: 'client_id',
-          message: `Client '${identifier}' not found`,
-          suggestions: fuzzyMatches.length > 0
-            ? fuzzyMatches.map(c => c.name)
-            : allClients.map(c => c.name),
-          receivedValue: identifier
-        }
-      };
-    } catch (error) {
-      logger.error('Error resolving client ID', { identifier, error });
-      return {
-        success: false,
-        error: {
-          field: 'client_id',
-          message: 'Failed to resolve client',
-          receivedValue: identifier
-        }
-      };
-    }
+    return this.resolveNameToId(identifier, 'client', 'client_id');
   }
 
   /**
    * Resolve manager identifier (name or ID) to ObjectId
    * Note: Only returns users with "manager" role, not other management-level roles
+   * @deprecated Use resolveNameToId('manager') instead
    */
   private async resolveManagerId(identifier: string): Promise<{ success: boolean; id?: Types.ObjectId; error?: FieldMappingError }> {
-    try {
-      // Check if already an ObjectId
-      if (Types.ObjectId.isValid(identifier) && identifier.length === 24) {
-        const user = await (User as any).findOne({
-          _id: identifier,
-          role: 'manager', // Only actual managers, not management/lead/super_admin
-          deleted_at: null
-        });
-        if (user) {
-          return { success: true, id: user._id as Types.ObjectId };
-        }
-      }
-
-      // Try exact name match (case-insensitive)
-      let manager = await (User as any).findOne({
-        full_name: { $regex: new RegExp(`^${this.escapeRegex(identifier)}$`, 'i') },
-        role: 'manager', // Only actual managers
-        deleted_at: null
-      });
-
-      if (manager) {
-        logger.info('Manager resolved', { input: identifier, matched: manager.full_name, id: manager._id });
-        return { success: true, id: manager._id as Types.ObjectId };
-      }
-
-      // Try fuzzy match
-      const fuzzyMatches = await (User as any).find({
-        full_name: { $regex: new RegExp(this.escapeRegex(identifier), 'i') },
-        role: 'manager', // Only actual managers
-        deleted_at: null
-      }).limit(5);
-
-      if (fuzzyMatches.length === 1) {
-        logger.info('Manager fuzzy matched', { input: identifier, matched: fuzzyMatches[0].full_name });
-        return { success: true, id: fuzzyMatches[0]._id as Types.ObjectId };
-      }
-
-      // Get suggestions
-      const allManagers = await (User as any).find({
-        role: 'manager', // Only actual managers
-        deleted_at: null
-      })
-        .select('full_name')
-        .limit(10)
-        .lean();
-
-      return {
-        success: false,
-        error: {
-          field: 'primary_manager_id',
-          message: `Manager '${identifier}' not found`,
-          suggestions: fuzzyMatches.length > 0
-            ? fuzzyMatches.map(u => u.full_name)
-            : allManagers.map(u => u.full_name),
-          receivedValue: identifier
-        }
-      };
-    } catch (error) {
-      logger.error('Error resolving manager ID', { identifier, error });
-      return {
-        success: false,
-        error: {
-          field: 'primary_manager_id',
-          message: 'Failed to resolve manager',
-          receivedValue: identifier
-        }
-      };
-    }
+    return this.resolveNameToId(identifier, 'manager', 'primary_manager_id');
   }
 
   /**
    * Resolve user identifier (name or ID) to ObjectId
+   * @deprecated Use resolveNameToId('user') instead
    */
   private async resolveUserId(identifier: string): Promise<{ success: boolean; id?: Types.ObjectId; error?: FieldMappingError }> {
-    try {
-      // Check if already an ObjectId
-      if (Types.ObjectId.isValid(identifier) && identifier.length === 24) {
-        const user = await (User as any).findOne({ _id: identifier, deleted_at: null });
-        if (user) {
-          return { success: true, id: user._id as Types.ObjectId };
-        }
-      }
-
-      // Try exact name match (case-insensitive)
-      let user = await (User as any).findOne({
-        full_name: { $regex: new RegExp(`^${this.escapeRegex(identifier)}$`, 'i') },
-        deleted_at: null
-      });
-
-      if (user) {
-        logger.info('User resolved', { input: identifier, matched: user.full_name, id: user._id });
-        return { success: true, id: user._id as Types.ObjectId };
-      }
-
-      // Try email match
-      user = await (User as any).findOne({
-        email: { $regex: new RegExp(`^${this.escapeRegex(identifier)}$`, 'i') },
-        deleted_at: null
-      });
-
-      if (user) {
-        logger.info('User resolved by email', { input: identifier, matched: user.email, id: user._id });
-        return { success: true, id: user._id as Types.ObjectId };
-      }
-
-      // Try fuzzy match
-      const fuzzyMatches = await (User as any).find({
-        $or: [
-          { full_name: { $regex: new RegExp(this.escapeRegex(identifier), 'i') } },
-          { email: { $regex: new RegExp(this.escapeRegex(identifier), 'i') } }
-        ],
-        deleted_at: null
-      }).limit(5);
-
-      if (fuzzyMatches.length === 1) {
-        logger.info('User fuzzy matched', { input: identifier, matched: fuzzyMatches[0].full_name });
-        return { success: true, id: fuzzyMatches[0]._id as Types.ObjectId };
-      }
-
-      // Get suggestions
-      const allUsers = await (User as any).find({ deleted_at: null })
-        .select('full_name')
-        .limit(10)
-        .lean();
-
-      return {
-        success: false,
-        error: {
-          field: 'user_id',
-          message: `User '${identifier}' not found`,
-          suggestions: fuzzyMatches.length > 0
-            ? fuzzyMatches.map(u => u.full_name)
-            : allUsers.map(u => u.full_name),
-          receivedValue: identifier
-        }
-      };
-    } catch (error) {
-      logger.error('Error resolving user ID', { identifier, error });
-      return {
-        success: false,
-        error: {
-          field: 'user_id',
-          message: 'Failed to resolve user',
-          receivedValue: identifier
-        }
-      };
-    }
+    return this.resolveNameToId(identifier, 'user', 'user_id');
   }
 
   /**
@@ -534,6 +1362,74 @@ class VoiceFieldMapper {
       case 'create_user':
         return this.mapUserCreation(data);
 
+      case 'create_task':
+        return this.mapTaskCreation(data);
+
+      // Project Management
+      case 'add_project_member':
+        return this.mapAddProjectMember(data);
+
+      case 'remove_project_member':
+        return this.mapRemoveProjectMember(data);
+
+      case 'update_project':
+        return this.mapUpdateProject(data);
+
+      case 'update_task':
+        return this.mapUpdateTask(data);
+
+      case 'delete_project':
+        return this.mapDeleteProject(data);
+
+      // User Management
+      case 'update_user':
+        return this.mapUpdateUser(data);
+
+      case 'delete_user':
+        return this.mapDeleteUser(data);
+
+      // Client Management
+      case 'update_client':
+        return this.mapUpdateClient(data);
+
+      case 'delete_client':
+        return this.mapDeleteClient(data);
+
+      // Timesheet Management
+      case 'add_entries':
+        return this.mapAddEntries(data);
+
+      case 'update_entries':
+        return this.mapUpdateEntries(data);
+
+      case 'delete_entries':
+        return this.mapDeleteEntries(data);
+
+      case 'create_timesheet':
+        return this.mapCreateTimesheet(data);
+
+      case 'delete_timesheet':
+        return this.mapDeleteTimesheet(data);
+
+      case 'copy_entry':
+        return this.mapCopyEntry(data);
+
+      // Team Review
+      case 'approve_user':
+      case 'approve_project_week':
+      case 'reject_user':
+      case 'reject_project_week':
+      case 'send_reminder':
+        return this.mapTeamReviewAction(data);
+
+      // Billing & Audit
+      case 'export_project_billing':
+      case 'export_user_billing':
+        return this.mapExportBilling(data);
+
+      case 'get_audit_logs':
+        return this.mapGetAuditLogs(data);
+
       // Add more intent mappers as needed
       default:
         logger.warn('No field mapper for intent', { intent });
@@ -546,4 +1442,4 @@ class VoiceFieldMapper {
 }
 
 export default new VoiceFieldMapper();
-export { FieldMappingError, MappingResult };
+export { FieldMappingError, MappingResult, EntityConfig, NameResolverResult };

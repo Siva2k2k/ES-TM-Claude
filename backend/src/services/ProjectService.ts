@@ -366,20 +366,34 @@ export class ProjectService {
    */
   static async getProjectTasks(projectId: string, currentUser: AuthUser): Promise<{ tasks: ITask[]; error?: string }> {
     try {
+      // Validate ObjectId format
+      if (!mongoose.Types.ObjectId.isValid(projectId)) {
+        return { tasks: [], error: 'Invalid project ID format' };
+      }
+
+      // Check if project exists first
+      const projectExists = await (Project.findOne as any)({
+        _id: new mongoose.Types.ObjectId(projectId),
+        deleted_at: { $exists: false }
+      });
+
+      if (!projectExists) {
+        return { tasks: [], error: 'Project not found' };
+      }
+
       // Check if user has access to this project
       const hasAccess = await this.checkProjectAccess(projectId, currentUser);
       if (!hasAccess) {
-        throw new AuthorizationError('You do not have access to this project');
+        return { tasks: [], error: 'You do not have access to this project' };
       }
 
       const tasks = await (Task.find as any)({
-        project_id: projectId,
+        project_id: new mongoose.Types.ObjectId(projectId),
         deleted_at: { $exists: false }
       })
         .populate('assigned_to_user_id', 'full_name')
         .populate('created_by_user_id', 'full_name')
         .sort({ created_at: -1 });
-
 
       return { tasks };
     } catch (error) {
@@ -578,27 +592,33 @@ export class ProjectService {
    */
   static async getProjectById(projectId: string, currentUser: AuthUser): Promise<{ project?: ProjectWithDetails; error?: string; warnings?: string[] }> {
     try {
-      // Check project access
-      const hasAccess = await this.checkProjectAccess(projectId, currentUser);
-      if (!hasAccess) {
-        throw new AuthorizationError('You do not have access to this project');
+      // Validate ObjectId format
+      if (!mongoose.Types.ObjectId.isValid(projectId)) {
+        return { error: 'Invalid project ID format' };
       }
 
+      // Check if project exists first
       const project = await (Project.findOne as any)({
-        _id: projectId,
+        _id: new mongoose.Types.ObjectId(projectId),
         deleted_at: { $exists: false }
       })
         .populate('client_id', 'name contact_person')
         .populate('primary_manager_id', 'full_name');
 
       if (!project) {
-        throw new NotFoundError('Project not found');
+        return { error: 'Project not found' };
+      }
+
+      // Then check project access
+      const hasAccess = await this.checkProjectAccess(projectId, currentUser);
+      if (!hasAccess) {
+        return { error: 'You do not have access to this project' };
       }
 
       // Non-blocking validation: check whether the project has a Lead assigned.
       // This is a soft/warning check intended for UI display only and must not block operations.
       const leadMember = await (ProjectMember.findOne as any)({
-        project_id: projectId,
+        project_id: new mongoose.Types.ObjectId(projectId),
         project_role: 'lead',
         removed_at: { $exists: false },
         deleted_at: { $exists: false }
@@ -1126,14 +1146,29 @@ export class ProjectService {
     error?: string;
   }> {
     try {
+      // Validate ObjectId format
+      if (!mongoose.Types.ObjectId.isValid(projectId)) {
+        return { members: [], error: 'Invalid project ID format' };
+      }
+
+      // Check if project exists first
+      const projectExists = await (Project.findOne as any)({
+        _id: new mongoose.Types.ObjectId(projectId),
+        deleted_at: { $exists: false }
+      });
+
+      if (!projectExists) {
+        return { members: [], error: 'Project not found' };
+      }
+
       // Check project access
       const hasAccess = await this.checkProjectAccess(projectId, currentUser);
       if (!hasAccess) {
-        throw new AuthorizationError('You do not have access to this project');
+        return { members: [], error: 'You do not have access to this project' };
       }
 
       const members = await (ProjectMember.find as any)({
-        project_id: projectId,
+        project_id: new mongoose.Types.ObjectId(projectId),
         removed_at: { $exists: false },
         deleted_at: { $exists: false }
       }).populate('user_id', 'full_name email');
@@ -1572,34 +1607,47 @@ export class ProjectService {
    * Private helper method
    */
   private static async checkProjectAccess(projectId: string, currentUser: AuthUser): Promise<boolean> {
-    // Super admin and management have access to all projects
-    if (['super_admin', 'management'].includes(currentUser.role)) {
-      return true;
-    }
+    try {
+      // Super admin, management, and manager have access to all projects
+      if (['super_admin', 'management', 'manager'].includes(currentUser.role)) {
+        return true;
+      }
 
-    // Check if user is the primary manager
-    const project = await (Project.findOne as any)({
-      _id: projectId,
-      deleted_at: { $exists: false }
-    });
+      // Validate ObjectId format
+      if (!mongoose.Types.ObjectId.isValid(projectId)) {
+        console.log(`Invalid ObjectId format: ${projectId}`);
+        return false;
+      }
 
-    if (!project) {
+      // Check if project exists first
+      const project = await (Project.findOne as any)({
+        _id: new mongoose.Types.ObjectId(projectId),
+        deleted_at: { $exists: false }
+      });
+
+      if (!project) {
+        console.log(`Project not found: ${projectId}`);
+        return false;
+      }
+
+      // Check if user is the primary manager
+      if (project.primary_manager_id && project.primary_manager_id.toString() === currentUser.id) {
+        return true;
+      }
+
+      // Check if user is a member of the project
+      const membership = await (ProjectMember.findOne as any)({
+        project_id: new mongoose.Types.ObjectId(projectId),
+        user_id: new mongoose.Types.ObjectId(currentUser.id),
+        removed_at: { $exists: false },
+        deleted_at: { $exists: false }
+      });
+
+      return !!membership;
+    } catch (error) {
+      console.error(`Error checking project access for project ${projectId}, user ${currentUser.id}:`, error);
       return false;
     }
-
-    if (project.primary_manager_id.toString() === currentUser.id) {
-      return true;
-    }
-
-    // Check if user is a member of the project
-    const membership = await (ProjectMember.findOne as any)({
-      project_id: projectId,
-      user_id: currentUser.id,
-      removed_at: { $exists: false },
-      deleted_at: { $exists: false }
-    });
-
-    return !!membership;
   }
 
   // ========================================================================

@@ -297,31 +297,39 @@ class VoiceActionDispatcher {
 
     // Replace {projectId}
     if (template.includes('{projectId}')) {
-      const projectId = data._id?.toString() || affectedEntities?.find(e => e.type === 'project')?.id;
-      url = url.replace('{projectId}', projectId || '');
+      const projectId = data?._id?.toString() || 
+                      data?.project?._id?.toString() || 
+                      affectedEntities?.find(e => e.type === 'project')?.id || '';
+      url = url.replace('{projectId}', projectId);
     }
 
     // Replace {userId}
     if (template.includes('{userId}')) {
-      const userId = data._id?.toString() || affectedEntities?.find(e => e.type === 'user')?.id;
-      url = url.replace('{userId}', userId || '');
+      const userId = data?._id?.toString() || 
+                    data?.user?._id?.toString() || 
+                    affectedEntities?.find(e => e.type === 'user')?.id || '';
+      url = url.replace('{userId}', userId);
     }
 
     // Replace {clientId}
     if (template.includes('{clientId}')) {
-      const clientId = data._id?.toString() || affectedEntities?.find(e => e.type === 'client')?.id;
-      url = url.replace('{clientId}', clientId || '');
+      const clientId = data?._id?.toString() || 
+                      data?.client?._id?.toString() || 
+                      affectedEntities?.find(e => e.type === 'client')?.id || '';
+      url = url.replace('{clientId}', clientId);
     }
 
     // Replace {timesheetId}
     if (template.includes('{timesheetId}')) {
-      const timesheetId = data._id?.toString() || affectedEntities?.find(e => e.type === 'timesheet')?.id;
-      url = url.replace('{timesheetId}', timesheetId || '');
+      const timesheetId = data?._id?.toString() || 
+                         data?.timesheet?._id?.toString() || 
+                         affectedEntities?.find(e => e.type === 'timesheet')?.id || '';
+      url = url.replace('{timesheetId}', timesheetId);
     }
 
     // Replace {weekStart}
     if (template.includes('{weekStart}')) {
-      const weekStart = data.weekStart || data.week_start || '';
+      const weekStart = data?.weekStart || data?.week_start || '';
       url = url.replace('{weekStart}', weekStart);
     }
 
@@ -527,7 +535,7 @@ class VoiceActionDispatcher {
         return {
           intent: 'remove_project_member',
           success: false,
-          error: result.error || 'Failed to remove project member'
+          error: 'Failed to remove project member'
         };
       }
 

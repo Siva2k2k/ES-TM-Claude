@@ -281,7 +281,10 @@ export class ProjectController {
     const result = await ProjectService.getProjectById(projectId, req.user);
 
     if (result.error) {
-      return res.status(400).json({
+      // Return 404 for "Project not found" and 403 for access issues
+      const statusCode = result.error === 'Project not found' ? 404 : 
+                         result.error.includes('access') ? 403 : 400;
+      return res.status(statusCode).json({
         success: false,
         error: result.error
       });
@@ -458,7 +461,10 @@ export class ProjectController {
     const result = await ProjectService.getProjectMembers(projectId, req.user);
 
     if (result.error) {
-      return res.status(403).json({
+      // Return 404 for "Project not found" and 403 for access issues
+      const statusCode = result.error === 'Project not found' ? 404 : 
+                         result.error.includes('access') ? 403 : 400;
+      return res.status(statusCode).json({
         success: false,
         error: result.error
       });
@@ -715,7 +721,10 @@ export class ProjectController {
     const result = await ProjectService.getProjectTasks(projectId, req.user);
 
     if (result.error) {
-      return res.status(403).json({
+      // Return 404 for "Project not found" and 403 for access issues
+      const statusCode = result.error === 'Project not found' ? 404 : 
+                         result.error.includes('access') ? 403 : 400;
+      return res.status(statusCode).json({
         success: false,
         error: result.error
       });

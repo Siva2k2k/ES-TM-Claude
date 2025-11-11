@@ -59,8 +59,8 @@ export const intentDefinitions = [
     intent: 'remove_project_member',
     category: 'project',
     description: 'Remove a team member from a project',
-    requiredFields: ['projectName', 'role', 'name'],
-    optionalFields: [],
+    requiredFields: ['projectName', 'name'],
+    optionalFields: ['role'],
     fieldTypes: {
       projectName: 'reference',
       role: 'enum',
