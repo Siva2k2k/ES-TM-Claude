@@ -26,7 +26,20 @@ export const TaskSlideOver: React.FC<Props> = ({ open, onClose, projectId, task,
   const [loading, setLoading] = useState(false);
   const [name, setName] = useState(task?.name || '');
   const [description, setDescription] = useState(task?.description || '');
-  const [assignedTo, setAssignedTo] = useState<string | undefined>(task?.assigned_to_user_id as any || undefined);
+  const [assignedTo, setAssignedTo] = useState<string | undefined>(() => {
+    if (!task?.assigned_to_user_id) return undefined;
+    
+    // Backend now normalizes this to string, but handle both formats for safety
+    if (typeof task.assigned_to_user_id === 'string') {
+      return task.assigned_to_user_id;
+    } else if (typeof task.assigned_to_user_id === 'object' && task.assigned_to_user_id) {
+      // Fallback for any legacy or cached responses
+      const userObj = task.assigned_to_user_id as { _id?: string; id?: string };
+      return userObj._id || userObj.id || undefined;
+    }
+    
+    return undefined;
+  });
   const [status, setStatus] = useState<string>(task?.status || 'open');
   const [estimatedHours, setEstimatedHours] = useState<number | undefined>(task?.estimated_hours || undefined);
   const [isBillable, setIsBillable] = useState<boolean>(task?.is_billable ?? true);
@@ -35,10 +48,20 @@ export const TaskSlideOver: React.FC<Props> = ({ open, onClose, projectId, task,
     if (task) {
       setName(task.name || '');
       setDescription(task.description || '');
-      setAssignedTo(task.assigned_to_user_id as any || undefined);
       setStatus(task.status || 'open');
       setEstimatedHours(task.estimated_hours || undefined);
       setIsBillable(task.is_billable ?? true);
+      
+      // Handle assigned_to_user_id properly
+      if (!task.assigned_to_user_id) {
+        setAssignedTo(undefined);
+      } else if (typeof task.assigned_to_user_id === 'string') {
+        setAssignedTo(task.assigned_to_user_id);
+      } else if (typeof task.assigned_to_user_id === 'object' && task.assigned_to_user_id) {
+        // Fallback for any legacy or cached responses
+        const userObj = task.assigned_to_user_id as { _id?: string; id?: string };
+        setAssignedTo(userObj._id || userObj.id || undefined);
+      }
     } else {
       setName('');
       setDescription('');

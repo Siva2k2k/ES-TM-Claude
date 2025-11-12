@@ -882,10 +882,15 @@ class RoleBasedServiceDispatcher {
     }
 
     const mappedData = mappingResult.data;
+    
+    // Extract project_id and prepare update data (excluding project_id)
+    const projectId = mappedData.project_id;
+    const updateData = { ...mappedData };
+    delete updateData.project_id; // Remove project_id from update data
 
     const result = await ProjectService.updateProject(
-      mappedData.project_id,
-      mappedData,
+      projectId,
+      updateData,
       authUser
     );
 
@@ -903,7 +908,7 @@ class RoleBasedServiceDispatcher {
       data: { message: 'Project updated successfully' },
       affectedEntities: [{
         type: 'project',
-        id: mappedData.project_id.toString()
+        id: projectId.toString()
       }]
     };
   }

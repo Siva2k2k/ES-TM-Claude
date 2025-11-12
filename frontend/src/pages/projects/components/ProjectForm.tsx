@@ -76,7 +76,14 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
       description: '',
       client_id: '',
       primary_manager_id: '',
-      start_date: new Date().toISOString().split('T')[0],
+      // Use local date formatting to avoid timezone shifting
+      start_date: (() => {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      })(),
       end_date: '',
       budget: 0,
       status: 'active',
@@ -87,12 +94,21 @@ export const ProjectForm: React.FC<ProjectFormProps> = ({
   // Reset form when project changes or modal opens
   useEffect(() => {
     if (mode === 'edit' && project) {
-      const startDate = project.start_date
-        ? new Date(project.start_date).toISOString().split('T')[0]
-        : '';
-      const endDate = project.end_date
-        ? new Date(project.end_date).toISOString().split('T')[0]
-        : '';
+      // Use local date formatting to avoid timezone shifting (same fix as VoiceConfirmationModal)
+      const formatDateForInput = (dateValue: string | Date | null | undefined) => {
+        if (!dateValue) return '';
+        const date = typeof dateValue === 'string' ? new Date(dateValue) : dateValue;
+        if (isNaN(date.getTime())) return '';
+        
+        // Use local date parts to avoid UTC timezone shifting
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const startDate = formatDateForInput(project.start_date);
+      const endDate = formatDateForInput(project.end_date);
 
       reset({
         name: project.name,

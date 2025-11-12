@@ -480,9 +480,10 @@ class VoiceFieldMapper {
 
     // Resolve assigned user name to assigned_to_user_id
     if (data.assignedTo || data.assigned_to || data.assignedToUserId || data.assigned_to_user_id || 
-        data.assignedUser || data.assigned_user) {
+        data.assignedUser || data.assigned_user || data.assignedMemberName) {
       const userIdentifier = data.assignedTo || data.assigned_to || data.assignedToUserId || 
-                            data.assigned_to_user_id || data.assignedUser || data.assigned_user;
+                            data.assigned_to_user_id || data.assignedUser || data.assigned_user || 
+                            data.assignedMemberName;
       const userResult = await this.resolveNameToId(userIdentifier, 'user', 'assigned_to_user_id');
 
       if (userResult.success) {
@@ -499,7 +500,7 @@ class VoiceFieldMapper {
       mapped.status = 'open'; // Default status
     }
 
-    // Map estimated hours
+    // Map estimated hours (default to 0 if not provided)
     if (data.estimatedHours !== undefined || data.estimated_hours !== undefined) {
       const hours = data.estimatedHours ?? data.estimated_hours;
       mapped.estimated_hours = parseFloat(hours);
@@ -511,6 +512,8 @@ class VoiceFieldMapper {
           receivedValue: hours
         });
       }
+    } else {
+      mapped.estimated_hours = 0; // Default to 0 hours if not provided
     }
 
     // Map is_billable
@@ -938,12 +941,96 @@ class VoiceFieldMapper {
     }
 
     // Map updateable fields
-    if (data.name) {
-      mapped.name = data.name;
+    if (data.name || data.projectName || data.project_name) {
+      mapped.name = data.name || data.projectName || data.project_name;
     }
 
     if (data.description) {
       mapped.description = data.description;
+    }
+
+    // Resolve client name to client_id (optional for updates)
+    if (data.clientId || data.client_id || data.clientName || data.client_name) {
+      const clientIdentifier = data.clientId || data.client_id || data.clientName || data.client_name;
+      const clientResult = await this.resolveNameToId(clientIdentifier, 'client', 'client_id');
+
+      if (clientResult.success) {
+        mapped.client_id = clientResult.id;
+      } else {
+        errors.push(clientResult.error!);
+      }
+    }
+
+    // Resolve manager name to primary_manager_id (optional for updates)
+    if (data.managerId || data.manager_id || data.managerName || data.manager_name ||
+        data.primaryManagerId || data.primary_manager_id) {
+      const managerIdentifier = data.managerId || data.manager_id || data.managerName ||
+                                data.manager_name || data.primaryManagerId || data.primary_manager_id;
+      const managerResult = await this.resolveNameToId(managerIdentifier, 'manager', 'primary_manager_id');
+
+      if (managerResult.success) {
+        mapped.primary_manager_id = managerResult.id;
+      } else {
+        errors.push(managerResult.error!);
+      }
+    }
+
+    // Map dates (optional for updates)
+    if (data.startDate || data.start_date) {
+      const dateStr = data.startDate || data.start_date;
+      mapped.start_date = this.parseDate(dateStr);
+
+      if (!mapped.start_date) {
+        errors.push({
+          field: 'start_date',
+          message: 'Invalid start date format',
+          receivedValue: dateStr
+        });
+      }
+    }
+
+    if (data.endDate || data.end_date) {
+      const dateStr = data.endDate || data.end_date;
+      mapped.end_date = this.parseDate(dateStr);
+
+      if (!mapped.end_date) {
+        errors.push({
+          field: 'end_date',
+          message: 'Invalid end date format',
+          receivedValue: dateStr
+        });
+      }
+    }
+
+    // Validate date logic if both dates are provided
+    if (mapped.start_date && mapped.end_date && mapped.start_date > mapped.end_date) {
+      errors.push({
+        field: 'end_date',
+        message: 'End date must be after start date',
+        receivedValue: data.endDate || data.end_date
+      });
+    }
+
+    // Map status (optional for updates)
+    if (data.status) {
+      mapped.status = data.status.toLowerCase();
+    }
+
+    // Map budget (optional for updates)
+    if (data.budget !== undefined) {
+      mapped.budget = parseFloat(data.budget);
+      if (isNaN(mapped.budget)) {
+        errors.push({
+          field: 'budget',
+          message: 'Invalid budget value',
+          receivedValue: data.budget
+        });
+      }
+    }
+
+    // Map is_billable (optional for updates)
+    if (data.isBillable !== undefined || data.is_billable !== undefined) {
+      mapped.is_billable = data.isBillable ?? data.is_billable;
     }
 
     return {
@@ -1320,17 +1407,109 @@ class VoiceFieldMapper {
 
   /**
    * Parse date string to Date object
+   * Supports relative dates like "today", "tomorrow", "yesterday"
    */
   private parseDate(dateStr: string | Date): Date | null {
+    console.log('🔍 VoiceFieldMapper.parseDate called with:', { 
+      input: dateStr, 
+      type: typeof dateStr,
+      inputString: String(dateStr)
+    });
+    
     if (dateStr instanceof Date) {
+      console.log('📅 Input is already a Date object:', dateStr);
       return dateStr;
     }
 
     if (!dateStr) {
+      console.log('❌ Empty dateStr, returning null');
       return null;
     }
 
+    // Handle relative dates
+    const lowerStr = dateStr.toString().toLowerCase().trim();
+    const now = new Date();
+    console.log('🕐 Processing date string:', { lowerStr, now });
+    
+    switch (lowerStr) {
+      case 'today':
+      case 'now':
+        // Create date at midnight UTC to avoid timezone shifting issues
+        const today = new Date();
+        const todayUTC = new Date(Date.UTC(today.getFullYear(), today.getMonth(), today.getDate()));
+        console.log('✅ Created today UTC:', todayUTC);
+        return todayUTC;
+      
+      case 'tomorrow':
+        const tomorrow = new Date();
+        const tomorrowUTC = new Date(Date.UTC(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate()));
+        tomorrowUTC.setUTCDate(tomorrowUTC.getUTCDate() + 1);
+        return tomorrowUTC;
+      
+      case 'yesterday':
+        const yesterday = new Date();
+        const yesterdayUTC = new Date(Date.UTC(yesterday.getFullYear(), yesterday.getMonth(), yesterday.getDate()));
+        yesterdayUTC.setUTCDate(yesterdayUTC.getUTCDate() - 1);
+        return yesterdayUTC;
+      
+      case 'next week':
+        const nextWeek = new Date();
+        const nextWeekUTC = new Date(Date.UTC(nextWeek.getFullYear(), nextWeek.getMonth(), nextWeek.getDate()));
+        nextWeekUTC.setUTCDate(nextWeekUTC.getUTCDate() + 7);
+        return nextWeekUTC;
+      
+      case 'next month':
+        const nextMonth = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        nextMonth.setMonth(nextMonth.getMonth() + 1);
+        return nextMonth;
+      
+      case 'next year':
+        const nextYear = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        nextYear.setFullYear(nextYear.getFullYear() + 1);
+        return nextYear;
+    }
+
+    // Handle "in X days" pattern
+    const inDaysMatch = lowerStr.match(/^in\s+(\d+)\s+days?$/);
+    if (inDaysMatch) {
+      const days = parseInt(inDaysMatch[1], 10);
+      const futureDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      futureDate.setDate(futureDate.getDate() + days);
+      return futureDate;
+    }
+
+    // Handle "X days from now" pattern
+    const daysFromNowMatch = lowerStr.match(/^(\d+)\s+days?\s+from\s+now$/);
+    if (daysFromNowMatch) {
+      const days = parseInt(daysFromNowMatch[1], 10);
+      const futureDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      futureDate.setDate(futureDate.getDate() + days);
+      return futureDate;
+    }
+
+    // Handle "start/end of this week/month/year"
+    if (lowerStr.includes('start of this week')) {
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay());
+      return new Date(startOfWeek.getFullYear(), startOfWeek.getMonth(), startOfWeek.getDate());
+    }
+    
+    if (lowerStr.includes('end of this week')) {
+      const endOfWeek = new Date(now);
+      endOfWeek.setDate(now.getDate() - now.getDay() + 6);
+      return new Date(endOfWeek.getFullYear(), endOfWeek.getMonth(), endOfWeek.getDate());
+    }
+    
+    if (lowerStr.includes('start of this month')) {
+      return new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    
+    if (lowerStr.includes('end of this month')) {
+      return new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    }
+
     try {
+      // Try to parse as standard date format
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) {
         return null;

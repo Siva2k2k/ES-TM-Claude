@@ -120,22 +120,100 @@ export class ProjectService {
     try {
       requireManagerRole(currentUser);
 
-      // Sanitize updates: convert empty date strings to null
-      const payload: any = { ...updates };
-      if (payload.start_date === '' || payload.start_date === undefined) {
-        payload.start_date = null;
-      }
-      if (payload.end_date === '' || payload.end_date === undefined) {
-        payload.end_date = null;
-      }
-      if (payload.budget === '') {
-        payload.budget = null;
+      // Fetch the existing project first to verify it exists and get current values
+      const oldProject = await (Project.findOne as any)({
+        _id: projectId,
+        deleted_at: { $exists: false }
+      }).lean();
+
+      if (!oldProject) {
+        throw new NotFoundError('Project not found');
       }
 
+      // Build the update payload - only include fields that are actually being updated
+      const payload: any = {};
+
+      // Only update fields that are explicitly provided in the updates object
+      if (updates.name !== undefined) {
+        payload.name = updates.name;
+      }
+
+      if (updates.description !== undefined) {
+        payload.description = updates.description;
+      }
+
+      if (updates.client_id !== undefined) {
+        payload.client_id = updates.client_id;
+      }
+
+      if (updates.primary_manager_id !== undefined) {
+        payload.primary_manager_id = updates.primary_manager_id;
+      }
+
+      if (updates.start_date !== undefined) {
+        // Sanitize: handle string or Date inputs, convert empty string to null
+        if ((updates.start_date as any) === '' || updates.start_date === null) {
+          payload.start_date = null;
+        } else if (typeof updates.start_date === 'string') {
+          // Convert string dates to proper Date objects
+          const parsedDate = new Date(updates.start_date);
+          if (!isNaN(parsedDate.getTime())) {
+            payload.start_date = parsedDate;
+          } else {
+            payload.start_date = null; // Invalid date string
+          }
+        } else {
+          payload.start_date = updates.start_date;
+        }
+      }
+
+      if (updates.end_date !== undefined) {
+        // Sanitize: handle string or Date inputs, convert empty string to null
+        if ((updates.end_date as any) === '' || updates.end_date === null) {
+          payload.end_date = null;
+        } else if (typeof updates.end_date === 'string') {
+          // Convert string dates to proper Date objects
+          const parsedDate = new Date(updates.end_date);
+          if (!isNaN(parsedDate.getTime())) {
+            payload.end_date = parsedDate;
+          } else {
+            payload.end_date = null; // Invalid date string
+          }
+        } else {
+          payload.end_date = updates.end_date;
+        }
+      }
+
+      if (updates.status !== undefined) {
+        payload.status = updates.status;
+      }
+
+      if (updates.budget !== undefined) {
+        // Sanitize: convert empty string or null to null, parse number strings
+        if ((updates.budget as any) === '' || updates.budget === null) {
+          payload.budget = null;
+        } else if (typeof updates.budget === 'string') {
+          const parsedBudget = parseFloat(updates.budget as string);
+          payload.budget = isNaN(parsedBudget) ? null : parsedBudget;
+        } else {
+          payload.budget = updates.budget;
+        }
+      }
+
+      if (updates.is_billable !== undefined) {
+        payload.is_billable = updates.is_billable;
+      }
+
+      // Always set updated_at
       payload.updated_at = new Date();
 
-      // Check if manager is being changed
-      const oldProject = await (Project.findById as any)(projectId).lean();
+      // Only proceed with update if there are actually fields to update (besides updated_at)
+      const fieldsToUpdate = Object.keys(payload).filter(key => key !== 'updated_at');
+      if (fieldsToUpdate.length === 0) {
+        return { success: true }; // No fields to update, but that's okay
+      }
+
+      // Check if manager is being changed for notification purposes
       const managerChanged = updates.primary_manager_id && 
         oldProject?.primary_manager_id?.toString() !== updates.primary_manager_id?.toString();
 
@@ -157,7 +235,7 @@ export class ProjectService {
           'PROJECT_UPDATED',
           currentUser.id,
           currentUser.full_name,
-          { name: updatedProject.name, updated_fields: Object.keys(updates) },
+          { name: updatedProject.name, updated_fields: fieldsToUpdate },
           { updated_by: currentUser.id },
           null,
           payload
@@ -395,7 +473,39 @@ export class ProjectService {
         .populate('created_by_user_id', 'full_name')
         .sort({ created_at: -1 });
 
-      return { tasks };
+      // Transform tasks to have consistent ID format and normalize populated fields
+      const transformedTasks = tasks.map((task: any) => {
+        const taskObj = task.toObject();
+        
+        // Normalize assigned_to_user_id
+        let assignedToUserId = null;
+        if (taskObj.assigned_to_user_id) {
+          if (typeof taskObj.assigned_to_user_id === 'object' && taskObj.assigned_to_user_id._id) {
+            assignedToUserId = taskObj.assigned_to_user_id._id.toString();
+          } else if (typeof taskObj.assigned_to_user_id === 'string') {
+            assignedToUserId = taskObj.assigned_to_user_id;
+          }
+        }
+
+        // Normalize created_by_user_id
+        let createdByUserId = null;
+        if (taskObj.created_by_user_id) {
+          if (typeof taskObj.created_by_user_id === 'object' && taskObj.created_by_user_id._id) {
+            createdByUserId = taskObj.created_by_user_id._id.toString();
+          } else if (typeof taskObj.created_by_user_id === 'string') {
+            createdByUserId = taskObj.created_by_user_id;
+          }
+        }
+
+        return {
+          ...taskObj,
+          id: taskObj._id.toString(),
+          assigned_to_user_id: assignedToUserId,
+          created_by_user_id: createdByUserId
+        };
+      });
+
+      return { tasks: transformedTasks };
     } catch (error) {
 
       if (error instanceof AuthorizationError) {

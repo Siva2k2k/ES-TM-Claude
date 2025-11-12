@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useVoice } from '../../contexts/VoiceContext';
 import { VoiceAction, VoiceActionField, VoiceError } from '../../types/voice';
+import { Project, User, ProjectMember } from '../../types';
 import { backendApi } from '../../lib/backendApi';
+import { sanitizeVoiceActions } from '../../utils/voiceDataSanitization';
 import VoiceErrorDisplay from '../VoiceErrorDisplay';
 
 const IconCheck = ({ size = 20 }: { size?: number }) => (
@@ -146,15 +148,41 @@ const FieldRenderer: React.FC<FieldRendererProps> = ({ field, value, onChange, e
         />
       );
 
-    case 'date':
+    case 'date': {
+      // Format date value for HTML date input (requires YYYY-MM-DD format)
+      let dateValue = '';
+      if (value) {
+        if (value instanceof Date) {
+          // Use local date formatting to avoid timezone shifting
+          const year = value.getFullYear();
+          const month = String(value.getMonth() + 1).padStart(2, '0');
+          const day = String(value.getDate()).padStart(2, '0');
+          dateValue = `${year}-${month}-${day}`;
+        } else if (typeof value === 'string') {
+          const parsedDate = new Date(value);
+          if (!isNaN(parsedDate.getTime())) {
+            // Use local date formatting to avoid timezone shifting
+            const year = parsedDate.getFullYear();
+            const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+            const day = String(parsedDate.getDate()).padStart(2, '0');
+            dateValue = `${year}-${month}-${day}`;
+          } else {
+            dateValue = value;
+          }
+        } else {
+          dateValue = String(value);
+        }
+      }
+
       return (
         <input
           type="date"
-          value={value || ''}
+          value={dateValue}
           onChange={(e) => onChange(e.target.value)}
           className={baseInputClasses}
         />
       );
+    }
 
     case 'array':
       return (
@@ -260,23 +288,43 @@ const VoiceConfirmationModal: React.FC = () => {
         }
       }
 
+      // Fetch projects first (needed for resolving project names to IDs)
+      let projectsData: Project[] = [];
+      if (referenceTypes.has('project')) {
+        try {
+          const projectsResponse = await backendApi.get<{ success: boolean; projects: Project[] }>('/projects');
+          if (projectsResponse.success && projectsResponse.projects) {
+            projectsData = projectsResponse.projects;
+            const projectOptions = projectsData.map((p: Project) => ({
+              value: p.id,
+              label: p.name
+            }));
+            options['project'] = projectOptions;
+            options['project_id'] = projectOptions;
+            options['projectName'] = projectOptions;
+          }
+        } catch (error) {
+          console.error('Failed to fetch projects:', error);
+        }
+      }
+
       // Fetch users and managers if needed
       if (referenceTypes.has('user') || referenceTypes.has('manager')) {
         try {
-          const usersResponse = await backendApi.get<{ success: boolean; users: any[] }>('/users');
+          const usersResponse = await backendApi.get<{ success: boolean; users: User[] }>('/users');
           if (usersResponse.success && usersResponse.users) {
-            const allUsers = usersResponse.users.map((u: any) => ({
-              value: u.id || u._id,
-              label: u.full_name || u.name
+            const allUsers = usersResponse.users.map((u: User) => ({
+              value: u.id,
+              label: u.full_name
             }));
 
             // For manager reference type, only include users with "manager" role
             // Not other management-level roles like "management", "lead", "super_admin"
             const managers = usersResponse.users
-              .filter((u: any) => u.role?.toLowerCase() === 'manager') // Only actual managers
-              .map((u: any) => ({
-                value: u.id || u._id,
-                label: u.full_name || u.name
+              .filter((u: User) => u.role?.toLowerCase() === 'manager') // Only actual managers
+              .map((u: User) => ({
+                value: u.id,
+                label: u.full_name
               }));
 
             if (referenceTypes.has('user')) {
@@ -294,27 +342,43 @@ const VoiceConfirmationModal: React.FC = () => {
             // Special handling for add_project_member intent
             const projectMemberAction = actions.find(action => action.intent === 'add_project_member' || action.intent === 'remove_project_member');
             if (projectMemberAction) {
-              const projectId = projectMemberAction.data.projectName || projectMemberAction.data.project_id;
-              const selectedRole = projectMemberAction.data.role;
+              const projectNameOrId = (projectMemberAction.data?.projectName || projectMemberAction.data?.project_id) as string;
+              const selectedRole = projectMemberAction.data?.role as string;
+              
+              // Resolve project name to actual project ID
+              let resolvedProjectId = projectNameOrId;
+              if (projectNameOrId && projectsData.length > 0) {
+                // First check if it's already a valid ID (ObjectId format)
+                const isValidObjectId = /^[0-9a-fA-F]{24}$/.test(String(projectNameOrId));
+                if (!isValidObjectId) {
+                  // Try to find by name
+                  const matchingProject = projectsData.find((p: Project) => 
+                    p.name?.toLowerCase() === String(projectNameOrId).toLowerCase()
+                  );
+                  if (matchingProject) {
+                    resolvedProjectId = matchingProject.id;
+                  }
+                }
+              }
               
               let filteredUsers = [...usersResponse.users];
               
               // Filter by role if selected
               if (selectedRole && typeof selectedRole === 'string') {
                 if (selectedRole.toLowerCase() === 'employee') {
-                  filteredUsers = filteredUsers.filter((u: any) => u.role?.toLowerCase() === 'employee');
+                  filteredUsers = filteredUsers.filter((u: User) => u.role?.toLowerCase() === 'employee');
                 } else if (selectedRole.toLowerCase() === 'lead') {
-                  filteredUsers = filteredUsers.filter((u: any) => u.role?.toLowerCase() === 'lead');
+                  filteredUsers = filteredUsers.filter((u: User) => u.role?.toLowerCase() === 'lead');
                 }
               }
               
-              // Exclude existing project members if we have a project ID
-              if (projectId) {
+              // Exclude existing project members if we have a valid project ID
+              if (resolvedProjectId) {
                 try {
-                  const existingMembersResponse = await backendApi.get<{ success: boolean; members: any[] }>(`/projects/${projectId}/members`);
+                  const existingMembersResponse = await backendApi.get<{ success: boolean; members: ProjectMember[] }>(`/projects/${resolvedProjectId}/members`);
                   if (existingMembersResponse.success && existingMembersResponse.members) {
-                    const existingMemberIds = existingMembersResponse.members.map((m: any) => m.user_id || m.id || m._id);
-                    filteredUsers = filteredUsers.filter((u: any) => !existingMemberIds.includes(u.id || u._id));
+                    const existingMemberIds = existingMembersResponse.members.map((m: ProjectMember) => m.user_id);
+                    filteredUsers = filteredUsers.filter((u: User) => !existingMemberIds.includes(u.id));
                   }
                 } catch (error) {
                   console.error('Failed to fetch existing project members:', error);
@@ -322,9 +386,9 @@ const VoiceConfirmationModal: React.FC = () => {
                 }
               }
               
-              const availableUserOptions = filteredUsers.map((u: any) => ({
-                value: u.id || u._id,
-                label: u.full_name || u.name
+              const availableUserOptions = filteredUsers.map((u: User) => ({
+                value: u.id,
+                label: u.full_name
               }));
               
               // Store for project member name field - override the general user options
@@ -334,24 +398,6 @@ const VoiceConfirmationModal: React.FC = () => {
           }
         } catch (error) {
           console.error('Failed to fetch users:', error);
-        }
-      }
-
-      // Fetch projects
-      if (referenceTypes.has('project')) {
-        try {
-          const projectsResponse = await backendApi.get<{ success: boolean; projects: any[] }>('/projects');
-          if (projectsResponse.success && projectsResponse.projects) {
-            const projectOptions = projectsResponse.projects.map((p: any) => ({
-              value: p.id || p._id,
-              label: p.name || p.project_name
-            }));
-            options['project'] = projectOptions;
-            options['project_id'] = projectOptions;
-            options['projectName'] = projectOptions;
-          }
-        } catch (error) {
-          console.error('Failed to fetch projects:', error);
         }
       }
 
@@ -452,7 +498,9 @@ const VoiceConfirmationModal: React.FC = () => {
   };
 
   const handleConfirm = async () => {
-    await executeActions(editMode ? editedActions : state.pendingActions);
+    // Use centralized sanitization utility to prevent data corruption issues
+    const actionsToExecute = sanitizeVoiceActions(editMode ? editedActions : state.pendingActions);
+    await executeActions(actionsToExecute);
   };
 
   const handleCancel = () => {

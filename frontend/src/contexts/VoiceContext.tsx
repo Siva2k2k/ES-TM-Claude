@@ -178,9 +178,63 @@ export const VoiceProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     dispatch({ type: 'SET_PROCESSING', payload: true });
 
     try {
+      // Sanitize actions centrally: remove empty-string fields and coerce numeric-like strings
+      const sanitizeActions = (acts: VoiceAction[]) => {
+        return acts.map(a => {
+          const data = { ...a.data } as Record<string, any>;
+          Object.keys(data).forEach((k) => {
+            const val = data[k];
+
+            // Remove null/undefined
+            if (val === null || val === undefined) {
+              delete data[k];
+              return;
+            }
+
+            // If empty string (or whitespace-only), remove the field
+            if (typeof val === 'string' && val.trim() === '') {
+              delete data[k];
+              return;
+            }
+
+            // Date handling - preserve date strings but ensure they're valid
+            // CRITICAL: Handle all date-like fields to prevent numeric conversion corruption
+            if (typeof val === 'string' && 
+                (/date/i.test(k) || 
+                 /time/i.test(k) || 
+                 /deadline/i.test(k) || 
+                 /due/i.test(k) ||
+                 /^\d{4}-\d{2}-\d{2}/.test(val.trim()))) { // ISO date pattern
+              const trimmed = val.trim();
+              if (trimmed !== '') {
+                // Keep the date string as-is for backend parsing
+                // Backend VoiceFieldMapper now handles relative dates like "today"
+                data[k] = trimmed;
+              } else {
+                delete data[k];
+              }
+              return;
+            }
+
+            // Numeric coercion for budget/amount-like fields
+            if (typeof val === 'string' && /budget|amount|estimated|hours|rate/i.test(k)) {
+              const parsed = parseFloat(val);
+              if (!isNaN(parsed)) {
+                data[k] = parsed;
+              } else {
+                // If not parseable, remove to avoid backend validation errors
+                delete data[k];
+              }
+            }
+          });
+          return { intent: a.intent, data } as VoiceAction;
+        });
+      };
+
+      const sanitized = sanitizeActions(actions);
       // Send actions to backend for execution
       const response = await voiceService.executeActions(
-        actions.map((a) => ({ intent: a.intent, data: a.data })),
+        sanitized.map((a) => ({ intent: a.intent, data: a.data })),
         true
       );
 

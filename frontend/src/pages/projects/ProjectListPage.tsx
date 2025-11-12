@@ -23,6 +23,7 @@ import {
 import { useRoleManager } from '../../hooks/useRoleManager';
 import { DeleteActionModal } from '../../components/DeleteActionModal';
 import type { Project } from '../../types';
+import * as formatting from '../../utils/formatting';
 
 // Custom Hooks
 import { useProjectData } from '../../hooks/useProjectData';
@@ -404,9 +405,9 @@ export const ProjectListPage: React.FC = () => {
                           {project.start_date && (
                             <div className="flex items-center text-sm text-gray-600">
                               <Calendar className="h-4 w-4 mr-2 text-gray-400" />
-                              <span>{new Date(project.start_date).toLocaleDateString()}</span>
+                              <span>{formatting.formatDate(project.start_date, 'short')}</span>
                               {project.end_date && (
-                                <span className="ml-1">- {new Date(project.end_date).toLocaleDateString()}</span>
+                                <span className="ml-1">- {formatting.formatDate(project.end_date, 'short')}</span>
                               )}
                             </div>
                           )}
@@ -530,7 +531,7 @@ export const ProjectListPage: React.FC = () => {
                                   {project.start_date && (
                                     <div className="flex items-center text-xs text-gray-400 mt-1">
                                       <Calendar className="h-3 w-3 mr-1" />
-                                      {new Date(project.start_date).toLocaleDateString()}
+                                      {formatting.formatDate(project.start_date, 'short')}
                                     </div>
                                   )}
                                 </div>
